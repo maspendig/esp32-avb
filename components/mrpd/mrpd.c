@@ -25,7 +25,6 @@ struct mrp_state_s
 {
   bool stop;
   int socket;
-
 };
 
 static struct mrp_state_s *s_state;
@@ -79,9 +78,16 @@ static int mrp_net_recv(const struct mrp_state_s *state, void *mrp_msg, uint16_t
 
 static void mrp_daemon(void *task_param)
 {
-  const char *interface = "eth0";
+  const char *interface = "ETH_0";
   int ret;
+  uint8_t buf[1600];
   struct mrp_state_s* state = calloc(1, sizeof(struct mrp_state_s));
+
+  // override interface if provided
+  if (task_param != NULL)
+  {
+    interface = task_param;
+  }
 
   if (mrp_init_state(state, interface) != ESP_OK)
   {
@@ -92,12 +98,23 @@ static void mrp_daemon(void *task_param)
   }
   while (!state->stop)
   {
-    ESP_LOGI("mrpd", "waiting for mrp packet");
-    // ret = mrp_net_recv(state, &state->rxbuf, sizeof(state->rxbuf));
+    // ret = mrp_net_recv(state, &buf, sizeof(buf));
     // if (ret > 0)
     // {
     //   ESP_LOGI(TAG, "received mrp packet");
     // }
+    ssize_t len = read(state->socket, buf, sizeof(buf));
+    if (len > 0) {
+      // EtherType is at offset 12 in Ethernet header
+      uint16_t ethertype = (buf[12] << 8) | buf[13];
+      ESP_LOGI(TAG, "Received frame with EtherType 0x%04X, length %d bytes", ethertype, (int)len);
+      // if (ethertype == ETH_TYPE_CUSTOM) {
+      //     ESP_LOGI(TAG, "Received frame with EtherType 0x%04X, length %d bytes", ethertype, (int)len);
+      // }
+    } else {
+      ESP_LOGE(TAG, "Read error: %s", strerror(errno));
+      break;
+    }
   }
   //mrp_destroy_state(state);
   free(state);
