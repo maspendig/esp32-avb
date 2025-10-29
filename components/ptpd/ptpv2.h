@@ -67,6 +67,8 @@
 /* Message flags */
 
 #define PTP_FLAGS0_TWOSTEP        (1 << 1)
+#define PTP_FLAGS1_PTP_TIMESCALE  (1 << 3) // flag indicating use of PTP timescale (gPTP required)
+#define PTP_SDOID_GPTP    (1 << 4) // flag indicating a gPTP message
 
 /****************************************************************************
  * Public Types

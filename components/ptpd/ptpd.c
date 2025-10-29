@@ -293,8 +293,8 @@ static struct ptp_state_s *s_state;
 static void ptp_create_eth_frame(struct ptp_state_s *state, uint8_t *eth_frame, void *ptp_msg, uint16_t ptp_msg_len)
 {
   struct eth_hdr eth_hdr = {
-    //.dest.addr = {0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E}, // TODO only for Pdelay_Req, Pdelay_Resp and Pdelay_Resp_Follow_Up
-    .dest.addr = {0x01, 0x1B, 0x19, 0x00, 0x00, 0x00}, // All except peer delay messages, ptp4l sends everything at this addr
+    .dest.addr = {0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E}, // TODO only for Pdelay_Req, Pdelay_Resp and Pdelay_Resp_Follow_Up
+    //.dest.addr = {0x01, 0x1B, 0x19, 0x00, 0x00, 0x00}, // All except peer delay messages, ptp4l sends everything at this addr
     .type = htons(ETH_TYPE_PTP)
   };
   memcpy(&eth_hdr.src.addr, state->intf_hw_addr, ETH_ADDR_LEN);
@@ -1543,8 +1543,63 @@ static int ptp_process_followup(FAR struct ptp_state_s *state,
   return ptp_update_local_clock(state, &remote_time, &state->twostep_rxtime);
 }
 
+static int ptp_process_peer_delay_req(FAR struct ptp_state_s *state,
+                                 FAR struct ptp_delay_req_s *req)
+{
+  struct ptp_delay_resp_s resp;
+  struct timespec resp_sent_ts;
+  int ret;
+
+  memset(&resp, 0, sizeof(resp));
+  resp.header = state->own_identity.header;
+  resp.header.messagetype = PTP_PEER_DELAY_RESP;
+  resp.header.messagelength[1] = sizeof(resp);
+  resp.header.flags[0] = PTP_FLAGS0_TWOSTEP;
+  resp.header.messagetype |= PTP_SDOID_GPTP; // Set SDOID bit for peer delay
+  resp.header.flags[1] = PTP_FLAGS1_PTP_TIMESCALE;
+  // TODO investigate why 5 is used here
+  resp.header.controlfield = 5;
+
+  timespec_to_ptp_format(&state->rxtime, resp.receivetimestamp);
+  memcpy(resp.reqidentity, req->header.sourceidentity,
+         sizeof(resp.reqidentity));
+  memcpy(resp.reqportindex, req->header.sourceportindex,
+         sizeof(resp.reqportindex));
+  memcpy(resp.header.sequenceid, req->header.sequenceid,
+         sizeof(resp.header.sequenceid));
+  resp.header.logmessageinterval = 0;
+
+  // send the peer delay response, save sent timestamp
+  ret = ptp_net_send(state, &resp, sizeof(resp), &resp_sent_ts);
+
+  if (ret < 0)
+  {
+    ptperr("sendto failed: %d", errno);
+    return ret;
+  }
+
+  clock_gettime(CLOCK_MONOTONIC, &state->last_transmitted_delayresp);
+
+  // prepare follow-up message
+  timespec_to_ptp_format(&resp_sent_ts, resp.receivetimestamp);
+  resp.header.messagetype = PTP_PEER_DELAY_FOLLOW_UP;
+  resp.header.messagelength[1] = sizeof(resp); // TODO Resp and follow-up should have same size?!
+  resp.header.flags[0] = 0; // clear two-step flag
+
+  ret = ptp_net_send(state, &resp, sizeof(resp), nullptr);
+  if (ret < 0)
+  {
+    ptperr("Send peer delay follow-up message failed: %d", errno);
+    return ret;
+  }
+  ptpinfo("Sent delay resp + follow-up, seq %ld\n",
+          (long)ptp_get_sequence(&req->header));
+
+  return OK;
+}
+
 static int ptp_process_delay_req(FAR struct ptp_state_s *state,
-                                 FAR struct ptp_delay_req_s *msg)
+                                 FAR struct ptp_delay_req_s *req)
 {
   struct ptp_delay_resp_s resp;
 #ifndef ESP_PTP
@@ -1570,11 +1625,11 @@ static int ptp_process_delay_req(FAR struct ptp_state_s *state,
   resp.header.messagetype = PTP_DELAY_RESP;
   resp.header.messagelength[1] = sizeof(resp);
   timespec_to_ptp_format(&state->rxtime, resp.receivetimestamp);
-  memcpy(resp.reqidentity, msg->header.sourceidentity,
+  memcpy(resp.reqidentity, req->header.sourceidentity,
          sizeof(resp.reqidentity));
-  memcpy(resp.reqportindex, msg->header.sourceportindex,
+  memcpy(resp.reqportindex, req->header.sourceportindex,
          sizeof(resp.reqportindex));
-  memcpy(resp.header.sequenceid, msg->header.sequenceid,
+  memcpy(resp.header.sequenceid, req->header.sequenceid,
          sizeof(resp.header.sequenceid));
   resp.header.logmessageinterval = CONFIG_NETUTILS_PTPD_DELAYRESP_INTERVAL;
 
@@ -1593,7 +1648,7 @@ static int ptp_process_delay_req(FAR struct ptp_state_s *state,
     {
       clock_gettime(CLOCK_MONOTONIC, &state->last_transmitted_delayresp);
       ptpinfo("Sent delay resp, seq %ld\n",
-              (long)ptp_get_sequence(&msg->header));
+              (long)ptp_get_sequence(&req->header));
     }
 
   return ret;
@@ -1733,7 +1788,7 @@ static int ptp_process_rx_packet(FAR struct ptp_state_s *state,
   case PTP_PEER_DELAY_REQ:
     ptpinfo("Got peer delay req, seq %ld\n",
             (long)ptp_get_sequence(&state->rxbuf.header));
-    return ptp_process_delay_req(state, &state->rxbuf.delay_req);
+    return ptp_process_peer_delay_req(state, &state->rxbuf.delay_req);
     return OK;
 
   case PTP_PEER_DELAY_RESP:
