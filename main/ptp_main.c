@@ -13,6 +13,7 @@
 #include "esp_vfs_l2tap.h"
 #include "driver/gpio.h"
 #include "ptpd.h"
+#include "mrpd.h"
 
 #include "esp_eth_time.h"
 
@@ -32,7 +33,7 @@ void init_ethernet_and_netif(void)
 
     ESP_ERROR_CHECK(esp_netif_init());
 
-    ESP_ERROR_CHECK(esp_vfs_l2tap_intf_register(NULL));
+    ESP_ERROR_CHECK(esp_vfs_l2tap_intf_register(nullptr));
 
     esp_netif_inherent_config_t esp_netif_base_config = ESP_NETIF_INHERENT_DEFAULT_ETH();
     esp_netif_config_t esp_netif_config = {
@@ -81,11 +82,74 @@ IRAM_ATTR bool ts_callback(esp_eth_mediator_t *eth, void *user_args)
     return false;
 }
 
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <errno.h>
+
+struct tapif_req {
+    char ifname[16];
+    uint16_t ethertype;
+};
+
+#define ETH_TYPE_CUSTOM 0x22EA
+
 void app_main(void)
 {
     init_ethernet_and_netif();
 
     int pid = ptpd_start("ETH_0");
+    // int mrp_pid = mrpd_start("ETH_0");
+
+    // Open TAP device
+    struct tapif_req req;
+    uint8_t buf[1600];
+
+    int tap_fd = open("/dev/net/tap", 0);
+    if (tap_fd < 0) {
+        ESP_LOGE(TAG, "Failed to open /dev/net/tap: %s", strerror(errno));
+        return;
+    }
+
+    // Prepare TAP request
+    memset(&req, 0, sizeof(req));
+    strncpy(req.ifname, "eth0", sizeof(req.ifname) - 1);
+    req.ethertype = ETH_TYPE_CUSTOM;
+
+    // Set TAP filter via ioctl
+    if (ioctl(tap_fd, L2TAP_S_INTF_DEVICE, "ETH_0") < 0) {
+        ESP_LOGE(TAG, "Failed to configure TAP device: %s", strerror(errno));
+        close(tap_fd);
+        return;
+    }
+    // Set the Ethertype filter (frames with this type will be available through the state->tx_socket)
+    uint16_t eth_type_filter = ETH_TYPE_CUSTOM;
+    if (ioctl(tap_fd, L2TAP_S_RCV_FILTER, &eth_type_filter) < 0)
+    {
+        ESP_LOGE(TAG,"failed to set Ethertype filter: %d\n", errno);
+        return;
+    }
+
+    ESP_LOGI(TAG, "TAP device %s opened, listening for EtherType 0x%04X...", "eth0", ETH_TYPE_CUSTOM);
+
+    while (1) {
+        ssize_t len = read(tap_fd, buf, sizeof(buf));
+        if (len > 0) {
+            // EtherType is at offset 12 in Ethernet header
+            uint16_t ethertype = (buf[12] << 8) | buf[13];
+            ESP_LOGI(TAG, "Received frame with EtherType 0x%04X, length %d bytes", ethertype, (int)len);
+           // if (ethertype == ETH_TYPE_CUSTOM) {
+           //     ESP_LOGI(TAG, "Received frame with EtherType 0x%04X, length %d bytes", ethertype, (int)len);
+           // }
+        } else {
+            ESP_LOGE(TAG, "Read error: %s", strerror(errno));
+            break;
+        }
+    }
+
+    close(tap_fd);
+
 
     struct timespec cur_time;
     // wait for the clock to be available

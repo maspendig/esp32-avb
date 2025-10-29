@@ -259,6 +259,12 @@ dependencies:
     source:
       type: idf
     version: 6.0.0
+  mrpd:
+    dependencies: []
+    source:
+      path: /home/max/Projects/fh/thesis/esp32-avb/components/mrpd
+      type: local
+    version: '*'
   ptpd:
     dependencies:
     - name: esp_eth_time
@@ -270,7 +276,8 @@ dependencies:
 direct_dependencies:
 - esp_eth_time
 - espressif/ethernet_init
+- mrpd
 - ptpd
-manifest_hash: be8a25993fa692ececd1884baf849f7716cd0d9869a4cf10983890124603be28
+manifest_hash: 9ec3a464b6f56c04fa6cba307b26a880fca0ff73774fd255c802572c64d4e6ca
 target: esp32p4
 version: 2.0.0
