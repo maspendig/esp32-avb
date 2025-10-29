@@ -92,6 +92,7 @@ struct ptpd_status_s
   /* Averaged path delay */
 
   long path_delay_ns;
+  long peer_delay_ns;
 
   /* Timestamps of latest received packets (CLOCK_MONOTONIC) */
 
