@@ -103,14 +103,30 @@ static void mrp_daemon(void *task_param)
     // {
     //   ESP_LOGI(TAG, "received mrp packet");
     // }
-    ssize_t len = read(state->socket, buf, sizeof(buf));
+    const ssize_t len = read(state->socket, buf, sizeof(buf));
     if (len > 0) {
       // EtherType is at offset 12 in Ethernet header
       uint16_t ethertype = (buf[12] << 8) | buf[13];
       ESP_LOGI(TAG, "Received frame with EtherType 0x%04X, length %d bytes", ethertype, (int)len);
-      // if (ethertype == ETH_TYPE_CUSTOM) {
-      //     ESP_LOGI(TAG, "Received frame with EtherType 0x%04X, length %d bytes", ethertype, (int)len);
-      // }
+
+      uint8_t proto_version = buf[14];
+      ESP_LOGI(TAG, "Protocol version: %d", proto_version);
+
+      uint16_t read_marker = 15;
+      while (read_marker <= len)
+      {
+        if (buf[read_marker] == 0 && buf[read_marker + 1] == 0)
+        {
+          break;
+        }
+        uint8_t attribute_type = buf[read_marker];
+        uint8_t attribute_len = buf[read_marker + 1];
+        uint8_t attribute_list_len = (uint16_t)((buf[read_marker + 2] << 8) | buf[read_marker + 3]);
+
+        ESP_LOGI(TAG, "Attribute type: %d, read_marker: %d", attribute_type, read_marker);
+        read_marker += (4 + attribute_list_len);
+      }
+
     } else {
       ESP_LOGE(TAG, "Read error: %s", strerror(errno));
       break;
