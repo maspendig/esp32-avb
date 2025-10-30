@@ -17,7 +17,8 @@
 #include "pthread.h"
 #include "sys/ioctl.h"
 
-#define ETH_TYPE_MRP 0x22EA
+#define ETH_TYPE_MSRP 0x22EA
+#define ETH_TYPE_MVRP 0x88F5
 
 static const char *TAG = "mrpd";
 
@@ -48,7 +49,7 @@ static int mrp_init_state(struct mrp_state_s *state, const char *interface)
   }
 
   // Set the Ethertype filter (frames with this type will be available through the state->tx_socket)
-  uint16_t eth_type_filter = ETH_TYPE_MRP;
+  uint16_t eth_type_filter = ETH_TYPE_MSRP;
   if (ioctl(state->socket, L2TAP_S_RCV_FILTER, &eth_type_filter) < 0)
   {
     ESP_LOGE(TAG,"failed to set Ethertype filter: %d\n", errno);
@@ -107,24 +108,50 @@ static void mrp_daemon(void *task_param)
     if (len > 0) {
       // EtherType is at offset 12 in Ethernet header
       uint16_t ethertype = (buf[12] << 8) | buf[13];
-      ESP_LOGI(TAG, "Received frame with EtherType 0x%04X, length %d bytes", ethertype, (int)len);
 
-      uint8_t proto_version = buf[14];
-      ESP_LOGI(TAG, "Protocol version: %d", proto_version);
-
-      uint16_t read_marker = 15;
-      while (read_marker <= len)
+      switch (ethertype)
       {
-        if (buf[read_marker] == 0 && buf[read_marker + 1] == 0)
-        {
-          break;
-        }
-        uint8_t attribute_type = buf[read_marker];
-        uint8_t attribute_len = buf[read_marker + 1];
-        uint8_t attribute_list_len = (uint16_t)((buf[read_marker + 2] << 8) | buf[read_marker + 3]);
+        case ETH_TYPE_MSRP:
+          ESP_LOGI(TAG, "MSRP Package received");
+          uint8_t proto_version = buf[14];
+          ESP_LOGI(TAG, "Protocol version: %d", proto_version);
+          uint16_t read_marker = 15;
+          while (read_marker <= len)
+          {
+            if (buf[read_marker] == 0 && buf[read_marker + 1] == 0)
+            {
+              break;
+            }
+            uint8_t attribute_type = buf[read_marker];
+            uint8_t attribute_len = buf[read_marker + 1];
+            uint8_t attribute_list_len = (uint16_t)((buf[read_marker + 2] << 8) | buf[read_marker + 3]);
 
-        ESP_LOGI(TAG, "Attribute type: %d, read_marker: %d", attribute_type, read_marker);
-        read_marker += (4 + attribute_list_len);
+            if (attribute_type == 4)
+            {
+              for (int domain_marker = 0; domain_marker < attribute_list_len-2; domain_marker+=7)
+              {
+                int pos = read_marker + 6 + domain_marker;
+                int sr_class_id = buf[pos];
+                int prio = buf[pos + 1];
+                int vlan_id = (buf[pos + 2] << 8) | buf[pos + 3];
+                if (sr_class_id == 6)
+                {
+                  ESP_LOGI(TAG, "detected domain Class A PRIO=%d, VID=%d", prio, vlan_id);
+                  ESP_LOGI(TAG, "S+D:C=%d,P=%d,V=%04x", sr_class_id, prio, vlan_id);
+                }
+              }
+            }
+
+            ESP_LOGI(TAG, "Attribute type: %d, read_marker: %d", attribute_type, read_marker);
+            read_marker += (4 + attribute_list_len);
+          }
+          break;
+        case ETH_TYPE_MVRP:
+          ESP_LOGI(TAG, "MVRP Package received");
+          break;
+        default:
+          ESP_LOGW(TAG, "Unknown EtherType 0x%04X received", ethertype);
+          break;
       }
 
     } else {
