@@ -1,4 +1,10 @@
 dependencies:
+  avb:
+    dependencies: []
+    source:
+      path: /home/max/Projects/fh/thesis/esp32-avb/components/avb
+      type: local
+    version: '*'
   esp_eth_time:
     dependencies: []
     source:
@@ -274,10 +280,11 @@ dependencies:
       type: local
     version: '*'
 direct_dependencies:
+- avb
 - esp_eth_time
 - espressif/ethernet_init
 - mrpd
 - ptpd
-manifest_hash: 9ec3a464b6f56c04fa6cba307b26a880fca0ff73774fd255c802572c64d4e6ca
+manifest_hash: 8588bfe258c27c64d5df4e7f8d244ab5c2bb4668b21969b7407840d8ea776e71
 target: esp32p4
 version: 2.0.0

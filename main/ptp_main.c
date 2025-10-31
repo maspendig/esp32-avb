@@ -14,6 +14,7 @@
 #include "driver/gpio.h"
 #include "ptpd.h"
 #include "mrpd.h"
+#include "avtp.h"
 
 #include "esp_eth_time.h"
 
@@ -88,6 +89,7 @@ void app_main(void)
 
     int pid = ptpd_start("ETH_0");
     int mrp_pid = mrpd_start("ETH_0");
+    int avtp_pid = start_avtp_listener("ETH_0");
 
     struct timespec cur_time;
     // wait for the clock to be available

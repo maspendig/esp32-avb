@@ -137,7 +137,6 @@ static void mrp_daemon(void *task_param)
                 if (sr_class_id == 6)
                 {
                   ESP_LOGI(TAG, "detected domain Class A PRIO=%d, VID=%d", prio, vlan_id);
-                  ESP_LOGI(TAG, "S+D:C=%d,P=%d,V=%04x", sr_class_id, prio, vlan_id);
                 }
               }
             }
