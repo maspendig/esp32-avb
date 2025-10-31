@@ -12,6 +12,7 @@
 #include "pthread.h"
 #include "sys/ioctl.h"
 
+#define ETH_TYPE_AVTP 0x22F0
 const char *TAG = "avtp";
 
 struct avtp_state_s
@@ -22,7 +23,30 @@ struct avtp_state_s
 
 static struct avtp_state_s *s_state;
 
-static int avtp_init_state(struct avtp_state_s *state, const char *interface){
+static int avtp_init_state(struct avtp_state_s *state, const char *interface)
+{
+  state ->socket = open("/dev/net/tap", 0);
+  if (state->socket < 0)
+  {
+    ESP_LOGE(TAG, "Failed to create tx socket");
+    return ESP_FAIL;
+  }
+
+  int ioctl_err = ioctl(state->socket, L2TAP_S_INTF_DEVICE, interface);
+
+  if (ioctl_err < 0)
+  {
+    ESP_LOGE(TAG, "failed to set network interface %s at socket: %d\n", interface, ioctl_err);
+    return ESP_FAIL;
+  }
+
+  // Set the Ethertype filter (frames with this type will be available through the state->tx_socket)
+  uint16_t eth_type_filter = ETH_TYPE_AVTP; // Example Ethertype
+  if (ioctl(state->socket, L2TAP_S_RCV_FILTER, &eth_type_filter) < 0)
+  {
+    ESP_LOGE(TAG, "failed to set Ethertype filter: %d\n", errno);
+    return ESP_FAIL;
+  }
 
   s_state = state;
   return ESP_OK;
