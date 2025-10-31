@@ -88,7 +88,7 @@ void app_main(void)
     init_ethernet_and_netif();
 
     int pid = ptpd_start("ETH_0");
-    int mrp_pid = mrpd_start("ETH_0");
+    // int mrp_pid = mrpd_start("ETH_0");
     int avtp_pid = start_avtp_listener("ETH_0");
 
     struct timespec cur_time;
