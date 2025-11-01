@@ -17,6 +17,10 @@
 #define AVTP_SUBTYPE_ADP 0xFA
 #define AVTP_SUBTYPE_MAAP 0xFE
 
+#define ADP_MSG_TYPE_ENTITY_AVAILABLE 0x0
+#define ADP_MSG_TYPE_ENTITY_DEPARTING 0x1
+#define ADP_MSG_TYPE_ENTITY_DISCOVER  0x2
+
 const char *TAG = "avtp";
 
 struct avtp_state_s
@@ -122,9 +126,15 @@ int adp_net_rx(struct avtp_discovery_msg_s *msg, ssize_t len)
   uint8_t msg_type = msg->control & AVTP_MSGTYPE_MASK; /* lower 4 bits of 15th byte */
   switch (msg_type)
   {
-    case 0x0:
+    case ADP_MSG_TYPE_ENTITY_AVAILABLE:
       ESP_LOGI(TAG, "Entity Available Message", msg_type);
       ESP_LOGI(TAG, "Talker Stream Sources: %02X%02X", msg->talker_stream_sources[0], msg->talker_stream_sources[1]);
+      break;
+    case ADP_MSG_TYPE_ENTITY_DEPARTING:
+      ESP_LOGI(TAG, "Entity Departing Message", msg_type);
+      break;
+    case ADP_MSG_TYPE_ENTITY_DISCOVER:
+      ESP_LOGI(TAG, "Entity Discover Message", msg_type);
       break;
     default:
       ESP_LOGW(TAG, "Unknown ADP message type: 0x%02X", msg_type);
