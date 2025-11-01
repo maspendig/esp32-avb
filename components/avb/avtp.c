@@ -14,6 +14,9 @@
 
 #define ETH_TYPE_AVTP 0x22F0
 
+#define AVTP_SUBTYPE_ADP 0xFA
+#define AVTP_SUBTYPE_MAAP 0xFE
+
 const char *TAG = "avtp";
 
 struct avtp_state_s
@@ -21,6 +24,50 @@ struct avtp_state_s
   bool stop;
   int socket;
 };
+
+struct avtp_header_s
+{
+  uint8_t dst_mac[6];
+  uint8_t src_mac[6];
+  uint8_t eth_type[2];
+};
+
+struct avtp_discovery_msg_s{
+  struct avtp_header_s header;
+  uint8_t subtype;
+  /** AVTP control field containing
+   * - Stream ID valid (bit 0)
+   * - AVTP version (bits 1..4)
+   * - Message type (bits 5..7)
+   *
+   * use AVTP_STREAMID_VALID_MASK, AVTP_VERSION_MASK, AVTP_MSGTYPE_MASK to extract values
+   */
+  uint8_t control;
+  uint8_t control_data_length[2];
+  uint8_t entity_id[8];
+  uint8_t entity_model_id[8];
+  uint8_t entity_capabilities[4];
+  uint8_t talker_stream_sources[2];
+  uint8_t talker_capabilities[2];
+  uint8_t listener_stream_sinks[2];
+  uint8_t listener_capabilities[2];
+  uint8_t controller_capabilities[4];
+  uint8_t available_index[4];
+  uint8_t gptp_grandmaster_id[8];
+  uint8_t association_id[8];
+};
+
+typedef union
+{
+  struct avtp_header_s                header;
+  struct avtp_discovery_msg_s        adp_msg;
+  uint8_t                            raw[128];
+} avtp_msg_buffer;
+
+/* Masks for avtp_ctl byte */
+const uint8_t AVTP_STREAMID_VALID_MASK = 0x80; /* 8th bit */
+const uint8_t AVTP_VERSION_MASK        = 0x70; /* bits 7..5 */
+const uint8_t AVTP_MSGTYPE_MASK        = 0x0F; /* bits 4..0 */
 
 static struct avtp_state_s *s_state;
 
@@ -57,21 +104,12 @@ static int avtp_init_state(struct avtp_state_s *state, const char *interface)
     return ESP_FAIL;
   }
 
-  //  // Enable reception of all multicast packets
-  //  bool enable_multicast = true;
-  //  esp_err_t err = esp_eth_ioctl(eth_handle, ETH_CMD_S_ALL_MULTICAST, &enable_multicast);
-  //  if (err != ESP_OK)
-  //  {
-  //    ESP_LOGE(TAG, "failed to enable multicast reception: %s", esp_err_to_name(err));
-  //    return ESP_FAIL;
-  //  }
-
-  // Enable reception of specific multicast MAC address used by AVTP
-  uint8_t multicast_mac[6] = {0x91, 0xe0, 0xf0, 0x01, 0x00, 0x00};
-  esp_err_t err = esp_eth_ioctl(eth_handle, ETH_CMD_ADD_MAC_FILTER, multicast_mac);
+  // Enable reception of all multicast packets
+  bool enable_multicast = true;
+  esp_err_t err = esp_eth_ioctl(eth_handle, ETH_CMD_S_ALL_MULTICAST, &enable_multicast);
   if (err != ESP_OK)
   {
-    ESP_LOGE(TAG, "failed to add multicast MAC filter: %s", esp_err_to_name(err));
+    ESP_LOGE(TAG, "failed to enable multicast reception: %s", esp_err_to_name(err));
     return ESP_FAIL;
   }
 
@@ -79,10 +117,28 @@ static int avtp_init_state(struct avtp_state_s *state, const char *interface)
   return ESP_OK;
 }
 
+int adp_net_rx(struct avtp_discovery_msg_s *msg, ssize_t len)
+{
+  uint8_t msg_type = msg->control & AVTP_MSGTYPE_MASK; /* lower 4 bits of 15th byte */
+  switch (msg_type)
+  {
+    case 0x0:
+      ESP_LOGI(TAG, "Entity Available Message", msg_type);
+      ESP_LOGI(TAG, "Talker Stream Sources: %02X%02X", msg->talker_stream_sources[0], msg->talker_stream_sources[1]);
+      break;
+    default:
+      ESP_LOGW(TAG, "Unknown ADP message type: 0x%02X", msg_type);
+      break;
+  }
+
+  return ESP_OK;
+}
+
+
 static void avtp_listener_task(void *arg)
 {
   const char *interface = "ETH_0";
-  uint8_t buf[1600];
+  avtp_msg_buffer buf;
 
   struct avtp_state_s* state = calloc(1, sizeof(struct avtp_state_s));
 
@@ -102,12 +158,23 @@ static void avtp_listener_task(void *arg)
 
   while(!state->stop)
   {
-    const ssize_t len = read(state->socket, buf, sizeof(buf));
+    const ssize_t len = read(state->socket, &buf, sizeof(buf));
     if (len > 0)
     {
-      uint16_t ethertype = (buf[12] << 8) | buf[13];
-      // Print ethertype as hex
-      ESP_LOGI(TAG, "AVTP Packet received, Ethertype: 0x%04X, Length: %d bytes", ethertype, len);
+
+      switch (buf.adp_msg.subtype)
+      {
+      case AVTP_SUBTYPE_ADP:
+        ESP_LOGI(TAG, "AVDECC Discovery Protocol received");
+        adp_net_rx(&buf.adp_msg, len);
+        break;
+      case AVTP_SUBTYPE_MAAP:
+        ESP_LOGI(TAG, "MAAP Announce received");
+        break;
+      default:
+        ESP_LOGW(TAG, "Unknown AVTP subtype received: 0x%02X", buf.adp_msg.subtype);
+        break;
+      }
     }
   }
   free(state);
