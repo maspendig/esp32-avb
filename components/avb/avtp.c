@@ -33,6 +33,7 @@ struct avtp_state_s
   int socket;
   uint8_t intf_hw_addr[6];
   struct timespec last_transmitted_adp;
+  uint32_t adp_available_index; // renamed from adp_availabe_index[4] for easier increment
 };
 
 struct avtp_header_s
@@ -155,9 +156,6 @@ int adp_net_rx(struct avtp_discovery_msg_s *msg, ssize_t len)
     case ADP_MSG_TYPE_ENTITY_AVAILABLE:
       ESP_LOGI(TAG, "Entity Available Message");
       ESP_LOGI(TAG, "Talker Stream Sources: %02X%02X", msg->talker_stream_sources[0], msg->talker_stream_sources[1]);
-      ESP_LOGI(TAG, "Valid Time: %u, Control Data Length: %u",
-               msg->control_data_length_field.valid_time,
-               msg->control_data_length_field.control_data_length);
       break;
     case ADP_MSG_TYPE_ENTITY_DEPARTING:
       ESP_LOGI(TAG, "Entity Departing Message", msg_type);
@@ -215,8 +213,6 @@ void send_adp_entity_available()
   uint16_t payload_len = sizeof(msg) - sizeof(msg.header);
   msg.control_data_length_field.control_data_length = payload_len;
   msg.control_data_length_field.valid_time = 10;  /* Set valid_time as needed */
-
-  /* Convert to network byte order */
   msg.control_data_length_field.raw_u16 = htons(msg.control_data_length_field.raw_u16);
 
   memcpy(msg.entity_capabilities, (uint8_t[]){0x00, 0x00, 0xC5, 0x08}, 4); // Example capabilities
@@ -226,19 +222,14 @@ void send_adp_entity_available()
   msg.listener_stream_sinks[1] = 0x04;
   msg.listener_capabilities[0] = 0x40;
   msg.listener_capabilities[1] = 0x01;
-  /* Example: set available_index = 1 */
-  msg.available_index[0] = 0x00;
-  msg.available_index[1] = 0x00;
-  msg.available_index[2] = 0x00;
-  msg.available_index[3] = 0x01;
-  msg.association_id[0] = 0x00;
-  msg.association_id[1] = 0x00;
-  msg.association_id[2] = 0x00;
-  msg.association_id[3] = 0x00;
-  msg.association_id[4] = 0x00;
-  msg.association_id[5] = 0x00;
-  msg.association_id[6] = 0x00;
-  msg.association_id[7] = 0x00;
+
+  /* Use incremented available_index from state (big-endian) */
+  msg.available_index[0] = (s_state->adp_available_index >> 24) & 0xFF;
+  msg.available_index[1] = (s_state->adp_available_index >> 16) & 0xFF;
+  msg.available_index[2] = (s_state->adp_available_index >> 8) & 0xFF;
+  msg.available_index[3] = s_state->adp_available_index++ & 0xFF;
+
+  memset(msg.association_id, 0x00, sizeof(msg.association_id));
   memcpy(msg.gptp_grandmaster_id, (uint8_t[]){0x00,0x01,0xf2,0xff,0xfe, 0x00, 0xae, 0x35}, 8); // Example grandmaster ID
 
   ssize_t written = write(s_state->socket, &msg, 82);
