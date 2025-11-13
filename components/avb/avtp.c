@@ -11,6 +11,7 @@
 #include "esp_eth_spec.h"
 #include "pthread.h"
 #include "sys/ioctl.h"
+#include <arpa/inet.h>
 
 #define ETH_TYPE_AVTP 0x22F0
 
@@ -52,7 +53,20 @@ struct avtp_discovery_msg_s{
    * use AVTP_STREAMID_VALID_MASK, AVTP_VERSION_MASK, AVTP_MSGTYPE_MASK to extract values
    */
   uint8_t control;
-  uint8_t control_data_length[2];
+  /** Control data length field containing valid_time (5 bits) and control_data_length (11 bits) */
+  union {
+    struct {
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+      uint16_t control_data_length : 11;  /* 11 bits for control data length */
+      uint16_t valid_time : 5;            /* 5 bits for valid time */
+#else
+      uint16_t valid_time : 5;            /* 5 bits for valid time */
+      uint16_t control_data_length : 11;  /* 11 bits for control data length */
+#endif
+    } __attribute__((packed));
+    uint8_t raw[2];                       /* Raw bytes for network transmission */
+    uint16_t raw_u16;                     /* Raw 16-bit value for easy manipulation */
+  } control_data_length_field;
   uint8_t entity_id[8];
   uint8_t entity_model_id[8];
   uint8_t entity_capabilities[4];
@@ -132,12 +146,18 @@ static int avtp_init_state(struct avtp_state_s *state, const char *interface)
 
 int adp_net_rx(struct avtp_discovery_msg_s *msg, ssize_t len)
 {
+  /* Convert control_data_length_field from network byte order for parsing */
+  msg->control_data_length_field.raw_u16 = ntohs(msg->control_data_length_field.raw_u16);
+
   uint8_t msg_type = msg->control & AVTP_MSGTYPE_MASK; /* lower 4 bits of 15th byte */
   switch (msg_type)
   {
     case ADP_MSG_TYPE_ENTITY_AVAILABLE:
-      ESP_LOGI(TAG, "Entity Available Message", msg_type);
+      ESP_LOGI(TAG, "Entity Available Message");
       ESP_LOGI(TAG, "Talker Stream Sources: %02X%02X", msg->talker_stream_sources[0], msg->talker_stream_sources[1]);
+      ESP_LOGI(TAG, "Valid Time: %u, Control Data Length: %u",
+               msg->control_data_length_field.valid_time,
+               msg->control_data_length_field.control_data_length);
       break;
     case ADP_MSG_TYPE_ENTITY_DEPARTING:
       ESP_LOGI(TAG, "Entity Departing Message", msg_type);
@@ -193,8 +213,11 @@ void send_adp_entity_available()
 
   /* control_data_length: length of ADP payload after header (network byte order) */
   uint16_t payload_len = sizeof(msg) - sizeof(msg.header);
-  msg.control_data_length[0] = (payload_len >> 8) & 0xFF;
-  msg.control_data_length[1] = payload_len & 0xFF;
+  msg.control_data_length_field.control_data_length = payload_len;
+  msg.control_data_length_field.valid_time = 10;  /* Set valid_time as needed */
+
+  /* Convert to network byte order */
+  msg.control_data_length_field.raw_u16 = htons(msg.control_data_length_field.raw_u16);
 
   memcpy(msg.entity_capabilities, (uint8_t[]){0x00, 0x00, 0xC5, 0x08}, 4); // Example capabilities
 

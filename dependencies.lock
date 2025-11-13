@@ -11,143 +11,12 @@ dependencies:
       path: /home/max/Projects/esp/esp-idf/examples/ethernet/ptp/components/esp_eth_time
       type: local
     version: '*'
-  espressif/ch390:
-    component_hash: 5a23cac6e023067251943f7222fe94585a34579181a79a949b634946e2e6b981
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.1'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    version: 0.3.0
-  espressif/dm9051:
-    component_hash: 24a150037e2bc4fa646e1ad51629588e52d5db047d5682b659595d9a5f8d17fe
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=6.0'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    version: 1.0.0
-  espressif/dp83848:
-    component_hash: 03cf03af6191c4789fca3eeef1a02aff78d896fecf138f45f9c2ec54863adc7e
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=6.0'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    targets:
-    - esp32
-    - esp32p4
-    version: 1.0.0
-  espressif/enc28j60:
-    component_hash: a20c685004ea37f9b2fe4ba6d5d0ba948f9ec3a46a4dab0d471b151575a90e27
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=4.4'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    version: 1.0.1
   espressif/ethernet_init:
-    component_hash: 038de7a25c8d800e0802abe48d2a72ba74cbf3b9310b56369b51264a6a1c70c1
-    dependencies:
-    - name: espressif/ch390
-      registry_url: https://components.espressif.com
-      require: private
-      version: '*'
-    - matches:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      name: espressif/dm9051
-      registry_url: https://components.espressif.com
-      require: private
-      version: '*'
-    - matches:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      name: espressif/dp83848
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: target in [esp32, esp32p4]
-      version: '*'
-    - name: espressif/enc28j60
-      registry_url: https://components.espressif.com
-      require: private
-      version: '*'
-    - matches:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      name: espressif/ip101
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: target in [esp32, esp32p4]
-      version: '*'
-    - matches:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      name: espressif/ksz80xx
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: target in [esp32, esp32p4]
-      version: '*'
-    - matches:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      name: espressif/ksz8851snl
-      registry_url: https://components.espressif.com
-      require: private
-      version: '*'
-    - name: espressif/lan865x
-      registry_url: https://components.espressif.com
-      require: private
-      version: ^0.1.1
-    - name: espressif/lan867x
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: target in [esp32, esp32p4]
-      version: '>=2.0.0'
-    - matches:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      name: espressif/lan87xx
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: target in [esp32, esp32p4]
-      version: '*'
-    - matches:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      name: espressif/rtl8201
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: target in [esp32, esp32p4]
-      version: '*'
-    - matches:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      name: espressif/w5500
-      registry_url: https://components.espressif.com
-      require: private
-      version: '*'
-    - name: idf
-      require: private
-      version: '>=5.4'
+    dependencies: []
     source:
-      registry_url: https://components.espressif.com/
-      type: service
-    version: 1.0.0
+      path: /home/max/Projects/fh/thesis/esp32-avb/managed_components/espressif__ethernet_init
+      type: local
+    version: 1.2.0
   espressif/ip101:
     component_hash: e3be457b9ae50d7b348e5418ef1a334b3f943a1f0df16a4d42767b89ae15d533
     dependencies:
@@ -155,111 +24,11 @@ dependencies:
       require: private
       version: '>=6.0'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     targets:
     - esp32
     - esp32p4
-    version: 1.0.0
-  espressif/ksz80xx:
-    component_hash: 7745d1171c4824207c57ba6075f958293d0e1352d51db3e7bd61fdc0106a5882
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=6.0'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    targets:
-    - esp32
-    - esp32p4
-    version: 1.0.0
-  espressif/ksz8851snl:
-    component_hash: c925da1ac4bc2750c7632c5faa93f44f37ec822d2a16b75a96d60bef2245fc24
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=6.0'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    version: 1.0.0
-  espressif/lan865x:
-    component_hash: 2a27887016922bea266f6052bd811b720b30e516188863051971cbc809710b4e
-    dependencies:
-    - name: espressif/lan86xx_common
-      registry_url: https://components.espressif.com
-      require: private
-      version: '*'
-    - name: idf
-      require: private
-      version: '>=5.2'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    version: 0.1.2
-  espressif/lan867x:
-    component_hash: 651c9d6e3d96acb08bd5066144b12a12e94df0a6241127a0538d8680689de2c4
-    dependencies:
-    - name: espressif/lan86xx_common
-      registry_url: https://components.espressif.com
-      require: private
-      version: '*'
-    - name: idf
-      require: private
-      version: '>=5.3'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    targets:
-    - esp32
-    - esp32p4
-    version: 2.0.0
-  espressif/lan86xx_common:
-    component_hash: 6dcb1be9f43ae940979bd628fa5bee278949b66c545e1fe2321e486102e81026
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.2'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    version: 1.0.0
-  espressif/lan87xx:
-    component_hash: e532dd62590996a64fe76c7906821c6b0816be2c8e31196284f4442027703243
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=6.0'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    targets:
-    - esp32
-    - esp32p4
-    version: 1.0.0
-  espressif/rtl8201:
-    component_hash: d9d166a86adcac058297debd9162b0714b4ffe9fb998fad8e0df7dc23efefc20
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=6.0'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    targets:
-    - esp32
-    - esp32p4
-    version: 1.0.1
-  espressif/w5500:
-    component_hash: 0bfa69f4ebd57ec8554ee28f31f777f06df549dcb69f48121845402d447d077a
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=6.0'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
     version: 1.0.0
   idf:
     source:
@@ -283,8 +52,10 @@ direct_dependencies:
 - avb
 - esp_eth_time
 - espressif/ethernet_init
+- espressif/ip101
+- idf
 - mrpd
 - ptpd
-manifest_hash: 8588bfe258c27c64d5df4e7f8d244ab5c2bb4668b21969b7407840d8ea776e71
+manifest_hash: f4f18cfe43a926def9e2991efb02f9b491aca9104e44305c9e3d069621ba9469
 target: esp32p4
 version: 2.0.0
