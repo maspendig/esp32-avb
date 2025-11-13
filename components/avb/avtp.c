@@ -14,12 +14,15 @@
 
 #define ETH_TYPE_AVTP 0x22F0
 
-#define AVTP_SUBTYPE_ADP 0xFA
+#define AVTP_SUBTYPE_ADP  0xFA
+#define AVTP_SUBTYPE_AECP 0xFB
 #define AVTP_SUBTYPE_MAAP 0xFE
 
 #define ADP_MSG_TYPE_ENTITY_AVAILABLE 0x0
 #define ADP_MSG_TYPE_ENTITY_DEPARTING 0x1
 #define ADP_MSG_TYPE_ENTITY_DISCOVER  0x2
+
+#define CONFIG_ADP_SEND_INTERVAL_MSEC 5800
 
 const char *TAG = "avtp";
 
@@ -27,6 +30,8 @@ struct avtp_state_s
 {
   bool stop;
   int socket;
+  uint8_t intf_hw_addr[6];
+  struct timespec last_transmitted_adp;
 };
 
 struct avtp_header_s
@@ -100,6 +105,7 @@ static int avtp_init_state(struct avtp_state_s *state, const char *interface)
     return ESP_FAIL;
   }
 
+
   // Get the ethernet handle to configure multicast reception
   esp_eth_handle_t eth_handle;
   if (ioctl(state->socket, L2TAP_G_DEVICE_DRV_HNDL, &eth_handle) < 0)
@@ -107,6 +113,9 @@ static int avtp_init_state(struct avtp_state_s *state, const char *interface)
     ESP_LOGE(TAG, "failed to get ethernet handle: %d\n", errno);
     return ESP_FAIL;
   }
+
+  // get HW address
+  esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, &state->intf_hw_addr);
 
   // Enable reception of all multicast packets
   bool enable_multicast = true;
@@ -144,6 +153,83 @@ int adp_net_rx(struct avtp_discovery_msg_s *msg, ssize_t len)
   return ESP_OK;
 }
 
+uint64_t mac_to_entity_id(uint64_t mac)
+{
+  return ((mac & 0xffffff000000) << 16) | (0xfffe000000) | (mac & 0xffffff);
+}
+
+void send_adp_entity_available()
+{
+  if (s_state == NULL || s_state->socket < 0) {
+    ESP_LOGE(TAG, "Socket not ready to send ADP");
+    return;
+  }
+
+  struct avtp_discovery_msg_s msg = {0};
+
+  memcpy(&msg.header.src_mac, s_state->intf_hw_addr, ETH_ADDR_LEN);
+
+  uint8_t dst_mac[6] = {0x91, 0xE0, 0xF0, 0x01, 0x00, 0x00}; // ADP multicast MAC
+  memcpy(msg.header.dst_mac, dst_mac, sizeof(dst_mac));
+
+  auto entity_id = mac_to_entity_id(
+      ((uint64_t)s_state->intf_hw_addr[0] << 40) |
+      ((uint64_t)s_state->intf_hw_addr[1] << 32) |
+      ((uint64_t)s_state->intf_hw_addr[2] << 24) |
+      ((uint64_t)s_state->intf_hw_addr[3] << 16) |
+      ((uint64_t)s_state->intf_hw_addr[4] << 8)  |
+      ((uint64_t)s_state->intf_hw_addr[5])
+  );
+  msg.entity_model_id[7] = 0x01; // Example model ID
+  memcpy(msg.entity_id, &entity_id, sizeof(msg.entity_id));
+
+  /* Ethernet type (big-endian) */
+  msg.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  msg.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+
+  msg.subtype = AVTP_SUBTYPE_ADP;
+  /* Control: set ADP Entity Available message type (lower 4 bits) */
+  msg.control = (ADP_MSG_TYPE_ENTITY_AVAILABLE & AVTP_MSGTYPE_MASK);
+
+  /* control_data_length: length of ADP payload after header (network byte order) */
+  uint16_t payload_len = sizeof(msg) - sizeof(msg.header);
+  msg.control_data_length[0] = (payload_len >> 8) & 0xFF;
+  msg.control_data_length[1] = payload_len & 0xFF;
+
+  memcpy(msg.entity_capabilities, (uint8_t[]){0x00, 0x00, 0xC5, 0x08}, 4); // Example capabilities
+
+  /* Set 4 listener stream sinks (big-endian 0x0004) */
+  msg.listener_stream_sinks[0] = 0x00;
+  msg.listener_stream_sinks[1] = 0x04;
+  msg.listener_capabilities[0] = 0x40;
+  msg.listener_capabilities[1] = 0x01;
+  /* Example: set available_index = 1 */
+  msg.available_index[0] = 0x00;
+  msg.available_index[1] = 0x00;
+  msg.available_index[2] = 0x00;
+  msg.available_index[3] = 0x01;
+  msg.association_id[0] = 0x00;
+  msg.association_id[1] = 0x00;
+  msg.association_id[2] = 0x00;
+  msg.association_id[3] = 0x00;
+  msg.association_id[4] = 0x00;
+  msg.association_id[5] = 0x00;
+  msg.association_id[6] = 0x00;
+  msg.association_id[7] = 0x00;
+  memcpy(msg.gptp_grandmaster_id, (uint8_t[]){0x00,0x01,0xf2,0xff,0xfe, 0x00, 0xae, 0x35}, 8); // Example grandmaster ID
+
+  ssize_t written = write(s_state->socket, &msg, 82);
+  if (written < 0) {
+    ESP_LOGE(TAG, "Failed to send ADP entity available: %d", errno);
+  } else {
+    ESP_LOGI(TAG, "Sent ADP Entity Available (%zd bytes)", written);
+  }
+}
+
+static int64_t timespec_to_ms(const struct timespec *ts)
+{
+  return ts->tv_sec * 1000  + (ts->tv_nsec / 1000000ll);
+}
 
 static void avtp_listener_task(void *arg)
 {
@@ -171,12 +257,14 @@ static void avtp_listener_task(void *arg)
     const ssize_t len = read(state->socket, &buf, sizeof(buf));
     if (len > 0)
     {
-
       switch (buf.adp_msg.subtype)
       {
       case AVTP_SUBTYPE_ADP:
         ESP_LOGI(TAG, "AVDECC Discovery Protocol received");
         adp_net_rx(&buf.adp_msg, len);
+        break;
+      case AVTP_SUBTYPE_AECP:
+        ESP_LOGI(TAG, "AVDECC Enumeration an Control Protocol received");
         break;
       case AVTP_SUBTYPE_MAAP:
         ESP_LOGI(TAG, "MAAP Announce received");
@@ -186,9 +274,22 @@ static void avtp_listener_task(void *arg)
         break;
       }
     }
+    struct timespec time_now;
+    struct timespec delta;
+
+    clock_gettime(CLOCK_MONOTONIC, &time_now);
+    timespecsub(&time_now,
+      &state->last_transmitted_adp, &delta);
+    if (timespec_to_ms(&delta)
+        > CONFIG_ADP_SEND_INTERVAL_MSEC)
+    {
+      state->last_transmitted_adp = time_now;
+      send_adp_entity_available();
+    }
   }
   free(state);
 }
+
 
 int start_avtp_listener(const char *interface)
 {
