@@ -23,6 +23,14 @@
 #define ADP_MSG_TYPE_ENTITY_DEPARTING 0x1
 #define ADP_MSG_TYPE_ENTITY_DISCOVER  0x2
 
+#define AECP_MSG_TYPE_ACM_COMMAND   0x0
+#define AECP_MSG_TYPE_ACM_RESPONSE  0x1
+
+#define ACM_COMMAND_TYPE_READ_DESCRIPTOR 0x0004
+#define ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION 0x0024
+#define ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION 0x0025
+
+
 #define CONFIG_ADP_SEND_INTERVAL_MSEC 5800
 
 const char *TAG = "avtp";
@@ -32,11 +40,12 @@ struct avtp_state_s
   bool stop;
   int socket;
   uint8_t intf_hw_addr[6];
+  uint64_t entity_id;
   struct timespec last_transmitted_adp;
   uint32_t adp_available_index; // renamed from adp_availabe_index[4] for easier increment
 };
 
-struct avtp_header_s
+struct header_s
 {
   uint8_t dst_mac[6];
   uint8_t src_mac[6];
@@ -44,7 +53,7 @@ struct avtp_header_s
 };
 
 struct avtp_discovery_msg_s{
-  struct avtp_header_s header;
+  struct header_s header;
   uint8_t subtype;
   /** AVTP control field containing
    * - Stream ID valid (bit 0)
@@ -81,10 +90,71 @@ struct avtp_discovery_msg_s{
   uint8_t association_id[8];
 };
 
+/* IEEE 1722.1-2021 ENTITY Descriptor (7.2.1) */
+struct atdecc_entity_descriptor_s {
+  uint16_t descriptor_type;              // 0x0000 for ENTITY
+  uint16_t descriptor_index;             // 0x0000 for ENTITY (only one per entity)
+  uint64_t entity_id;                    // Unique identifier for the AVDECC Entity
+  uint64_t entity_model_id;              // Unique identifier for the Entity model
+  uint32_t entity_capabilities;          // Entity capability flags
+  uint16_t talker_stream_sources;        // Number of talker stream sources
+  uint16_t talker_capabilities;          // Talker capability flags
+  uint16_t listener_stream_sinks;        // Number of listener stream sinks
+  uint16_t listener_capabilities;        // Listener capability flags
+  uint32_t controller_capabilities;      // Controller capability flags
+  uint32_t available_index;              // Incremented on ADP available
+  uint64_t association_id;               // Association ID for grouping entities
+  uint8_t entity_name[64];               // UTF-8 entity name
+  uint16_t vendor_name_string;           // Localized string reference
+  uint16_t model_name_string;            // Localized string reference
+  uint8_t firmware_version[64];          // UTF-8 firmware version string
+  uint8_t group_name[64];                // UTF-8 group name string
+  uint8_t serial_number[64];             // UTF-8 serial number string
+  uint16_t configurations_count;         // Number of configuration descriptors
+  uint16_t current_configuration;        // Index of current configuration
+} __attribute__((packed));
+
+struct aecp_data_unit_s {
+  struct header_s header;
+  uint8_t subtype;                      // 1 octet
+
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  uint8_t message_type : 4;             // 4 bits
+  uint8_t version : 3;                  // 3 bits
+  uint8_t h : 1;                        // 1 bit (header specific)
+
+  uint16_t control_data_length : 11;    // 11 bits
+  uint16_t status : 5;                  // 5 bits
+#else
+  uint8_t h : 1;                        // 1 bit (header specific)
+  uint8_t version : 3;                  // 3 bits
+  uint8_t message_type : 4;             // 4 bits
+
+  uint16_t status : 5;                  // 5 bits
+  uint16_t control_data_length : 11;    // 11 bits
+#endif
+
+  uint64_t target_entity_id;            // 64 bits
+  uint64_t controller_entity_id;        // 64 bits
+  uint16_t sequence_id;                 // 16 bits
+  uint16_t command_type;                // 16 bits (ACM command type)
+} __attribute__((packed));
+
+/* AECP READ_DESCRIPTOR Response structure */
+struct aecp_read_descriptor_response_s {
+  struct aecp_data_unit_s aecp_header;
+  uint16_t configuration_index;         // 16 bits
+  uint16_t reserved;                    // 16 bits
+  struct atdecc_entity_descriptor_s descriptor;
+} __attribute__((packed));
+
+
+
 typedef union
 {
-  struct avtp_header_s                header;
+  struct header_s                header;
   struct avtp_discovery_msg_s        adp_msg;
+  struct aecp_data_unit_s        aecp_msg;
   uint8_t                            raw[128];
 } avtp_msg_buffer;
 
@@ -92,6 +162,29 @@ typedef union
 const uint8_t AVTP_STREAMID_VALID_MASK = 0x80; /* 8th bit */
 const uint8_t AVTP_VERSION_MASK        = 0x70; /* bits 7..5 */
 const uint8_t AVTP_MSGTYPE_MASK        = 0x0F; /* bits 4..0 */
+
+/* Define ntohll and htonll if not already defined */
+#ifndef ntohll
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define ntohll(x) ((uint64_t)( \
+    (((uint64_t)(x) & 0x00000000000000ffULL) << 56) | \
+    (((uint64_t)(x) & 0x000000000000ff00ULL) << 40) | \
+    (((uint64_t)(x) & 0x0000000000ff0000ULL) << 24) | \
+    (((uint64_t)(x) & 0x00000000ff000000ULL) << 8)  | \
+    (((uint64_t)(x) & 0x000000ff00000000ULL) >> 8)  | \
+    (((uint64_t)(x) & 0x0000ff0000000000ULL) >> 24) | \
+    (((uint64_t)(x) & 0x00ff000000000000ULL) >> 40) | \
+    (((uint64_t)(x) & 0xff00000000000000ULL) >> 56) ))
+#define htonll(x) ntohll(x)
+#else
+#define ntohll(x) ((uint64_t)(x))
+#define htonll(x) ((uint64_t)(x))
+#endif
+#endif
+
+/* Forward declarations */
+static uint64_t mac_to_entity_id(uint64_t mac);
+static void send_entity_descriptor_response(struct aecp_data_unit_s *request_msg, uint16_t configuration_index);
 
 static struct avtp_state_s *s_state;
 
@@ -132,6 +225,20 @@ static int avtp_init_state(struct avtp_state_s *state, const char *interface)
   // get HW address
   esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, &state->intf_hw_addr);
 
+  // Generate entity_id from MAC address
+  uint64_t mac = ((uint64_t)state->intf_hw_addr[0] << 40) |
+                 ((uint64_t)state->intf_hw_addr[1] << 32) |
+                 ((uint64_t)state->intf_hw_addr[2] << 24) |
+                 ((uint64_t)state->intf_hw_addr[3] << 16) |
+                 ((uint64_t)state->intf_hw_addr[4] << 8)  |
+                 ((uint64_t)state->intf_hw_addr[5]);
+  state->entity_id = mac_to_entity_id(mac);
+
+  ESP_LOGI(TAG, "Entity ID initialized: 0x%016llX (from MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
+           (unsigned long long)state->entity_id,
+           state->intf_hw_addr[0], state->intf_hw_addr[1], state->intf_hw_addr[2],
+           state->intf_hw_addr[3], state->intf_hw_addr[4], state->intf_hw_addr[5]);
+
   // Enable reception of all multicast packets
   bool enable_multicast = true;
   esp_err_t err = esp_eth_ioctl(eth_handle, ETH_CMD_S_ALL_MULTICAST, &enable_multicast);
@@ -171,7 +278,192 @@ int adp_net_rx(struct avtp_discovery_msg_s *msg, ssize_t len)
   return ESP_OK;
 }
 
-uint64_t mac_to_entity_id(uint64_t mac)
+static void send_entity_descriptor_response(struct aecp_data_unit_s *request_msg, uint16_t configuration_index)
+{
+  if (s_state == NULL || s_state->socket < 0) {
+    ESP_LOGE(TAG, "Socket not ready to send AECP response");
+    return;
+  }
+
+  struct aecp_read_descriptor_response_s response = {0};
+
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(response.aecp_header.header.dst_mac, request_msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(response.aecp_header.header.src_mac, s_state->intf_hw_addr, ETH_ADDR_LEN);
+
+  /* Ethernet type (big-endian) */
+  response.aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  response.aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+
+  /* AECP header fields */
+  response.aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  response.aecp_header.message_type = AECP_MSG_TYPE_ACM_RESPONSE;
+  response.aecp_header.version = 0;
+  response.aecp_header.h = 0;
+  response.aecp_header.status = 0; // SUCCESS
+
+  /* Calculate control_data_length: everything after the AECP common header */
+  uint16_t control_data_length = sizeof(response) - sizeof(struct header_s) - 2; // header + subtype + control fields
+  response.aecp_header.control_data_length = control_data_length;
+
+  /* Swap entity IDs - we become the target, controller becomes the controller */
+  response.aecp_header.target_entity_id = request_msg->controller_entity_id;
+  response.aecp_header.controller_entity_id = request_msg->target_entity_id;
+  response.aecp_header.sequence_id = request_msg->sequence_id; // Echo sequence ID
+  response.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
+
+  /* Response payload fields */
+  response.configuration_index = htons(configuration_index);
+  response.reserved = 0;
+
+  /* Fill ENTITY descriptor */
+  response.descriptor.descriptor_type = htons(0x0000); // ENTITY
+  response.descriptor.descriptor_index = htons(0x0000);
+  response.descriptor.entity_id = htonll(s_state->entity_id);
+  response.descriptor.entity_model_id = htonll(0x0000000000000001ULL); // Example model ID
+  response.descriptor.entity_capabilities = htonl(0x0000C508); // Example capabilities
+  response.descriptor.talker_stream_sources = htons(0);
+  response.descriptor.talker_capabilities = htons(0);
+  response.descriptor.listener_stream_sinks = htons(4);
+  response.descriptor.listener_capabilities = htons(0x4001);
+  response.descriptor.controller_capabilities = htonl(0);
+  response.descriptor.available_index = htonl(s_state->adp_available_index);
+  response.descriptor.association_id = htonll(0);
+
+  /* Set entity name */
+  const char *entity_name = "ESP32-AVB Entity";
+  strncpy((char *)response.descriptor.entity_name, entity_name, sizeof(response.descriptor.entity_name));
+
+  response.descriptor.vendor_name_string = htons(0);
+  response.descriptor.model_name_string = htons(0);
+
+  /* Set firmware version */
+  const char *fw_version = "v1.0.0";
+  strncpy((char *)response.descriptor.firmware_version, fw_version, sizeof(response.descriptor.firmware_version));
+
+  /* Set group name */
+  const char *group_name = "ESP32-AVB";
+  strncpy((char *)response.descriptor.group_name, group_name, sizeof(response.descriptor.group_name));
+
+  /* Set serial number */
+  char serial[65];
+  snprintf(serial, sizeof(serial), "%02X%02X%02X%02X%02X%02X",
+           s_state->intf_hw_addr[0], s_state->intf_hw_addr[1], s_state->intf_hw_addr[2],
+           s_state->intf_hw_addr[3], s_state->intf_hw_addr[4], s_state->intf_hw_addr[5]);
+  strncpy((char *)response.descriptor.serial_number, serial, sizeof(response.descriptor.serial_number));
+
+  response.descriptor.configurations_count = htons(1);
+  response.descriptor.current_configuration = htons(0);
+
+  /* Send the response */
+  ssize_t written = write(s_state->socket, &response, sizeof(response));
+  if (written < 0) {
+    ESP_LOGE(TAG, "Failed to send ENTITY descriptor response: %d", errno);
+  } else {
+    ESP_LOGI(TAG, "Sent ENTITY descriptor response (%zd bytes)", written);
+  }
+}
+
+int aecp_acm_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
+{
+  if (msg == NULL || len < sizeof(struct aecp_data_unit_s))
+  {
+    ESP_LOGE(TAG, "Invalid AECP ACM command message or length");
+    return ESP_FAIL;
+  }
+
+  /* Convert command_type from network byte order to host byte order */
+  uint16_t command_type = ntohs(msg->command_type);
+
+  /* Check if the message is targeted to this entity */
+  uint64_t target_entity_id = ntohll(msg->target_entity_id);
+  if (target_entity_id != s_state->entity_id)
+  {
+    ESP_LOGW(TAG, "AECP message not for this entity (target: 0x%016llX, our: 0x%016llX)",
+             (unsigned long long)target_entity_id, (unsigned long long)s_state->entity_id);
+    return ESP_OK;
+  }
+
+  uint8_t *payload = (uint8_t *)msg + sizeof(struct aecp_data_unit_s);
+  switch (command_type)
+  {
+  case ACM_COMMAND_TYPE_READ_DESCRIPTOR:
+    {
+      uint16_t configuration_index = ntohs(*(uint16_t *)(payload + 0));
+      // uint16_t reserved = ntohs(*(uint16_t *)(payload + 2));
+      uint16_t descriptor_type = ntohs(*(uint16_t *)(payload + 4));
+      uint16_t descriptor_index = ntohs(*(uint16_t *)(payload + 6));
+
+      switch (descriptor_type)
+      {
+      case 0x0000: // ENTITY Descriptor
+        ESP_LOGI(TAG, "AECP Read ENTITY Descriptor Request (Config Index: %d, Descriptor Index: %d)",
+                 configuration_index, descriptor_index);
+        send_entity_descriptor_response(msg, configuration_index);
+        break;
+      default:
+        ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", descriptor_type);
+        break;
+      }
+    }
+    break;
+    case ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION:
+    {
+      ESP_LOGI(TAG, "AECP Register Unsolicited Notification Command");
+
+      /* Check if message has payload (flags field) */
+      ssize_t payload_offset = sizeof(struct aecp_data_unit_s);
+      bool time_limited = 0;
+
+      if (len > payload_offset) {
+        /* Payload exists, read flags and extract time_limited bit */
+        uint32_t flags = ntohl(*(uint32_t *)(payload + 0));
+        time_limited = flags & 0x1; // Least significant bit
+        ESP_LOGI(TAG, "  Flags: 0x%08X, Time Limited: %d", flags, time_limited);
+      } else {
+        /* No payload, time_limited defaults to 0 */
+        ESP_LOGI(TAG, "  No payload, Time Limited: 0");
+      }
+
+
+    }
+    break;
+    case ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION:
+      ESP_LOGI(TAG, "AECP Register Unsolicited Notification Command");
+    break;
+  default:
+    ESP_LOGW(TAG, "Unhandled AECP ACM command type: 0x%04X", command_type);
+  }
+
+  return ESP_OK;
+}
+
+int aecp_net_rx(struct aecp_data_unit_s *msg, ssize_t len)
+{
+  if (msg == NULL || len < sizeof(struct aecp_data_unit_s))
+  {
+    ESP_LOGE(TAG, "Invalid AECP message or length");
+    return ESP_FAIL;
+  }
+
+  switch (msg->message_type)
+  {
+    case AECP_MSG_TYPE_ACM_COMMAND:
+      ESP_LOGI(TAG, "AECP ACM Command Message Received");
+      aecp_acm_command_handle(msg, len);
+      break;
+    case AECP_MSG_TYPE_ACM_RESPONSE:
+      ESP_LOGI(TAG, "AECP ACM Response Message Received");
+      break;
+    default:
+      ESP_LOGW(TAG, "Unknown AECP message type: 0x%X", msg->message_type);
+      break;
+  }
+
+  return ESP_OK;
+}
+
+static uint64_t mac_to_entity_id(uint64_t mac)
 {
   return ((mac & 0xffffff000000) << 16) | (0xfffe000000) | (mac & 0xffffff);
 }
@@ -190,16 +482,10 @@ void send_adp_entity_available()
   uint8_t dst_mac[6] = {0x91, 0xE0, 0xF0, 0x01, 0x00, 0x00}; // ADP multicast MAC
   memcpy(msg.header.dst_mac, dst_mac, sizeof(dst_mac));
 
-  auto entity_id = mac_to_entity_id(
-      ((uint64_t)s_state->intf_hw_addr[0] << 40) |
-      ((uint64_t)s_state->intf_hw_addr[1] << 32) |
-      ((uint64_t)s_state->intf_hw_addr[2] << 24) |
-      ((uint64_t)s_state->intf_hw_addr[3] << 16) |
-      ((uint64_t)s_state->intf_hw_addr[4] << 8)  |
-      ((uint64_t)s_state->intf_hw_addr[5])
-  );
+  /* Use entity_id from state and convert to network byte order */
+  uint64_t entity_id_net = htonll(s_state->entity_id);
   msg.entity_model_id[7] = 0x01; // Example model ID
-  memcpy(msg.entity_id, &entity_id, sizeof(msg.entity_id));
+  memcpy(msg.entity_id, &entity_id_net, sizeof(msg.entity_id));
 
   /* Ethernet type (big-endian) */
   msg.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
@@ -271,6 +557,7 @@ static void avtp_listener_task(void *arg)
     const ssize_t len = read(state->socket, &buf, sizeof(buf));
     if (len > 0)
     {
+      // TODO implement discovery state machine like in IEEE 1722-2022 p. 60
       switch (buf.adp_msg.subtype)
       {
       case AVTP_SUBTYPE_ADP:
@@ -279,6 +566,7 @@ static void avtp_listener_task(void *arg)
         break;
       case AVTP_SUBTYPE_AECP:
         ESP_LOGI(TAG, "AVDECC Enumeration an Control Protocol received");
+        aecp_net_rx(&buf.aecp_msg, len);
         break;
       case AVTP_SUBTYPE_MAAP:
         ESP_LOGI(TAG, "MAAP Announce received");
@@ -297,6 +585,7 @@ static void avtp_listener_task(void *arg)
     if (timespec_to_ms(&delta)
         > CONFIG_ADP_SEND_INTERVAL_MSEC)
     {
+      // TODO refactor using randomDeviceDelay p 56. of IEEE 1722-2022
       state->last_transmitted_adp = time_now;
       send_adp_entity_available();
     }
