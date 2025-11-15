@@ -12,6 +12,7 @@
 #include "pthread.h"
 #include "sys/ioctl.h"
 #include <arpa/inet.h>
+#include <time.h>
 
 #define ETH_TYPE_AVTP 0x22F0
 
@@ -29,11 +30,28 @@
 #define ACM_COMMAND_TYPE_READ_DESCRIPTOR 0x0004
 #define ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION 0x0024
 #define ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION 0x0025
+#define ACM_COMMAND_TYPE_IDENTIFY_NOTIFICATION 0x0026
 
 
 #define CONFIG_ADP_SEND_INTERVAL_MSEC 5800
 
 const char *TAG = "avtp";
+
+#define MAX_ADP_ENTITIES 32
+
+/* Structure to hold discovered ADP entity information */
+struct adp_entity_entry_s {
+  uint64_t entity_id;
+  uint8_t mac[6];
+  uint16_t talker_stream_sources;
+  uint16_t talker_capabilities;
+  uint16_t listener_stream_sinks;
+  uint16_t listener_capabilities;
+  uint32_t controller_capabilities;
+  uint32_t available_index;
+  time_t valid_until;  // epoch seconds until this entry is valid
+  bool in_use;
+};
 
 struct avtp_state_s
 {
@@ -41,8 +59,10 @@ struct avtp_state_s
   int socket;
   uint8_t intf_hw_addr[6];
   uint64_t entity_id;
+  uint64_t entity_model_id;
   struct timespec last_transmitted_adp;
   uint32_t adp_available_index; // renamed from adp_availabe_index[4] for easier increment
+  struct adp_entity_entry_s adp_entities[MAX_ADP_ENTITIES];
 };
 
 struct header_s
@@ -185,6 +205,8 @@ const uint8_t AVTP_MSGTYPE_MASK        = 0x0F; /* bits 4..0 */
 /* Forward declarations */
 static uint64_t mac_to_entity_id(uint64_t mac);
 static void send_entity_descriptor_response(struct aecp_data_unit_s *request_msg, uint16_t configuration_index);
+static void adp_upsert_entity(struct avtp_discovery_msg_s *msg);
+static void adp_remove_entity(struct avtp_discovery_msg_s *msg);
 
 static struct avtp_state_s *s_state;
 
@@ -233,9 +255,11 @@ static int avtp_init_state(struct avtp_state_s *state, const char *interface)
                  ((uint64_t)state->intf_hw_addr[4] << 8)  |
                  ((uint64_t)state->intf_hw_addr[5]);
   state->entity_id = mac_to_entity_id(mac);
+  state->entity_model_id = 0x0000000000000001ULL;
 
-  ESP_LOGI(TAG, "Entity ID initialized: 0x%016llX (from MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
+  ESP_LOGI(TAG, "Entity ID initialized: 0x%016llX, Model ID: 0x%016llX (from MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
            (unsigned long long)state->entity_id,
+           (unsigned long long)state->entity_model_id,
            state->intf_hw_addr[0], state->intf_hw_addr[1], state->intf_hw_addr[2],
            state->intf_hw_addr[3], state->intf_hw_addr[4], state->intf_hw_addr[5]);
 
@@ -261,11 +285,12 @@ int adp_net_rx(struct avtp_discovery_msg_s *msg, ssize_t len)
   switch (msg_type)
   {
     case ADP_MSG_TYPE_ENTITY_AVAILABLE:
-      ESP_LOGI(TAG, "Entity Available Message");
-      ESP_LOGI(TAG, "Talker Stream Sources: %02X%02X", msg->talker_stream_sources[0], msg->talker_stream_sources[1]);
+      ESP_LOGI(TAG, "ADP Entity Available Message received");
+      adp_upsert_entity(msg);
       break;
     case ADP_MSG_TYPE_ENTITY_DEPARTING:
-      ESP_LOGI(TAG, "Entity Departing Message", msg_type);
+      ESP_LOGI(TAG, "ADP Entity Departing Message received");
+      adp_remove_entity(msg);
       break;
     case ADP_MSG_TYPE_ENTITY_DISCOVER:
       ESP_LOGI(TAG, "Entity Discover Message", msg_type);
@@ -313,14 +338,14 @@ static void send_entity_descriptor_response(struct aecp_data_unit_s *request_msg
   response.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
 
   /* Response payload fields */
-  response.configuration_index = htons(configuration_index);
+  response.configuration_index = 0;
   response.reserved = 0;
 
   /* Fill ENTITY descriptor */
   response.descriptor.descriptor_type = htons(0x0000); // ENTITY
   response.descriptor.descriptor_index = htons(0x0000);
   response.descriptor.entity_id = htonll(s_state->entity_id);
-  response.descriptor.entity_model_id = htonll(0x0000000000000001ULL); // Example model ID
+  response.descriptor.entity_model_id = htonll(s_state->entity_model_id);
   response.descriptor.entity_capabilities = htonl(0x0000C508); // Example capabilities
   response.descriptor.talker_stream_sources = htons(0);
   response.descriptor.talker_capabilities = htons(0);
@@ -338,7 +363,7 @@ static void send_entity_descriptor_response(struct aecp_data_unit_s *request_msg
   response.descriptor.model_name_string = htons(0);
 
   /* Set firmware version */
-  const char *fw_version = "v1.0.0";
+  const char *fw_version = "0.0.1";
   strncpy((char *)response.descriptor.firmware_version, fw_version, sizeof(response.descriptor.firmware_version));
 
   /* Set group name */
@@ -397,7 +422,7 @@ int aecp_acm_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
       switch (descriptor_type)
       {
       case 0x0000: // ENTITY Descriptor
-        ESP_LOGI(TAG, "AECP Read ENTITY Descriptor Request (Config Index: %d, Descriptor Index: %d)",
+        ESP_LOGI(TAG, "AECP Read ENTITY Descriptor Request from (Config Index: %d, Descriptor Index: %d)",
                  configuration_index, descriptor_index);
         send_entity_descriptor_response(msg, configuration_index);
         break;
@@ -424,8 +449,6 @@ int aecp_acm_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
         /* No payload, time_limited defaults to 0 */
         ESP_LOGI(TAG, "  No payload, Time Limited: 0");
       }
-
-
     }
     break;
     case ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION:
@@ -468,6 +491,110 @@ static uint64_t mac_to_entity_id(uint64_t mac)
   return ((mac & 0xffffff000000) << 16) | (0xfffe000000) | (mac & 0xffffff);
 }
 
+static void adp_upsert_entity(struct avtp_discovery_msg_s *msg)
+{
+  if (!s_state) return;
+
+  /* Extract entity_id (network -> host) */
+  uint64_t entity_id_net;
+  memcpy(&entity_id_net, msg->entity_id, sizeof(entity_id_net));
+  uint64_t entity_id = ntohll(entity_id_net);
+
+  /* Extract capabilities & counts (big-endian byte arrays) */
+  uint16_t talker_stream_sources = ((uint16_t)msg->talker_stream_sources[0] << 8) | msg->talker_stream_sources[1];
+  uint16_t talker_capabilities = ((uint16_t)msg->talker_capabilities[0] << 8) | msg->talker_capabilities[1];
+  uint16_t listener_stream_sinks = ((uint16_t)msg->listener_stream_sinks[0] << 8) | msg->listener_stream_sinks[1];
+  uint16_t listener_capabilities = ((uint16_t)msg->listener_capabilities[0] << 8) | msg->listener_capabilities[1];
+  uint32_t controller_capabilities = ((uint32_t)msg->controller_capabilities[0] << 24) |
+                                     ((uint32_t)msg->controller_capabilities[1] << 16) |
+                                     ((uint32_t)msg->controller_capabilities[2] << 8)  |
+                                     ((uint32_t)msg->controller_capabilities[3]);
+  uint32_t available_index = ((uint32_t)msg->available_index[0] << 24) |
+                             ((uint32_t)msg->available_index[1] << 16) |
+                             ((uint32_t)msg->available_index[2] << 8)  |
+                             ((uint32_t)msg->available_index[3]);
+
+  uint8_t *src_mac = msg->header.src_mac;
+
+  /* Valid time (5 bits) doubled in seconds */
+  uint8_t valid_time = msg->control_data_length_field.valid_time & 0x1F;
+  time_t now = time(NULL);
+  time_t valid_until = now + (valid_time * 2);
+
+  /* Search for existing entry or free slot */
+  int free_index = -1;
+  for (int i = 0; i < MAX_ADP_ENTITIES; ++i) {
+    if (s_state->adp_entities[i].in_use) {
+      if (s_state->adp_entities[i].entity_id == entity_id) {
+        /* Update existing entry */
+        s_state->adp_entities[i].talker_stream_sources = talker_stream_sources;
+        s_state->adp_entities[i].talker_capabilities = talker_capabilities;
+        s_state->adp_entities[i].listener_stream_sinks = listener_stream_sinks;
+        s_state->adp_entities[i].listener_capabilities = listener_capabilities;
+        s_state->adp_entities[i].controller_capabilities = controller_capabilities;
+        s_state->adp_entities[i].available_index = available_index;
+        s_state->adp_entities[i].valid_until = valid_until;
+        memcpy(s_state->adp_entities[i].mac, src_mac, 6);
+        ESP_LOGI(TAG, "Updated ADP entity 0x%016llX (valid %us)",
+                 (unsigned long long)entity_id, (unsigned)(valid_time * 2));
+        return;
+      }
+    } else if (free_index < 0) {
+      free_index = i; /* remember first free slot */
+    }
+  }
+
+  if (free_index < 0) {
+    ESP_LOGW(TAG, "ADP entity list full; cannot add 0x%016llX", (unsigned long long)entity_id);
+    return;
+  }
+
+  /* Add new entry */
+  struct adp_entity_entry_s *entry = &s_state->adp_entities[free_index];
+  entry->entity_id = entity_id;
+  memcpy(entry->mac, src_mac, 6);
+  entry->talker_stream_sources = talker_stream_sources;
+  entry->talker_capabilities = talker_capabilities;
+  entry->listener_stream_sinks = listener_stream_sinks;
+  entry->listener_capabilities = listener_capabilities;
+  entry->controller_capabilities = controller_capabilities;
+  entry->available_index = available_index;
+  entry->valid_until = valid_until;
+  entry->in_use = true;
+
+  ESP_LOGI(TAG, "Added ADP entity 0x%016llX (MAC: %02X:%02X:%02X:%02X:%02X:%02X, TalkerSrc=%u, ListenerSinks=%u, valid %us)",
+           (unsigned long long)entity_id,
+           src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5],
+           talker_stream_sources,
+           listener_stream_sinks,
+           (unsigned)(valid_time * 2));
+}
+
+static void adp_remove_entity(struct avtp_discovery_msg_s *msg)
+{
+  if (!s_state) return;
+
+  /* Extract entity_id (network -> host) */
+  uint64_t entity_id_net;
+  memcpy(&entity_id_net, msg->entity_id, sizeof(entity_id_net));
+  uint64_t entity_id = ntohll(entity_id_net);
+
+  /* Search for entity and mark as not in use */
+  for (int i = 0; i < MAX_ADP_ENTITIES; ++i) {
+    if (s_state->adp_entities[i].in_use && s_state->adp_entities[i].entity_id == entity_id) {
+      s_state->adp_entities[i].in_use = false;
+      ESP_LOGI(TAG, "Removed ADP entity 0x%016llX (MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
+               (unsigned long long)entity_id,
+               s_state->adp_entities[i].mac[0], s_state->adp_entities[i].mac[1],
+               s_state->adp_entities[i].mac[2], s_state->adp_entities[i].mac[3],
+               s_state->adp_entities[i].mac[4], s_state->adp_entities[i].mac[5]);
+      return;
+    }
+  }
+
+  ESP_LOGW(TAG, "ADP entity departing not found: 0x%016llX", (unsigned long long)entity_id);
+}
+
 void send_adp_entity_available()
 {
   if (s_state == NULL || s_state->socket < 0) {
@@ -484,8 +611,11 @@ void send_adp_entity_available()
 
   /* Use entity_id from state and convert to network byte order */
   uint64_t entity_id_net = htonll(s_state->entity_id);
-  msg.entity_model_id[7] = 0x01; // Example model ID
   memcpy(msg.entity_id, &entity_id_net, sizeof(msg.entity_id));
+
+  /* Use entity_model_id from state and convert to network byte order */
+  uint64_t entity_model_id_net = htonll(s_state->entity_model_id);
+  memcpy(msg.entity_model_id, &entity_model_id_net, sizeof(msg.entity_model_id));
 
   /* Ethernet type (big-endian) */
   msg.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
