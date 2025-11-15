@@ -5,6 +5,7 @@
 
 #include "esp_vfs_l2tap.h"
 #include "esp_eth_driver.h"
+#include "acmp.h"
 
 #include <fcntl.h>
 
@@ -114,7 +115,7 @@ struct avtp_discovery_msg_s{
 struct atdecc_entity_descriptor_s {
   uint16_t descriptor_type;              // 0x0000 for ENTITY
   uint16_t descriptor_index;             // 0x0000 for ENTITY (only one per entity)
-  uint64_t entity_id;                    // Unique identifier for the AVDECC Entity
+  uint64_t entity_id;                    // Unique identifier for the ATDECC Entity
   uint64_t entity_model_id;              // Unique identifier for the Entity model
   uint32_t entity_capabilities;          // Entity capability flags
   uint16_t talker_stream_sources;        // Number of talker stream sources
@@ -167,8 +168,6 @@ struct aecp_read_descriptor_response_s {
   uint16_t reserved;                    // 16 bits
   struct atdecc_entity_descriptor_s descriptor;
 } __attribute__((packed));
-
-
 
 typedef union
 {
@@ -691,12 +690,16 @@ static void avtp_listener_task(void *arg)
       switch (buf.adp_msg.subtype)
       {
       case AVTP_SUBTYPE_ADP:
-        ESP_LOGI(TAG, "AVDECC Discovery Protocol received");
+        ESP_LOGI(TAG, "ATDECC Discovery Protocol received");
         adp_net_rx(&buf.adp_msg, len);
         break;
       case AVTP_SUBTYPE_AECP:
-        ESP_LOGI(TAG, "AVDECC Enumeration an Control Protocol received");
+        ESP_LOGI(TAG, "ATDECC Enumeration an Control Protocol received");
         aecp_net_rx(&buf.aecp_msg, len);
+        break;
+      case AVTP_SUBTYPE_ACMP:
+        ESP_LOGI(TAG, "ATDECC Connection Management Protocol received");
+        // acmp_net_rx(&buf.acmp_msg, len);
         break;
       case AVTP_SUBTYPE_MAAP:
         ESP_LOGI(TAG, "MAAP Announce received");
@@ -718,6 +721,7 @@ static void avtp_listener_task(void *arg)
       // TODO refactor using randomDeviceDelay p 56. of IEEE 1722-2022
       state->last_transmitted_adp = time_now;
       send_adp_entity_available();
+      send_acmp_message();
     }
   }
   free(state);
