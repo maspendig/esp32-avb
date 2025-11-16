@@ -38,33 +38,6 @@
 
 const char *TAG = "avtp";
 
-#define MAX_ADP_ENTITIES 32
-
-/* Structure to hold discovered ADP entity information */
-struct adp_entity_entry_s {
-  uint64_t entity_id;
-  uint8_t mac[6];
-  uint16_t talker_stream_sources;
-  uint16_t talker_capabilities;
-  uint16_t listener_stream_sinks;
-  uint16_t listener_capabilities;
-  uint32_t controller_capabilities;
-  uint32_t available_index;
-  time_t valid_until;  // epoch seconds until this entry is valid
-  bool in_use;
-};
-
-struct avtp_state_s
-{
-  bool stop;
-  int socket;
-  uint8_t intf_hw_addr[6];
-  uint64_t entity_id;
-  uint64_t entity_model_id;
-  struct timespec last_transmitted_adp;
-  uint32_t adp_available_index; // renamed from adp_availabe_index[4] for easier increment
-  struct adp_entity_entry_s adp_entities[MAX_ADP_ENTITIES];
-};
 
 struct header_s
 {
@@ -721,7 +694,6 @@ static void avtp_listener_task(void *arg)
       // TODO refactor using randomDeviceDelay p 56. of IEEE 1722-2022
       state->last_transmitted_adp = time_now;
       send_adp_entity_available();
-      send_acmp_message();
     }
   }
   free(state);

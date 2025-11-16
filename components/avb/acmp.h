@@ -2,8 +2,11 @@
 // Created by max on 11/15/25.
 //
 
+
 #ifndef ETHERNET_PTP_ACMP_H
 #define ETHERNET_PTP_ACMP_H
+
+#include "avtp.h"
 
 #define AVTP_SUBTYPE_ACMP 0xFC
 
@@ -55,7 +58,7 @@ struct acmp_du_s {
   uint64_t listener_entity_id;
   uint16_t talker_unique_id;
   uint16_t listener_unique_id;
-  uint16_t stream_dest_mac[3];
+  uint8_t stream_dest_mac[6];
   uint16_t connection_count;
   uint16_t sequence_id;
   uint16_t flags;
@@ -69,5 +72,5 @@ struct acmp_du_s {
   uint64_t destination_ip_address[2];
 };
 
-void send_acmp_message();
+void send_acmp_message(const struct avtp_state_s *state);
 #endif //ETHERNET_PTP_ACMP_H
