@@ -6,6 +6,7 @@
 #include <sys/errno.h>
 #include <sys/unistd.h>
 #include <string.h>
+#include <assert.h>
 
 #include "avtp.h"
 
@@ -30,9 +31,14 @@
 #endif
 #endif
 
+
 int send_acmp_message(const struct avtp_state_s *state)
 {
-  ESP_LOGI(TAG, "Sending ACMP message");
+  ESP_LOGI(TAG, "Sent ACMP Connect TX Command to %02X:%02X:%02X:%02X:%02X:%02X entity_id=0x%016llx",
+            state->adp_entities[0].mac[0], state->adp_entities[0].mac[1],
+            state->adp_entities[0].mac[2], state->adp_entities[0].mac[3],
+            state->adp_entities[0].mac[4], state->adp_entities[0].mac[5],
+            (unsigned long long)state->adp_entities[0].entity_id);
   struct acmp_du_s msg = {0};
 
   /* Set Ethernet header */
@@ -49,14 +55,18 @@ int send_acmp_message(const struct avtp_state_s *state)
   msg.header.h = 0;
   msg.header.version = 0;
   msg.header.message_type = ACMP_MSG_TYPE_CONNECT_TX_COMMAND;
+
+  /* Calculate control_data_length: everything after the AECP common header */
+  msg.header.control_data_length = htons(4);
   msg.header.status = 0; // SUCCESS
-  msg.header.control_data_length = 44; // Size of ACMP payload after AVTP header
 
   /* ACMP payload - convert to network byte order */
-  msg.stream_id = htonll(0x123456789ABCDEF0ULL);
-  msg.controller_entity_id = htonll(state->entity_id);
-  msg.talker_entity_id = htonll(state->adp_entities[0].entity_id);
-  msg.listener_entity_id = htonll(state->entity_id);
+  msg.stream_id[7] = 0x01;
+  const uint64_t entity_id = htonll(state->entity_id);
+  memcpy(msg.controller_entity_id, &entity_id, sizeof(msg.controller_entity_id));
+  const uint64_t talker_entity_id = htonll(state->adp_entities[0].entity_id);
+  memcpy(msg.talker_entity_id, &talker_entity_id, sizeof(msg.talker_entity_id));
+  memcpy(msg.listener_entity_id, &entity_id, sizeof(msg.listener_entity_id));
   msg.talker_unique_id = htons(0);
   msg.listener_unique_id = htons(0);
   memcpy(msg.stream_dest_mac, state->adp_entities[0].mac, sizeof(msg.stream_dest_mac));
@@ -66,13 +76,19 @@ int send_acmp_message(const struct avtp_state_s *state)
   msg.stream_vlan_id = htons(0);
   msg.reserved = htons(0);
 
+  /* Debug: dump controller_entity_id bytes (network order) */
+  uint8_t *cid = (uint8_t *)&msg.controller_entity_id;
+  ESP_LOGI(TAG, "controller_entity_id host=0x%016llx net_bytes=%02X %02X %02X %02X %02X %02X %02X %02X",
+           (unsigned long long)state->entity_id,
+           cid[0], cid[1], cid[2], cid[3], cid[4], cid[5], cid[6], cid[7]);
+
   /* Send the message */
   const ssize_t written = write(state->socket, &msg, sizeof(msg));
   if (written < 0) {
     ESP_LOGE(TAG, "Failed to send ACMP Message: %d (errno: %d)", written, errno);
     return ESP_FAIL;
   } else {
-    ESP_LOGI(TAG, "Sent ACMP Connect RX Command (%zd bytes)", written);
+    ESP_LOGI(TAG, "Sent ACMP Connect TX Command", written);
     return ESP_OK;
   }
 }

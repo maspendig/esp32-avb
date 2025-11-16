@@ -34,31 +34,29 @@ struct acmp_header_s {
   uint8_t subtype;
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-  uint8_t message_type : 4;
-  uint8_t version : 3;
-  uint8_t h : 1;
-#else
-  uint8_t h : 1;
-  uint8_t version : 3;
-  uint8_t message_type : 4;
-#endif
+  uint8_t message_type : 4;             // 4 bits
+  uint8_t version : 3;                  // 3 bits
+  uint8_t h : 1;                        // 1 bit (header specific)
 
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-  uint16_t control_data_length : 11;
-  uint16_t status : 5;
+  uint16_t control_data_length : 11;    // 11 bits
+  uint16_t status : 5;                  // 5 bits
 #else
-  uint16_t status : 5;
-  uint16_t control_data_length : 11;
+  uint8_t h : 1;                        // 1 bit (header specific)
+  uint8_t version : 3;                  // 3 bits
+  uint8_t message_type : 4;             // 4 bits
+
+  uint16_t status : 5;                  // 5 bits
+  uint16_t control_data_length : 11;    // 11 bits
 #endif
 };
 
 /* ATDECC Connection Management Protocol Data Unit */
 struct acmp_du_s {
   struct acmp_header_s header;
-  uint64_t stream_id;
-  uint64_t controller_entity_id;
-  uint64_t talker_entity_id;
-  uint64_t listener_entity_id;
+  uint8_t stream_id[8];
+  uint8_t controller_entity_id[8];
+  uint8_t talker_entity_id[8];
+  uint8_t listener_entity_id[8];
   uint16_t talker_unique_id;
   uint16_t listener_unique_id;
   uint8_t stream_dest_mac[6];

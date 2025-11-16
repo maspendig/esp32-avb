@@ -664,7 +664,6 @@ static bool has_available_talker(struct avtp_state_s *state)
   return false;
 }
 
-
 static void avtp_listener_task(void *arg)
 {
   const char *interface = "ETH_0";
