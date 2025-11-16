@@ -15,7 +15,6 @@
 #include <arpa/inet.h>
 #include <time.h>
 
-#define ETH_TYPE_AVTP 0x22F0
 
 #define AVTP_SUBTYPE_ADP  0xFA
 #define AVTP_SUBTYPE_AECP 0xFB
@@ -25,8 +24,10 @@
 #define ADP_MSG_TYPE_ENTITY_DEPARTING 0x1
 #define ADP_MSG_TYPE_ENTITY_DISCOVER  0x2
 
-#define AECP_MSG_TYPE_ACM_COMMAND   0x0
-#define AECP_MSG_TYPE_ACM_RESPONSE  0x1
+/* ATDECC Entity Model Command */
+#define AECP_MSG_TYPE_AEM_COMMAND   0x0
+/* ATDECC Entity Model Command response */
+#define AECP_MSG_TYPE_AEM_RESPONSE  0x1
 
 #define ACM_COMMAND_TYPE_READ_DESCRIPTOR 0x0004
 #define ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION 0x0024
@@ -179,6 +180,7 @@ static uint64_t mac_to_entity_id(uint64_t mac);
 static void send_entity_descriptor_response(struct aecp_data_unit_s *request_msg, uint16_t configuration_index);
 static void adp_upsert_entity(struct avtp_discovery_msg_s *msg);
 static void adp_remove_entity(struct avtp_discovery_msg_s *msg);
+static bool has_available_talker(struct avtp_state_s *state);
 
 static struct avtp_state_s *s_state;
 
@@ -294,7 +296,7 @@ static void send_entity_descriptor_response(struct aecp_data_unit_s *request_msg
 
   /* AECP header fields */
   response.aecp_header.subtype = AVTP_SUBTYPE_AECP;
-  response.aecp_header.message_type = AECP_MSG_TYPE_ACM_RESPONSE;
+  response.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
   response.aecp_header.version = 0;
   response.aecp_header.h = 0;
   response.aecp_header.status = 0; // SUCCESS
@@ -357,11 +359,12 @@ static void send_entity_descriptor_response(struct aecp_data_unit_s *request_msg
   if (written < 0) {
     ESP_LOGE(TAG, "Failed to send ENTITY descriptor response: %d", errno);
   } else {
-    ESP_LOGI(TAG, "Sent ENTITY descriptor response (%zd bytes)", written);
+    ESP_LOGI(TAG, "Sent AECP Entity Descriptor Response");
   }
 }
 
-int aecp_acm_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
+/* Handle AECP ATDECC Entity Model Command messages */
+int aecp_aem_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
 {
   if (msg == NULL || len < sizeof(struct aecp_data_unit_s))
   {
@@ -376,7 +379,7 @@ int aecp_acm_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
   uint64_t target_entity_id = ntohll(msg->target_entity_id);
   if (target_entity_id != s_state->entity_id)
   {
-    ESP_LOGW(TAG, "AECP message not for this entity (target: 0x%016llX, our: 0x%016llX)",
+    ESP_LOGV(TAG, "AECP message not for this entity (target: 0x%016llX, our: 0x%016llX)",
              (unsigned long long)target_entity_id, (unsigned long long)s_state->entity_id);
     return ESP_OK;
   }
@@ -387,15 +390,12 @@ int aecp_acm_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
   case ACM_COMMAND_TYPE_READ_DESCRIPTOR:
     {
       uint16_t configuration_index = ntohs(*(uint16_t *)(payload + 0));
-      // uint16_t reserved = ntohs(*(uint16_t *)(payload + 2));
       uint16_t descriptor_type = ntohs(*(uint16_t *)(payload + 4));
-      uint16_t descriptor_index = ntohs(*(uint16_t *)(payload + 6));
 
       switch (descriptor_type)
       {
       case 0x0000: // ENTITY Descriptor
-        ESP_LOGI(TAG, "AECP Read ENTITY Descriptor Request from (Config Index: %d, Descriptor Index: %d)",
-                 configuration_index, descriptor_index);
+        ESP_LOGI(TAG, "Received AECP ACM Read Entity Descriptor Request");
         send_entity_descriptor_response(msg, configuration_index);
         break;
       default:
@@ -406,7 +406,7 @@ int aecp_acm_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
     break;
     case ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION:
     {
-      ESP_LOGI(TAG, "AECP Register Unsolicited Notification Command");
+      ESP_LOGI(TAG, "Received AECP ACM Register Unsolicited Notification Command");
 
       /* Check if message has payload (flags field) */
       ssize_t payload_offset = sizeof(struct aecp_data_unit_s);
@@ -424,10 +424,10 @@ int aecp_acm_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
     }
     break;
     case ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION:
-      ESP_LOGI(TAG, "AECP Register Unsolicited Notification Command");
+      ESP_LOGI(TAG, "Received AECP ACM Register Unsolicited Notification Command");
     break;
   default:
-    ESP_LOGW(TAG, "Unhandled AECP ACM command type: 0x%04X", command_type);
+    ESP_LOGW(TAG, "Recieved unimplemented AECP ACM Command type: 0x%04X", command_type);
   }
 
   return ESP_OK;
@@ -443,11 +443,10 @@ int aecp_net_rx(struct aecp_data_unit_s *msg, ssize_t len)
 
   switch (msg->message_type)
   {
-    case AECP_MSG_TYPE_ACM_COMMAND:
-      ESP_LOGI(TAG, "AECP ACM Command Message Received");
-      aecp_acm_command_handle(msg, len);
+    case AECP_MSG_TYPE_AEM_COMMAND:
+      aecp_aem_command_handle(msg, len);
       break;
-    case AECP_MSG_TYPE_ACM_RESPONSE:
+    case AECP_MSG_TYPE_AEM_RESPONSE:
       ESP_LOGI(TAG, "AECP ACM Response Message Received");
       break;
     default:
@@ -605,6 +604,10 @@ void send_adp_entity_available()
 
   memcpy(msg.entity_capabilities, (uint8_t[]){0x00, 0x00, 0xC5, 0x08}, 4); // Example capabilities
 
+  msg.talker_capabilities[0] = 0x40;
+  msg.talker_capabilities[1] = 0x01;
+  msg.talker_stream_sources[0] = 0x00;
+  msg.talker_stream_sources[1] = 0x01;
   /* Set 4 listener stream sinks (big-endian 0x0004) */
   msg.listener_stream_sinks[0] = 0x00;
   msg.listener_stream_sinks[1] = 0x04;
@@ -624,7 +627,7 @@ void send_adp_entity_available()
   if (written < 0) {
     ESP_LOGE(TAG, "Failed to send ADP entity available: %d", errno);
   } else {
-    ESP_LOGI(TAG, "Sent ADP Entity Available (%zd bytes)", written);
+    ESP_LOGI(TAG, "Sent ADP Entity Available");
   }
 }
 
@@ -632,6 +635,35 @@ static int64_t timespec_to_ms(const struct timespec *ts)
 {
   return ts->tv_sec * 1000  + (ts->tv_nsec / 1000000ll);
 }
+
+static bool has_available_talker(struct avtp_state_s *state)
+{
+  if (!state) return false;
+
+  time_t now = time(NULL);
+  for (int i = 0; i < MAX_ADP_ENTITIES; ++i) {
+    if (state->adp_entities[i].in_use) {
+      /* Check if entity is still valid */
+      if (state->adp_entities[i].valid_until < now) {
+        /* Entity expired, mark as not in use */
+        state->adp_entities[i].in_use = false;
+        ESP_LOGW(TAG, "ADP entity 0x%016llX expired",
+                 (unsigned long long)state->adp_entities[i].entity_id);
+        continue;
+      }
+
+      /* Check if entity has talker capabilities */
+      if (state->adp_entities[i].talker_stream_sources > 0) {
+        ESP_LOGI(TAG, "Found available talker: 0x%016llX with %u stream sources",
+                 (unsigned long long)state->adp_entities[i].entity_id,
+                 state->adp_entities[i].talker_stream_sources);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 
 static void avtp_listener_task(void *arg)
 {
@@ -663,11 +695,9 @@ static void avtp_listener_task(void *arg)
       switch (buf.adp_msg.subtype)
       {
       case AVTP_SUBTYPE_ADP:
-        ESP_LOGI(TAG, "ATDECC Discovery Protocol received");
         adp_net_rx(&buf.adp_msg, len);
         break;
       case AVTP_SUBTYPE_AECP:
-        ESP_LOGI(TAG, "ATDECC Enumeration an Control Protocol received");
         aecp_net_rx(&buf.aecp_msg, len);
         break;
       case AVTP_SUBTYPE_ACMP:
@@ -682,6 +712,17 @@ static void avtp_listener_task(void *arg)
         break;
       }
     }
+
+    /* Check connection status and attempt to connect to available talkers */
+    if (!state->connected) {
+      if (has_available_talker(state)) {
+        ESP_LOGI(TAG, "Not connected, sending ACMP connect message to available talker");
+        if (send_acmp_message(state) == ESP_OK) {;
+          state->connected = true;
+        }
+      }
+    }
+
     struct timespec time_now;
     struct timespec delta;
 

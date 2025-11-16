@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <time.h>
 
+#define ETH_TYPE_AVTP 0x22F0
 #define MAX_ADP_ENTITIES 32
 
 /* Structure to hold discovered ADP entity information */
@@ -31,6 +32,7 @@ struct avtp_state_s
   struct timespec last_transmitted_adp;
   uint32_t adp_available_index; // renamed from adp_availabe_index[4] for easier increment
   struct adp_entity_entry_s adp_entities[MAX_ADP_ENTITIES];
+  bool connected;
 };
 
 int start_avtp_listener(const char *interface);

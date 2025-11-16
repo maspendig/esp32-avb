@@ -28,6 +28,9 @@
 #define MULTICAST_ACMP_MAC ( 0x91e0f0010000ULL )
 
 struct acmp_header_s {
+  uint8_t dst_mac[6];
+  uint8_t src_mac[6];
+  uint8_t eth_type[2];
   uint8_t subtype;
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -72,5 +75,5 @@ struct acmp_du_s {
   uint64_t destination_ip_address[2];
 };
 
-void send_acmp_message(const struct avtp_state_s *state);
+int send_acmp_message(const struct avtp_state_s *state);
 #endif //ETHERNET_PTP_ACMP_H
