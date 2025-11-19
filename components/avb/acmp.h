@@ -74,5 +74,5 @@ struct acmp_du_s {
 };
 
 int send_acmp_message(const struct avtp_state_s *state);
-void acmp_net_rx(struct acmp_du_s *msg, ssize_t len);
+void acmp_net_rx(struct avtp_state_s *state,struct acmp_du_s *msg, ssize_t len);
 #endif //ETHERNET_PTP_ACMP_H

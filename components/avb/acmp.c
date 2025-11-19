@@ -92,7 +92,15 @@ int send_acmp_message(const struct avtp_state_s *state)
     return ESP_OK;
   }
 }
-void acmp_net_rx(struct acmp_du_s *msg, ssize_t len)
+void acmp_net_rx(struct avtp_state_s *state,struct acmp_du_s *msg, ssize_t len)
 {
-    ESP_LOGI(TAG, "ATDECC Connection Management Protocol received");
+  switch (msg->header.message_type)
+  {
+  case ACMP_MSG_TYPE_CONNECT_TX_RESPONSE:
+    ESP_LOGI(TAG, "Received ACMP Connect TX Response");
+    break;
+  default:
+    ESP_LOGW(TAG, "Received unimplemented ACMP message type: 0x%1X", msg->header.message_type);
+  }
+
 }

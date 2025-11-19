@@ -701,7 +701,7 @@ static void avtp_listener_task(void *arg)
         aecp_net_rx(&buf.aecp_msg, len);
         break;
       case AVTP_SUBTYPE_ACMP:
-        acmp_net_rx(&buf.acmp_msg, len);
+        acmp_net_rx(state, &buf.acmp_msg, len);
         break;
       case AVTP_SUBTYPE_MAAP:
         ESP_LOGI(TAG, "MAAP Announce received");
