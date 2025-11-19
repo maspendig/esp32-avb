@@ -31,16 +31,18 @@
 #endif
 #endif
 
-void eui48_from_uint64( uint8_t *mac[6], uint64_t other )
+void eui48_from_uint64(uint8_t* mac[6], uint64_t other)
 {
-  *mac[0] = ( uint8_t )( ( other >> ( 5 * 8 ) ) & 0xff );
-  *mac[1] = ( uint8_t )( ( other >> ( 4 * 8 ) ) & 0xff );
-  *mac[2] = ( uint8_t )( ( other >> ( 3 * 8 ) ) & 0xff );
-  *mac[3] = ( uint8_t )( ( other >> ( 2 * 8 ) ) & 0xff );
-  *mac[4] = ( uint8_t )( ( other >> ( 1 * 8 ) ) & 0xff );
-  *mac[5] = ( uint8_t )( ( other >> ( 0 * 8 ) ) & 0xff );
+  *mac[0] = (uint8_t)((other >> (5 * 8)) & 0xff);
+  *mac[1] = (uint8_t)((other >> (4 * 8)) & 0xff);
+  *mac[2] = (uint8_t)((other >> (3 * 8)) & 0xff);
+  *mac[3] = (uint8_t)((other >> (2 * 8)) & 0xff);
+  *mac[4] = (uint8_t)((other >> (1 * 8)) & 0xff);
+  *mac[5] = (uint8_t)((other >> (0 * 8)) & 0xff);
 }
-void acmp_set_common_header(const struct avtp_state_s *state, struct acmp_du_s *msg, uint8_t msg_type, uint16_t length, uint8_t status)
+
+void acmp_set_common_header(const struct avtp_state_s* state, struct acmp_du_s* msg, uint8_t msg_type, uint16_t length,
+                            uint8_t status)
 {
   /* Set Ethernet header */
   const uint8_t acmp_multicast_mac[6] = {0x91, 0xE0, 0xF0, 0x01, 0x00, 0x00}; // ACMP multicast MAC
@@ -58,7 +60,7 @@ void acmp_set_common_header(const struct avtp_state_s *state, struct acmp_du_s *
   ACMP_SET_CTRL_DATA_STATUS((&msg->header), status, length);
 }
 
-void acmp_set_common_du(const struct avtp_state_s *state, struct acmp_du_s *msg)
+void acmp_set_common_du(const struct avtp_state_s* state, struct acmp_du_s* msg)
 {
   const uint64_t entity_id = htonll(state->entity_id);
   memcpy(msg->controller_entity_id, &entity_id, sizeof(msg->controller_entity_id));
@@ -75,20 +77,21 @@ void acmp_set_common_du(const struct avtp_state_s *state, struct acmp_du_s *msg)
 int send_msg(int socket, void* buffer, int buflen)
 {
   const ssize_t written = write(socket, buffer, buflen);
-  if (written < 0) {
+  if (written < 0)
+  {
     ESP_LOGE(TAG, "Failed to send ACMP Message: %d (errno: %d)", written, errno);
     return ESP_FAIL;
   }
   return ESP_OK;
 }
 
-int send_acmp_connect_tx_command(const struct avtp_state_s *state, uint8_t msg_type)
+int send_acmp_connect_tx_command(const struct avtp_state_s* state, uint8_t msg_type)
 {
   ESP_LOGI(TAG, "Sent ACMP Connect TX Command to %02X:%02X:%02X:%02X:%02X:%02X entity_id=0x%016llx",
-            state->adp_entities[0].mac[0], state->adp_entities[0].mac[1],
-            state->adp_entities[0].mac[2], state->adp_entities[0].mac[3],
-            state->adp_entities[0].mac[4], state->adp_entities[0].mac[5],
-            (unsigned long long)state->adp_entities[0].entity_id);
+           state->adp_entities[0].mac[0], state->adp_entities[0].mac[1],
+           state->adp_entities[0].mac[2], state->adp_entities[0].mac[3],
+           state->adp_entities[0].mac[4], state->adp_entities[0].mac[5],
+           (unsigned long long)state->adp_entities[0].entity_id);
   struct acmp_du_s msg = {0};
 
   acmp_set_common_header(state, &msg, msg_type, 44, 0);
@@ -106,7 +109,7 @@ int send_acmp_connect_tx_command(const struct avtp_state_s *state, uint8_t msg_t
   return send_msg(state->socket, &msg, sizeof(msg));
 }
 
-int send_acmp_connect_rx_command(const struct avtp_state_s *state, uint8_t msg_type)
+int send_acmp_connect_rx_command(const struct avtp_state_s* state, uint8_t msg_type)
 {
   struct acmp_du_s msg = {0};
 
@@ -124,11 +127,12 @@ int send_acmp_connect_rx_command(const struct avtp_state_s *state, uint8_t msg_t
   return send_msg(state->socket, &msg, sizeof(msg));
 }
 
-void handle_acmp_connect_tx_response(struct avtp_state_s *state, struct acmp_du_s *msg)
+void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
   const auto status = ACMP_GET_STATUS(&msg->header);
   /* Check status */
-  if (status != 0) {
+  if (status != 0)
+  {
     ESP_LOGE(TAG, "ACMP Connect TX Response failed with status: %d", status);
     return;
   }
@@ -138,7 +142,7 @@ void handle_acmp_connect_tx_response(struct avtp_state_s *state, struct acmp_du_
   // send_acmp_message(state, ACMP_MSG_TYPE_CONNECT_RX_COMMAND);
 }
 
-int handle_acmp_connect_tx_command(struct avtp_state_s *state,struct acmp_du_s *msg)
+int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
   struct acmp_du_s resp = {0};
 
@@ -169,14 +173,15 @@ int handle_acmp_connect_tx_command(struct avtp_state_s *state,struct acmp_du_s *
   return send_msg(state->socket, &resp, sizeof(resp));
 }
 
-int handle_acmp_connect_rx_response(struct avtp_state_s *state,struct acmp_du_s *msg)
+int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
   const auto status = ACMP_GET_STATUS(&msg->header);
   /* Check status */
-  switch (status) {
+  switch (status)
+  {
   case ACMP_STATUS_SUCCESS:
     ESP_LOGI(TAG, "ACMP Connect RX successful, connection established.");
-  break;
+    break;
   case ACMP_STATUS_LISTENER_TALKER_TIMEOUT:
     ESP_LOGW(TAG, "ACMP Connect RX Response: Listener-Talker Timeout");
     return ESP_FAIL;
@@ -189,7 +194,7 @@ int handle_acmp_connect_rx_response(struct avtp_state_s *state,struct acmp_du_s 
   return ESP_OK;
 }
 
-void acmp_net_rx(struct avtp_state_s *state,struct acmp_du_s *msg, ssize_t len)
+void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)
 {
   switch (msg->header.message_type)
   {
@@ -201,9 +206,8 @@ void acmp_net_rx(struct avtp_state_s *state,struct acmp_du_s *msg, ssize_t len)
     break;
   case ACMP_MSG_TYPE_CONNECT_RX_RESPONSE:
     handle_acmp_connect_rx_response(state, msg);
-   break;
+    break;
   default:
     ESP_LOGW(TAG, "Received unimplemented ACMP message type: 0x%1X", msg->header.message_type);
   }
-
 }
