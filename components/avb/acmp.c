@@ -31,7 +31,18 @@
 #endif
 #endif
 
+void acmp_set_common_header(struct acmp_du_s *msg, uint8_t msg_type, uint16_t length, uint8_t status)
+{
+  /* Ethernet type (big-endian) */
+  msg->header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  msg->header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
 
+  msg->header.subtype = AVTP_SUBTYPE_ACMP;
+  msg->header.h = 0;
+  msg->header.version = 0;
+  msg->header.message_type = msg_type;
+  ACMP_SET_CTRL_DATA_STATUS((&msg->header), status, length);
+}
 
 int send_acmp_message(const struct avtp_state_s *state)
 {
@@ -47,18 +58,8 @@ int send_acmp_message(const struct avtp_state_s *state)
   memcpy(msg.header.dst_mac, acmp_multicast_mac, sizeof(msg.header.dst_mac));
   memcpy(msg.header.src_mac, state->intf_hw_addr, sizeof(msg.header.src_mac));
 
-  /* Ethernet type (big-endian) */
-  msg.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
-  msg.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
 
-  /* ACMP header fields */
-  msg.header.subtype = AVTP_SUBTYPE_ACMP;
-  msg.header.h = 0;
-  msg.header.version = 0;
-  msg.header.message_type = ACMP_MSG_TYPE_CONNECT_TX_COMMAND;
-
-  const auto hdr = &msg.header;
-  ACMP_SET_CTRL_DATA_STATUS(hdr, 0, 44);
+  acmp_set_common_header(&msg, ACMP_MSG_TYPE_CONNECT_TX_COMMAND, 44, 0);
 
   /* ACMP payload - convert to network byte order */
   msg.stream_id[7] = 0x01;
@@ -93,12 +94,15 @@ int send_acmp_message(const struct avtp_state_s *state)
   }
 }
 
+void send_acmp_response(const struct avtp_state_s *state, uint8_t msg_type)
+{
+  struct acmp_du_s msg = {0};
+  acmp_set_common_header(&msg, msg_type, 44, 0);
+}
+
 void handle_acmp_connect_tx_response(struct avtp_state_s *state, struct acmp_du_s *msg)
 {
-  ESP_LOGI(TAG, "Received ACMP Connect TX Response",
-           (unsigned long long)ntohll(*(uint64_t *)msg->stream_id));
-
-  auto status = ACMP_GET_STATUS(&msg->header);
+  const auto status = ACMP_GET_STATUS(&msg->header);
   /* Check status */
   if (status != 0) {
     ESP_LOGE(TAG, "ACMP Connect TX Response failed with status: %d", status);
@@ -107,6 +111,7 @@ void handle_acmp_connect_tx_response(struct avtp_state_s *state, struct acmp_du_
 
   /* Connection established successfully */
   ESP_LOGI(TAG, "ACMP Connect TX successful, connection established.");
+  send_acmp_response(state, ACMP_MSG_TYPE_CONNECT_RX_RESPONSE);
 }
 
 void acmp_net_rx(struct avtp_state_s *state,struct acmp_du_s *msg, ssize_t len)
