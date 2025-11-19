@@ -146,9 +146,10 @@ struct aecp_read_descriptor_response_s {
 typedef union
 {
   struct header_s                header;
-  struct avtp_discovery_msg_s        adp_msg;
+  struct avtp_discovery_msg_s    adp_msg;
   struct aecp_data_unit_s        aecp_msg;
-  uint8_t                            raw[128];
+  struct acmp_du_s               acmp_msg;
+  uint8_t                        raw[128];
 } avtp_msg_buffer;
 
 /* Masks for avtp_ctl byte */
@@ -700,8 +701,7 @@ static void avtp_listener_task(void *arg)
         aecp_net_rx(&buf.aecp_msg, len);
         break;
       case AVTP_SUBTYPE_ACMP:
-        ESP_LOGI(TAG, "ATDECC Connection Management Protocol received");
-        // acmp_net_rx(&buf.acmp_msg, len);
+        acmp_net_rx(&buf.acmp_msg, len);
         break;
       case AVTP_SUBTYPE_MAAP:
         ESP_LOGI(TAG, "MAAP Announce received");

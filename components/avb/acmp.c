@@ -92,3 +92,7 @@ int send_acmp_message(const struct avtp_state_s *state)
     return ESP_OK;
   }
 }
+void acmp_net_rx(struct acmp_du_s *msg, ssize_t len)
+{
+    ESP_LOGI(TAG, "ATDECC Connection Management Protocol received");
+}
