@@ -37,7 +37,7 @@
 
 #define CONFIG_ADP_SEND_INTERVAL_MSEC 5800
 
-const char *TAG = "avtp";
+const char* TAG = "avtp";
 
 
 struct header_s
@@ -47,7 +47,8 @@ struct header_s
   uint8_t eth_type[2];
 };
 
-struct avtp_discovery_msg_s{
+struct avtp_discovery_msg_s
+{
   struct header_s header;
   uint8_t subtype;
   /** AVTP control field containing
@@ -58,20 +59,25 @@ struct avtp_discovery_msg_s{
    * use AVTP_STREAMID_VALID_MASK, AVTP_VERSION_MASK, AVTP_MSGTYPE_MASK to extract values
    */
   uint8_t control;
+
   /** Control data length field containing valid_time (5 bits) and control_data_length (11 bits) */
-  union {
-    struct {
+  union
+  {
+    struct
+    {
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-      uint16_t control_data_length : 11;  /* 11 bits for control data length */
-      uint16_t valid_time : 5;            /* 5 bits for valid time */
+      uint16_t control_data_length : 11; /* 11 bits for control data length */
+      uint16_t valid_time : 5; /* 5 bits for valid time */
 #else
-      uint16_t valid_time : 5;            /* 5 bits for valid time */
-      uint16_t control_data_length : 11;  /* 11 bits for control data length */
+      uint16_t valid_time : 5; /* 5 bits for valid time */
+      uint16_t control_data_length : 11; /* 11 bits for control data length */
 #endif
     } __attribute__((packed));
-    uint8_t raw[2];                       /* Raw bytes for network transmission */
-    uint16_t raw_u16;                     /* Raw 16-bit value for easy manipulation */
+
+    uint8_t raw[2]; /* Raw bytes for network transmission */
+    uint16_t raw_u16; /* Raw 16-bit value for easy manipulation */
   } control_data_length_field;
+
   uint8_t entity_id[8];
   uint8_t entity_model_id[8];
   uint8_t entity_capabilities[4];
@@ -86,76 +92,79 @@ struct avtp_discovery_msg_s{
 };
 
 /* IEEE 1722.1-2021 ENTITY Descriptor (7.2.1) */
-struct atdecc_entity_descriptor_s {
-  uint16_t descriptor_type;              // 0x0000 for ENTITY
-  uint16_t descriptor_index;             // 0x0000 for ENTITY (only one per entity)
-  uint64_t entity_id;                    // Unique identifier for the ATDECC Entity
-  uint64_t entity_model_id;              // Unique identifier for the Entity model
-  uint32_t entity_capabilities;          // Entity capability flags
-  uint16_t talker_stream_sources;        // Number of talker stream sources
-  uint16_t talker_capabilities;          // Talker capability flags
-  uint16_t listener_stream_sinks;        // Number of listener stream sinks
-  uint16_t listener_capabilities;        // Listener capability flags
-  uint32_t controller_capabilities;      // Controller capability flags
-  uint32_t available_index;              // Incremented on ADP available
-  uint64_t association_id;               // Association ID for grouping entities
-  uint8_t entity_name[64];               // UTF-8 entity name
-  uint16_t vendor_name_string;           // Localized string reference
-  uint16_t model_name_string;            // Localized string reference
-  uint8_t firmware_version[64];          // UTF-8 firmware version string
-  uint8_t group_name[64];                // UTF-8 group name string
-  uint8_t serial_number[64];             // UTF-8 serial number string
-  uint16_t configurations_count;         // Number of configuration descriptors
-  uint16_t current_configuration;        // Index of current configuration
+struct atdecc_entity_descriptor_s
+{
+  uint16_t descriptor_type; // 0x0000 for ENTITY
+  uint16_t descriptor_index; // 0x0000 for ENTITY (only one per entity)
+  uint64_t entity_id; // Unique identifier for the ATDECC Entity
+  uint64_t entity_model_id; // Unique identifier for the Entity model
+  uint32_t entity_capabilities; // Entity capability flags
+  uint16_t talker_stream_sources; // Number of talker stream sources
+  uint16_t talker_capabilities; // Talker capability flags
+  uint16_t listener_stream_sinks; // Number of listener stream sinks
+  uint16_t listener_capabilities; // Listener capability flags
+  uint32_t controller_capabilities; // Controller capability flags
+  uint32_t available_index; // Incremented on ADP available
+  uint64_t association_id; // Association ID for grouping entities
+  uint8_t entity_name[64]; // UTF-8 entity name
+  uint16_t vendor_name_string; // Localized string reference
+  uint16_t model_name_string; // Localized string reference
+  uint8_t firmware_version[64]; // UTF-8 firmware version string
+  uint8_t group_name[64]; // UTF-8 group name string
+  uint8_t serial_number[64]; // UTF-8 serial number string
+  uint16_t configurations_count; // Number of configuration descriptors
+  uint16_t current_configuration; // Index of current configuration
 } __attribute__((packed));
 
-struct aecp_data_unit_s {
+struct aecp_data_unit_s
+{
   struct header_s header;
-  uint8_t subtype;                      // 1 octet
+  uint8_t subtype; // 1 octet
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-  uint8_t message_type : 4;             // 4 bits
-  uint8_t version : 3;                  // 3 bits
-  uint8_t h : 1;                        // 1 bit (header specific)
+  uint8_t message_type : 4; // 4 bits
+  uint8_t version : 3; // 3 bits
+  uint8_t h : 1; // 1 bit (header specific)
 
-  uint16_t control_data_length : 11;    // 11 bits
-  uint16_t status : 5;                  // 5 bits
+  uint16_t control_data_length : 11; // 11 bits
+  uint16_t status : 5; // 5 bits
 #else
-  uint8_t h : 1;                        // 1 bit (header specific)
-  uint8_t version : 3;                  // 3 bits
-  uint8_t message_type : 4;             // 4 bits
+  uint8_t h : 1; // 1 bit (header specific)
+  uint8_t version : 3; // 3 bits
+  uint8_t message_type : 4; // 4 bits
 
-  uint16_t status : 5;                  // 5 bits
-  uint16_t control_data_length : 11;    // 11 bits
+  uint16_t status : 5; // 5 bits
+  uint16_t control_data_length : 11; // 11 bits
 #endif
 
-  uint64_t target_entity_id;            // 64 bits
-  uint64_t controller_entity_id;        // 64 bits
-  uint16_t sequence_id;                 // 16 bits
-  uint16_t command_type;                // 16 bits (ACM command type)
+  uint64_t target_entity_id; // 64 bits
+  uint64_t controller_entity_id; // 64 bits
+  uint16_t sequence_id; // 16 bits
+  uint16_t command_type; // 16 bits (ACM command type)
 } __attribute__((packed));
 
 /* AECP READ_DESCRIPTOR Response structure */
-struct aecp_read_descriptor_response_s {
+struct aecp_read_descriptor_response_s
+{
   struct aecp_data_unit_s aecp_header;
-  uint16_t configuration_index;         // 16 bits
-  uint16_t reserved;                    // 16 bits
+  uint16_t configuration_index; // 16 bits
+  uint16_t reserved; // 16 bits
   struct atdecc_entity_descriptor_s descriptor;
 } __attribute__((packed));
 
 typedef union
 {
-  struct header_s                header;
-  struct avtp_discovery_msg_s    adp_msg;
-  struct aecp_data_unit_s        aecp_msg;
-  struct acmp_du_s               acmp_msg;
-  uint8_t                        raw[128];
+  struct header_s header;
+  struct avtp_discovery_msg_s adp_msg;
+  struct aecp_data_unit_s aecp_msg;
+  struct acmp_du_s acmp_msg;
+  uint8_t raw[128];
 } avtp_msg_buffer;
 
 /* Masks for avtp_ctl byte */
 const uint8_t AVTP_STREAMID_VALID_MASK = 0x80; /* 8th bit */
-const uint8_t AVTP_VERSION_MASK        = 0x70; /* bits 7..5 */
-const uint8_t AVTP_MSGTYPE_MASK        = 0x0F; /* bits 4..0 */
+const uint8_t AVTP_VERSION_MASK = 0x70; /* bits 7..5 */
+const uint8_t AVTP_MSGTYPE_MASK = 0x0F; /* bits 4..0 */
 
 /* Define ntohll and htonll if not already defined */
 #ifndef ntohll
@@ -178,16 +187,16 @@ const uint8_t AVTP_MSGTYPE_MASK        = 0x0F; /* bits 4..0 */
 
 /* Forward declarations */
 static uint64_t mac_to_entity_id(uint64_t mac);
-static void send_entity_descriptor_response(struct aecp_data_unit_s *request_msg, uint16_t configuration_index);
-static void adp_upsert_entity(struct avtp_discovery_msg_s *msg);
-static void adp_remove_entity(struct avtp_discovery_msg_s *msg);
-static bool has_available_talker(struct avtp_state_s *state);
+static void send_entity_descriptor_response(struct aecp_data_unit_s* request_msg, uint16_t configuration_index);
+static void adp_upsert_entity(struct avtp_discovery_msg_s* msg);
+static void adp_remove_entity(struct avtp_discovery_msg_s* msg);
+static bool has_available_talker(struct avtp_state_s* state);
 
-static struct avtp_state_s *s_state;
+static struct avtp_state_s* s_state;
 
-static int avtp_init_state(struct avtp_state_s *state, const char *interface)
+static int avtp_init_state(struct avtp_state_s* state, const char* interface)
 {
-  state ->socket = open("/dev/net/tap", 0);
+  state->socket = open("/dev/net/tap", 0);
   if (state->socket < 0)
   {
     ESP_LOGE(TAG, "Failed to create tx socket");
@@ -224,11 +233,11 @@ static int avtp_init_state(struct avtp_state_s *state, const char *interface)
 
   // Generate entity_id from MAC address
   uint64_t mac = ((uint64_t)state->intf_hw_addr[0] << 40) |
-                 ((uint64_t)state->intf_hw_addr[1] << 32) |
-                 ((uint64_t)state->intf_hw_addr[2] << 24) |
-                 ((uint64_t)state->intf_hw_addr[3] << 16) |
-                 ((uint64_t)state->intf_hw_addr[4] << 8)  |
-                 ((uint64_t)state->intf_hw_addr[5]);
+    ((uint64_t)state->intf_hw_addr[1] << 32) |
+    ((uint64_t)state->intf_hw_addr[2] << 24) |
+    ((uint64_t)state->intf_hw_addr[3] << 16) |
+    ((uint64_t)state->intf_hw_addr[4] << 8) |
+    ((uint64_t)state->intf_hw_addr[5]);
   state->entity_id = mac_to_entity_id(mac);
   state->entity_model_id = 0x0000000000000001ULL;
 
@@ -251,7 +260,7 @@ static int avtp_init_state(struct avtp_state_s *state, const char *interface)
   return ESP_OK;
 }
 
-int adp_net_rx(struct avtp_discovery_msg_s *msg, ssize_t len)
+int adp_net_rx(struct avtp_discovery_msg_s* msg, ssize_t len)
 {
   /* Convert control_data_length_field from network byte order for parsing */
   msg->control_data_length_field.raw_u16 = ntohs(msg->control_data_length_field.raw_u16);
@@ -259,28 +268,29 @@ int adp_net_rx(struct avtp_discovery_msg_s *msg, ssize_t len)
   uint8_t msg_type = msg->control & AVTP_MSGTYPE_MASK; /* lower 4 bits of 15th byte */
   switch (msg_type)
   {
-    case ADP_MSG_TYPE_ENTITY_AVAILABLE:
-      ESP_LOGI(TAG, "ADP Entity Available Message received");
-      adp_upsert_entity(msg);
-      break;
-    case ADP_MSG_TYPE_ENTITY_DEPARTING:
-      ESP_LOGI(TAG, "ADP Entity Departing Message received");
-      adp_remove_entity(msg);
-      break;
-    case ADP_MSG_TYPE_ENTITY_DISCOVER:
-      ESP_LOGI(TAG, "Entity Discover Message", msg_type);
-      break;
-    default:
-      ESP_LOGW(TAG, "Unknown ADP message type: 0x%02X", msg_type);
-      break;
+  case ADP_MSG_TYPE_ENTITY_AVAILABLE:
+    ESP_LOGI(TAG, "ADP Entity Available Message received");
+    adp_upsert_entity(msg);
+    break;
+  case ADP_MSG_TYPE_ENTITY_DEPARTING:
+    ESP_LOGI(TAG, "ADP Entity Departing Message received");
+    adp_remove_entity(msg);
+    break;
+  case ADP_MSG_TYPE_ENTITY_DISCOVER:
+    ESP_LOGI(TAG, "Entity Discover Message", msg_type);
+    break;
+  default:
+    ESP_LOGW(TAG, "Unknown ADP message type: 0x%02X", msg_type);
+    break;
   }
 
   return ESP_OK;
 }
 
-static void send_entity_descriptor_response(struct aecp_data_unit_s *request_msg, uint16_t configuration_index)
+static void send_entity_descriptor_response(struct aecp_data_unit_s* request_msg, uint16_t configuration_index)
 {
-  if (s_state == NULL || s_state->socket < 0) {
+  if (s_state == NULL || s_state->socket < 0)
+  {
     ESP_LOGE(TAG, "Socket not ready to send AECP response");
     return;
   }
@@ -331,41 +341,44 @@ static void send_entity_descriptor_response(struct aecp_data_unit_s *request_msg
   response.descriptor.association_id = htonll(0);
 
   /* Set entity name */
-  const char *entity_name = "ESP32-AVB Entity";
-  strncpy((char *)response.descriptor.entity_name, entity_name, sizeof(response.descriptor.entity_name));
+  const char* entity_name = "ESP32-AVB Entity";
+  strncpy((char*)response.descriptor.entity_name, entity_name, sizeof(response.descriptor.entity_name));
 
   response.descriptor.vendor_name_string = htons(0);
   response.descriptor.model_name_string = htons(0);
 
   /* Set firmware version */
-  const char *fw_version = "0.0.1";
-  strncpy((char *)response.descriptor.firmware_version, fw_version, sizeof(response.descriptor.firmware_version));
+  const char* fw_version = "0.0.1";
+  strncpy((char*)response.descriptor.firmware_version, fw_version, sizeof(response.descriptor.firmware_version));
 
   /* Set group name */
-  const char *group_name = "ESP32-AVB";
-  strncpy((char *)response.descriptor.group_name, group_name, sizeof(response.descriptor.group_name));
+  const char* group_name = "ESP32-AVB";
+  strncpy((char*)response.descriptor.group_name, group_name, sizeof(response.descriptor.group_name));
 
   /* Set serial number */
   char serial[65];
   snprintf(serial, sizeof(serial), "%02X%02X%02X%02X%02X%02X",
            s_state->intf_hw_addr[0], s_state->intf_hw_addr[1], s_state->intf_hw_addr[2],
            s_state->intf_hw_addr[3], s_state->intf_hw_addr[4], s_state->intf_hw_addr[5]);
-  strncpy((char *)response.descriptor.serial_number, serial, sizeof(response.descriptor.serial_number));
+  strncpy((char*)response.descriptor.serial_number, serial, sizeof(response.descriptor.serial_number));
 
   response.descriptor.configurations_count = htons(1);
   response.descriptor.current_configuration = htons(0);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &response, sizeof(response));
-  if (written < 0) {
+  if (written < 0)
+  {
     ESP_LOGE(TAG, "Failed to send ENTITY descriptor response: %d", errno);
-  } else {
+  }
+  else
+  {
     ESP_LOGI(TAG, "Sent AECP Entity Descriptor Response");
   }
 }
 
 /* Handle AECP ATDECC Entity Model Command messages */
-int aecp_aem_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
+int aecp_aem_command_handle(struct aecp_data_unit_s* msg, ssize_t len)
 {
   if (msg == NULL || len < sizeof(struct aecp_data_unit_s))
   {
@@ -385,7 +398,7 @@ int aecp_aem_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
     return ESP_OK;
   }
 
-  uint8_t *payload = (uint8_t *)msg + sizeof(struct aecp_data_unit_s);
+  uint8_t* payload = (uint8_t*)msg + sizeof(struct aecp_data_unit_s);
   switch (command_type)
   {
   case ACM_COMMAND_TYPE_READ_DESCRIPTOR:
@@ -405,7 +418,7 @@ int aecp_aem_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
       }
     }
     break;
-    case ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION:
+  case ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION:
     {
       ESP_LOGI(TAG, "Received AECP ACM Register Unsolicited Notification Command");
 
@@ -413,19 +426,22 @@ int aecp_aem_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
       ssize_t payload_offset = sizeof(struct aecp_data_unit_s);
       bool time_limited = 0;
 
-      if (len > payload_offset) {
+      if (len > payload_offset)
+      {
         /* Payload exists, read flags and extract time_limited bit */
         uint32_t flags = ntohl(*(uint32_t *)(payload + 0));
         time_limited = flags & 0x1; // Least significant bit
         ESP_LOGI(TAG, "  Flags: 0x%08X, Time Limited: %d", flags, time_limited);
-      } else {
+      }
+      else
+      {
         /* No payload, time_limited defaults to 0 */
         ESP_LOGI(TAG, "  No payload, Time Limited: 0");
       }
     }
     break;
-    case ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION:
-      ESP_LOGI(TAG, "Received AECP ACM Register Unsolicited Notification Command");
+  case ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION:
+    ESP_LOGI(TAG, "Received AECP ACM Register Unsolicited Notification Command");
     break;
   default:
     ESP_LOGW(TAG, "Recieved unimplemented AECP ACM Command type: 0x%04X", command_type);
@@ -434,7 +450,7 @@ int aecp_aem_command_handle(struct aecp_data_unit_s *msg, ssize_t len)
   return ESP_OK;
 }
 
-int aecp_net_rx(struct aecp_data_unit_s *msg, ssize_t len)
+int aecp_net_rx(struct aecp_data_unit_s* msg, ssize_t len)
 {
   if (msg == NULL || len < sizeof(struct aecp_data_unit_s))
   {
@@ -444,15 +460,15 @@ int aecp_net_rx(struct aecp_data_unit_s *msg, ssize_t len)
 
   switch (msg->message_type)
   {
-    case AECP_MSG_TYPE_AEM_COMMAND:
-      aecp_aem_command_handle(msg, len);
-      break;
-    case AECP_MSG_TYPE_AEM_RESPONSE:
-      ESP_LOGI(TAG, "AECP ACM Response Message Received");
-      break;
-    default:
-      ESP_LOGW(TAG, "Unknown AECP message type: 0x%X", msg->message_type);
-      break;
+  case AECP_MSG_TYPE_AEM_COMMAND:
+    aecp_aem_command_handle(msg, len);
+    break;
+  case AECP_MSG_TYPE_AEM_RESPONSE:
+    ESP_LOGI(TAG, "AECP ACM Response Message Received");
+    break;
+  default:
+    ESP_LOGW(TAG, "Unknown AECP message type: 0x%X", msg->message_type);
+    break;
   }
 
   return ESP_OK;
@@ -463,7 +479,7 @@ static uint64_t mac_to_entity_id(uint64_t mac)
   return ((mac & 0xffffff000000) << 16) | (0xfffe000000) | (mac & 0xffffff);
 }
 
-static void adp_upsert_entity(struct avtp_discovery_msg_s *msg)
+static void adp_upsert_entity(struct avtp_discovery_msg_s* msg)
 {
   if (!s_state) return;
 
@@ -478,15 +494,15 @@ static void adp_upsert_entity(struct avtp_discovery_msg_s *msg)
   uint16_t listener_stream_sinks = ((uint16_t)msg->listener_stream_sinks[0] << 8) | msg->listener_stream_sinks[1];
   uint16_t listener_capabilities = ((uint16_t)msg->listener_capabilities[0] << 8) | msg->listener_capabilities[1];
   uint32_t controller_capabilities = ((uint32_t)msg->controller_capabilities[0] << 24) |
-                                     ((uint32_t)msg->controller_capabilities[1] << 16) |
-                                     ((uint32_t)msg->controller_capabilities[2] << 8)  |
-                                     ((uint32_t)msg->controller_capabilities[3]);
+    ((uint32_t)msg->controller_capabilities[1] << 16) |
+    ((uint32_t)msg->controller_capabilities[2] << 8) |
+    ((uint32_t)msg->controller_capabilities[3]);
   uint32_t available_index = ((uint32_t)msg->available_index[0] << 24) |
-                             ((uint32_t)msg->available_index[1] << 16) |
-                             ((uint32_t)msg->available_index[2] << 8)  |
-                             ((uint32_t)msg->available_index[3]);
+    ((uint32_t)msg->available_index[1] << 16) |
+    ((uint32_t)msg->available_index[2] << 8) |
+    ((uint32_t)msg->available_index[3]);
 
-  uint8_t *src_mac = msg->header.src_mac;
+  uint8_t* src_mac = msg->header.src_mac;
 
   /* Valid time (5 bits) doubled in seconds */
   uint8_t valid_time = msg->control_data_length_field.valid_time & 0x1F;
@@ -495,9 +511,12 @@ static void adp_upsert_entity(struct avtp_discovery_msg_s *msg)
 
   /* Search for existing entry or free slot */
   int free_index = -1;
-  for (int i = 0; i < MAX_ADP_ENTITIES; ++i) {
-    if (s_state->adp_entities[i].in_use) {
-      if (s_state->adp_entities[i].entity_id == entity_id) {
+  for (int i = 0; i < MAX_ADP_ENTITIES; ++i)
+  {
+    if (s_state->adp_entities[i].in_use)
+    {
+      if (s_state->adp_entities[i].entity_id == entity_id)
+      {
         /* Update existing entry */
         s_state->adp_entities[i].talker_stream_sources = talker_stream_sources;
         s_state->adp_entities[i].talker_capabilities = talker_capabilities;
@@ -511,18 +530,21 @@ static void adp_upsert_entity(struct avtp_discovery_msg_s *msg)
                  (unsigned long long)entity_id, (unsigned)(valid_time * 2));
         return;
       }
-    } else if (free_index < 0) {
+    }
+    else if (free_index < 0)
+    {
       free_index = i; /* remember first free slot */
     }
   }
 
-  if (free_index < 0) {
+  if (free_index < 0)
+  {
     ESP_LOGW(TAG, "ADP entity list full; cannot add 0x%016llX", (unsigned long long)entity_id);
     return;
   }
 
   /* Add new entry */
-  struct adp_entity_entry_s *entry = &s_state->adp_entities[free_index];
+  struct adp_entity_entry_s* entry = &s_state->adp_entities[free_index];
   entry->entity_id = entity_id;
   memcpy(entry->mac, src_mac, 6);
   entry->talker_stream_sources = talker_stream_sources;
@@ -534,15 +556,16 @@ static void adp_upsert_entity(struct avtp_discovery_msg_s *msg)
   entry->valid_until = valid_until;
   entry->in_use = true;
 
-  ESP_LOGI(TAG, "Added ADP entity 0x%016llX (MAC: %02X:%02X:%02X:%02X:%02X:%02X, TalkerSrc=%u, ListenerSinks=%u, valid %us)",
-           (unsigned long long)entity_id,
-           src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5],
-           talker_stream_sources,
-           listener_stream_sinks,
-           (unsigned)(valid_time * 2));
+  ESP_LOGI(
+    TAG, "Added ADP entity 0x%016llX (MAC: %02X:%02X:%02X:%02X:%02X:%02X, TalkerSrc=%u, ListenerSinks=%u, valid %us)",
+    (unsigned long long)entity_id,
+    src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5],
+    talker_stream_sources,
+    listener_stream_sinks,
+    (unsigned)(valid_time * 2));
 }
 
-static void adp_remove_entity(struct avtp_discovery_msg_s *msg)
+static void adp_remove_entity(struct avtp_discovery_msg_s* msg)
 {
   if (!s_state) return;
 
@@ -552,8 +575,10 @@ static void adp_remove_entity(struct avtp_discovery_msg_s *msg)
   uint64_t entity_id = ntohll(entity_id_net);
 
   /* Search for entity and mark as not in use */
-  for (int i = 0; i < MAX_ADP_ENTITIES; ++i) {
-    if (s_state->adp_entities[i].in_use && s_state->adp_entities[i].entity_id == entity_id) {
+  for (int i = 0; i < MAX_ADP_ENTITIES; ++i)
+  {
+    if (s_state->adp_entities[i].in_use && s_state->adp_entities[i].entity_id == entity_id)
+    {
       s_state->adp_entities[i].in_use = false;
       ESP_LOGI(TAG, "Removed ADP entity 0x%016llX (MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
                (unsigned long long)entity_id,
@@ -569,7 +594,8 @@ static void adp_remove_entity(struct avtp_discovery_msg_s *msg)
 
 void send_adp_entity_available()
 {
-  if (s_state == NULL || s_state->socket < 0) {
+  if (s_state == NULL || s_state->socket < 0)
+  {
     ESP_LOGE(TAG, "Socket not ready to send ADP");
     return;
   }
@@ -600,7 +626,7 @@ void send_adp_entity_available()
   /* control_data_length: length of ADP payload after header (network byte order) */
   uint16_t payload_len = sizeof(msg) - sizeof(msg.header);
   msg.control_data_length_field.control_data_length = payload_len;
-  msg.control_data_length_field.valid_time = 10;  /* Set valid_time as needed */
+  msg.control_data_length_field.valid_time = 10; /* Set valid_time as needed */
   msg.control_data_length_field.raw_u16 = htons(msg.control_data_length_field.raw_u16);
 
   memcpy(msg.entity_capabilities, (uint8_t[]){0x00, 0x00, 0xC5, 0x08}, 4); // Example capabilities
@@ -622,30 +648,37 @@ void send_adp_entity_available()
   msg.available_index[3] = s_state->adp_available_index++ & 0xFF;
 
   memset(msg.association_id, 0x00, sizeof(msg.association_id));
-  memcpy(msg.gptp_grandmaster_id, (uint8_t[]){0x00,0x01,0xf2,0xff,0xfe, 0x00, 0xae, 0x35}, 8); // Example grandmaster ID
+  memcpy(msg.gptp_grandmaster_id, (uint8_t[]){0x00, 0x01, 0xf2, 0xff, 0xfe, 0x00, 0xae, 0x35}, 8);
+  // Example grandmaster ID
 
   ssize_t written = write(s_state->socket, &msg, 82);
-  if (written < 0) {
+  if (written < 0)
+  {
     ESP_LOGE(TAG, "Failed to send ADP entity available: %d", errno);
-  } else {
+  }
+  else
+  {
     ESP_LOGI(TAG, "Sent ADP Entity Available");
   }
 }
 
-static int64_t timespec_to_ms(const struct timespec *ts)
+static int64_t timespec_to_ms(const struct timespec* ts)
 {
-  return ts->tv_sec * 1000  + (ts->tv_nsec / 1000000ll);
+  return ts->tv_sec * 1000 + (ts->tv_nsec / 1000000ll);
 }
 
-static bool has_available_talker(struct avtp_state_s *state)
+static bool has_available_talker(struct avtp_state_s* state)
 {
   if (!state) return false;
 
   time_t now = time(NULL);
-  for (int i = 0; i < MAX_ADP_ENTITIES; ++i) {
-    if (state->adp_entities[i].in_use) {
+  for (int i = 0; i < MAX_ADP_ENTITIES; ++i)
+  {
+    if (state->adp_entities[i].in_use)
+    {
       /* Check if entity is still valid */
-      if (state->adp_entities[i].valid_until < now) {
+      if (state->adp_entities[i].valid_until < now)
+      {
         /* Entity expired, mark as not in use */
         state->adp_entities[i].in_use = false;
         ESP_LOGW(TAG, "ADP entity 0x%016llX expired",
@@ -654,7 +687,8 @@ static bool has_available_talker(struct avtp_state_s *state)
       }
 
       /* Check if entity has talker capabilities */
-      if (state->adp_entities[i].talker_stream_sources > 0) {
+      if (state->adp_entities[i].talker_stream_sources > 0)
+      {
         ESP_LOGI(TAG, "Found available talker: 0x%016llX with %u stream sources",
                  (unsigned long long)state->adp_entities[i].entity_id,
                  state->adp_entities[i].talker_stream_sources);
@@ -665,9 +699,9 @@ static bool has_available_talker(struct avtp_state_s *state)
   return false;
 }
 
-static void avtp_listener_task(void *arg)
+static void avtp_listener_task(void* arg)
 {
-  const char *interface = "ETH_0";
+  const char* interface = "ETH_0";
   avtp_msg_buffer buf;
 
   struct avtp_state_s* state = calloc(1, sizeof(struct avtp_state_s));
@@ -678,7 +712,7 @@ static void avtp_listener_task(void *arg)
     interface = arg;
   }
 
-  if(avtp_init_state(state, interface) != ESP_OK)
+  if (avtp_init_state(state, interface) != ESP_OK)
   {
     ESP_LOGE(TAG, "Failed to initialize AVTP state, exiting\n");
     free(state);
@@ -686,7 +720,7 @@ static void avtp_listener_task(void *arg)
 
   ESP_LOGI(TAG, "AVTP listener started on interface: %s", interface);
 
-  while(!state->stop)
+  while (!state->stop)
   {
     const ssize_t len = read(state->socket, &buf, sizeof(buf));
     if (len > 0)
@@ -713,13 +747,19 @@ static void avtp_listener_task(void *arg)
     }
 
     /* Check connection status and attempt to connect to available talkers */
-    if (!state->connected) {
-      if (has_available_talker(state)) {
+    if (!state->connected)
+    {
+      if (has_available_talker(state))
+      {
         ESP_LOGI(TAG, "Not connected, sending ACMP connect message to available talker");
-        send_acmp_connect_rx_command(state, ACMP_MSG_TYPE_CONNECT_RX_COMMAND);
-        if (send_acmp_connect_tx_command(state, ACMP_MSG_TYPE_CONNECT_TX_COMMAND) == ESP_OK) {;
+        if (send_acmp_connect_rx_command(state, ACMP_MSG_TYPE_CONNECT_RX_COMMAND) == ESP_OK)
+        {
           state->connected = true;
         }
+
+        // if (send_acmp_connect_tx_command(state, ACMP_MSG_TYPE_CONNECT_TX_COMMAND) == ESP_OK) {;
+        //   state->connected = true;
+        // }
       }
     }
 
@@ -728,9 +768,9 @@ static void avtp_listener_task(void *arg)
 
     clock_gettime(CLOCK_MONOTONIC, &time_now);
     timespecsub(&time_now,
-      &state->last_transmitted_adp, &delta);
+                &state->last_transmitted_adp, &delta);
     if (timespec_to_ms(&delta)
-        > CONFIG_ADP_SEND_INTERVAL_MSEC)
+      > CONFIG_ADP_SEND_INTERVAL_MSEC)
     {
       // TODO refactor using randomDeviceDelay p 56. of IEEE 1722-2022
       state->last_transmitted_adp = time_now;
@@ -741,12 +781,12 @@ static void avtp_listener_task(void *arg)
 }
 
 
-int start_avtp_listener(const char *interface)
+int start_avtp_listener(const char* interface)
 {
   if (s_state == NULL)
   {
     xTaskCreate(avtp_listener_task, "AVTP", 4096,
-      (void *)interface, tskIDLE_PRIORITY + 1, nullptr);
+                (void*)interface, tskIDLE_PRIORITY + 1, nullptr);
     return ESP_OK;
   }
   ESP_LOGE(TAG, "Other instance of AVTP is already running");

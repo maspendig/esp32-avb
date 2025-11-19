@@ -115,16 +115,22 @@ int send_acmp_connect_rx_command(const struct avtp_state_s* state, uint8_t msg_t
 
   acmp_set_common_header(state, &msg, msg_type, 44, 0);
   acmp_set_common_du(state, &msg);
+  auto talker = &(state->adp_entities[0]);
 
   /* ACMP payload - convert to network byte order */
   const uint64_t entity_id = htonll(state->entity_id);
-  const uint64_t talker_entity_id = htonll(state->adp_entities[0].entity_id);
+  const uint64_t talker_entity_id = htonll(talker->entity_id);
   memcpy(msg.talker_entity_id, &entity_id, sizeof(msg.talker_entity_id));
   memcpy(msg.listener_entity_id, &talker_entity_id, sizeof(msg.listener_entity_id));
+  memcpy(msg.stream_dest_mac, talker->mac, sizeof(msg.stream_dest_mac));
 
-  memcpy(msg.stream_dest_mac, state->adp_entities[0].mac, sizeof(msg.stream_dest_mac));
-
-  return send_msg(state->socket, &msg, sizeof(msg));
+  if (send_msg(state->socket, &msg, sizeof(msg)) != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to send ACMP Connect RX Command");
+    return ESP_FAIL;
+  }
+  ESP_LOGI(TAG, "Sent ACMP Connect RX Command to Talker 0x%016llX", (unsigned long long)talker->entity_id);
+  return ESP_OK;
 }
 
 void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
@@ -147,30 +153,41 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s*
   struct acmp_du_s resp = {0};
 
   uint64_t talker_entity_id = htonll(*(uint64_t *)msg->talker_entity_id);
-  uint64_t entity_id = htonll(state->entity_id);
 
-  if (talker_entity_id != entity_id)
-  {
-    ESP_LOGV(TAG, "Ignoring foreign ACMP Connect TX Command (target: 0x%016llX).",
-             (unsigned long long)talker_entity_id);
-    return ESP_OK;
-  }
+  // TODO check if this condition is correct.
+  // We are a listener receiving a connect tx command from a talker
+  // So the check should be is listener_entity_id == our entity_id, right?
 
-  //TODO do we need to check the sequence id?
+  // if (talker_entity_id != state->entity_id)
+  // {
+  //   ESP_LOGW(TAG, "Ignoring foreign ACMP Connect TX Command (target: 0x%016llX, our: 0x%016llX).",
+  //            (unsigned long long)talker_entity_id, (unsigned long long)state->entity_id);
+  //   return ESP_OK;
+  // }
 
   acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_TX_RESPONSE, 44, 0);
   acmp_set_common_du(state, &resp);
 
+  resp.sequence_id = msg->sequence_id;
+
   /* ACMP payload - convert to network byte order */
-  memcpy(resp.talker_entity_id, &talker_entity_id, sizeof(resp.talker_entity_id));
-  memcpy(resp.listener_entity_id, &entity_id, sizeof(resp.listener_entity_id));
+  memcpy(resp.talker_entity_id, &msg->talker_entity_id, sizeof(resp.talker_entity_id));
+  memcpy(resp.listener_entity_id, &msg->listener_entity_id, sizeof(resp.listener_entity_id));
   uint8_t mac[6] = {0x91, 0xE0, 0xF0, 0x00, 0xfe, 0x00}; // MAAP fake address
+  // TODO: This should be the stream destination MAC address!
   memcpy(resp.stream_dest_mac, mac, sizeof(resp.stream_dest_mac));
 
   resp.connection_count = htons(1); // One connection established
-  resp.stream_vlan_id = ntohs(msg->stream_vlan_id); // Keep the same VLAN ID
+  resp.stream_vlan_id = msg->stream_vlan_id; // Keep the same VLAN ID
 
-  return send_msg(state->socket, &resp, sizeof(resp));
+  if (send_msg(state->socket, &resp, sizeof(resp)) != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to send ACMP Connect TX Response");
+    return ESP_FAIL;
+  }
+  ESP_LOGI(TAG, "Sent ACMP Connect TX Response to Talker 0x%016llX",
+           (unsigned long long)talker_entity_id);
+  return ESP_OK;
 }
 
 int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
