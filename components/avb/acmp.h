@@ -77,6 +77,7 @@ struct acmp_du_s {
 #define ACMP_SET_CTRL_DATA_STATUS(hdr, status, cdl) \
   (hdr->control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)))
 
-int send_acmp_message(const struct avtp_state_s *state);
+int send_acmp_talker_command(const struct avtp_state_s *state, uint8_t msg_type);
+int send_acmp_listener_command(const struct avtp_state_s *state, uint8_t msg_type);
 void acmp_net_rx(struct avtp_state_s *state,struct acmp_du_s *msg, ssize_t len);
 #endif //ETHERNET_PTP_ACMP_H

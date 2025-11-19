@@ -31,8 +31,13 @@
 #endif
 #endif
 
-void acmp_set_common_header(struct acmp_du_s *msg, uint8_t msg_type, uint16_t length, uint8_t status)
+void acmp_set_common_header(const struct avtp_state_s *state, struct acmp_du_s *msg, uint8_t msg_type, uint16_t length, uint8_t status)
 {
+  /* Set Ethernet header */
+  const uint8_t acmp_multicast_mac[6] = {0x91, 0xE0, 0xF0, 0x01, 0x00, 0x00}; // ACMP multicast MAC
+  memcpy(msg->header.dst_mac, acmp_multicast_mac, sizeof(msg->header.dst_mac));
+  memcpy(msg->header.src_mac, state->intf_hw_addr, sizeof(msg->header.src_mac));
+
   /* Ethernet type (big-endian) */
   msg->header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
   msg->header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
@@ -44,7 +49,21 @@ void acmp_set_common_header(struct acmp_du_s *msg, uint8_t msg_type, uint16_t le
   ACMP_SET_CTRL_DATA_STATUS((&msg->header), status, length);
 }
 
-int send_acmp_message(const struct avtp_state_s *state)
+void acmp_set_common_du(const struct avtp_state_s *state, struct acmp_du_s *msg)
+{
+  const uint64_t entity_id = htonll(state->entity_id);
+  memcpy(msg->controller_entity_id, &entity_id, sizeof(msg->controller_entity_id));
+  msg->talker_unique_id = htons(0);
+  msg->listener_unique_id = htons(0);
+  msg->connection_count = htons(0);
+  msg->sequence_id = htons(1);
+  msg->flags = htons(0);
+  msg->stream_vlan_id = htons(0);
+  msg->reserved = htons(0);
+  msg->stream_id[7] = 0x01;
+}
+
+int send_acmp_listener_command(const struct avtp_state_s *state, uint8_t msg_type)
 {
   ESP_LOGI(TAG, "Sent ACMP Connect TX Command to %02X:%02X:%02X:%02X:%02X:%02X entity_id=0x%016llx",
             state->adp_entities[0].mac[0], state->adp_entities[0].mac[1],
@@ -53,35 +72,16 @@ int send_acmp_message(const struct avtp_state_s *state)
             (unsigned long long)state->adp_entities[0].entity_id);
   struct acmp_du_s msg = {0};
 
-  /* Set Ethernet header */
-  const uint8_t acmp_multicast_mac[6] = {0x91, 0xE0, 0xF0, 0x01, 0x00, 0x00}; // ACMP multicast MAC
-  memcpy(msg.header.dst_mac, acmp_multicast_mac, sizeof(msg.header.dst_mac));
-  memcpy(msg.header.src_mac, state->intf_hw_addr, sizeof(msg.header.src_mac));
-
-
-  acmp_set_common_header(&msg, ACMP_MSG_TYPE_CONNECT_TX_COMMAND, 44, 0);
+  acmp_set_common_header(state, &msg, msg_type, 44, 0);
+  acmp_set_common_du(state, &msg);
 
   /* ACMP payload - convert to network byte order */
-  msg.stream_id[7] = 0x01;
   const uint64_t entity_id = htonll(state->entity_id);
-  memcpy(msg.controller_entity_id, &entity_id, sizeof(msg.controller_entity_id));
   const uint64_t talker_entity_id = htonll(state->adp_entities[0].entity_id);
   memcpy(msg.talker_entity_id, &talker_entity_id, sizeof(msg.talker_entity_id));
   memcpy(msg.listener_entity_id, &entity_id, sizeof(msg.listener_entity_id));
-  msg.talker_unique_id = htons(0);
-  msg.listener_unique_id = htons(0);
-  memcpy(msg.stream_dest_mac, state->adp_entities[0].mac, sizeof(msg.stream_dest_mac));
-  msg.connection_count = htons(0);
-  msg.sequence_id = htons(1);
-  msg.flags = htons(0);
-  msg.stream_vlan_id = htons(0);
-  msg.reserved = htons(0);
 
-  /* Debug: dump controller_entity_id bytes (network order) */
-  uint8_t *cid = (uint8_t *)&msg.controller_entity_id;
-  ESP_LOGI(TAG, "controller_entity_id host=0x%016llx net_bytes=%02X %02X %02X %02X %02X %02X %02X %02X",
-           (unsigned long long)state->entity_id,
-           cid[0], cid[1], cid[2], cid[3], cid[4], cid[5], cid[6], cid[7]);
+  memcpy(msg.stream_dest_mac, state->adp_entities[0].mac, sizeof(msg.stream_dest_mac));
 
   /* Send the message */
   const ssize_t written = write(state->socket, &msg, sizeof(msg));
@@ -94,10 +94,30 @@ int send_acmp_message(const struct avtp_state_s *state)
   }
 }
 
-void send_acmp_response(const struct avtp_state_s *state, uint8_t msg_type)
+int send_acmp_talker_command(const struct avtp_state_s *state, uint8_t msg_type)
 {
   struct acmp_du_s msg = {0};
-  acmp_set_common_header(&msg, msg_type, 44, 0);
+
+  acmp_set_common_header(state, &msg, msg_type, 44, 0);
+  acmp_set_common_du(state, &msg);
+
+  /* ACMP payload - convert to network byte order */
+  const uint64_t entity_id = htonll(state->entity_id);
+  const uint64_t talker_entity_id = htonll(state->adp_entities[0].entity_id);
+  memcpy(msg.talker_entity_id, &entity_id, sizeof(msg.talker_entity_id));
+  memcpy(msg.listener_entity_id, &talker_entity_id, sizeof(msg.listener_entity_id));
+
+  memcpy(msg.stream_dest_mac, state->adp_entities[0].mac, sizeof(msg.stream_dest_mac));
+
+  /* Send the message */
+  const ssize_t written = write(state->socket, &msg, sizeof(msg));
+  if (written < 0) {
+    ESP_LOGE(TAG, "Failed to send ACMP Message: %d (errno: %d)", written, errno);
+    return ESP_FAIL;
+  } else {
+    ESP_LOGI(TAG, "Sent ACMP Connect RX Command", written);
+    return ESP_OK;
+  }
 }
 
 void handle_acmp_connect_tx_response(struct avtp_state_s *state, struct acmp_du_s *msg)
@@ -111,7 +131,7 @@ void handle_acmp_connect_tx_response(struct avtp_state_s *state, struct acmp_du_
 
   /* Connection established successfully */
   ESP_LOGI(TAG, "ACMP Connect TX successful, connection established.");
-  send_acmp_response(state, ACMP_MSG_TYPE_CONNECT_RX_RESPONSE);
+  // send_acmp_message(state, ACMP_MSG_TYPE_CONNECT_RX_COMMAND);
 }
 
 void acmp_net_rx(struct avtp_state_s *state,struct acmp_du_s *msg, ssize_t len)
