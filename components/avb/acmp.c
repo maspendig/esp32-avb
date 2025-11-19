@@ -30,6 +30,7 @@
 #define htonll(x) ((uint64_t)(x))
 #endif
 #endif
+
 void eui48_from_uint64( uint8_t *mac[6], uint64_t other )
 {
   *mac[0] = ( uint8_t )( ( other >> ( 5 * 8 ) ) & 0xff );
@@ -78,11 +79,10 @@ int send_msg(int socket, void* buffer, int buflen)
     ESP_LOGE(TAG, "Failed to send ACMP Message: %d (errno: %d)", written, errno);
     return ESP_FAIL;
   }
-  ESP_LOGI(TAG, "Sent ACMP Message", written);
   return ESP_OK;
 }
 
-int send_acmp_listener_command(const struct avtp_state_s *state, uint8_t msg_type)
+int send_acmp_connect_tx_command(const struct avtp_state_s *state, uint8_t msg_type)
 {
   ESP_LOGI(TAG, "Sent ACMP Connect TX Command to %02X:%02X:%02X:%02X:%02X:%02X entity_id=0x%016llx",
             state->adp_entities[0].mac[0], state->adp_entities[0].mac[1],
@@ -106,7 +106,7 @@ int send_acmp_listener_command(const struct avtp_state_s *state, uint8_t msg_typ
   return send_msg(state->socket, &msg, sizeof(msg));
 }
 
-int send_acmp_talker_command(const struct avtp_state_s *state, uint8_t msg_type)
+int send_acmp_connect_rx_command(const struct avtp_state_s *state, uint8_t msg_type)
 {
   struct acmp_du_s msg = {0};
 
@@ -142,14 +142,22 @@ int handle_acmp_connect_tx_command(struct avtp_state_s *state,struct acmp_du_s *
 {
   struct acmp_du_s resp = {0};
 
-  // TODO check if talker_entity_id == our entity_id
+  uint64_t talker_entity_id = htonll(*(uint64_t *)msg->talker_entity_id);
+  uint64_t entity_id = htonll(state->entity_id);
+
+  if (talker_entity_id != entity_id)
+  {
+    ESP_LOGV(TAG, "Ignoring foreign ACMP Connect TX Command (target: 0x%016llX).",
+             (unsigned long long)talker_entity_id);
+    return ESP_OK;
+  }
+
+  //TODO do we need to check the sequence id?
 
   acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_TX_RESPONSE, 44, 0);
   acmp_set_common_du(state, &resp);
 
   /* ACMP payload - convert to network byte order */
-  const uint64_t entity_id = htonll(state->entity_id);
-  const uint64_t talker_entity_id = htonll(state->adp_entities[0].entity_id);
   memcpy(resp.talker_entity_id, &talker_entity_id, sizeof(resp.talker_entity_id));
   memcpy(resp.listener_entity_id, &entity_id, sizeof(resp.listener_entity_id));
   uint8_t mac[6] = {0x91, 0xE0, 0xF0, 0x00, 0xfe, 0x00}; // MAAP fake address
@@ -159,6 +167,26 @@ int handle_acmp_connect_tx_command(struct avtp_state_s *state,struct acmp_du_s *
   resp.stream_vlan_id = ntohs(msg->stream_vlan_id); // Keep the same VLAN ID
 
   return send_msg(state->socket, &resp, sizeof(resp));
+}
+
+int handle_acmp_connect_rx_response(struct avtp_state_s *state,struct acmp_du_s *msg)
+{
+  const auto status = ACMP_GET_STATUS(&msg->header);
+  /* Check status */
+  switch (status) {
+  case ACMP_STATUS_SUCCESS:
+    ESP_LOGI(TAG, "ACMP Connect RX successful, connection established.");
+  break;
+  case ACMP_STATUS_LISTENER_TALKER_TIMEOUT:
+    ESP_LOGW(TAG, "ACMP Connect RX Response: Listener-Talker Timeout");
+    return ESP_FAIL;
+  default:
+    ESP_LOGE(TAG, "ACMP Connect RX Response failed with status: %d", status);
+    return ESP_FAIL;
+  }
+
+  /* Connection established successfully */
+  return ESP_OK;
 }
 
 void acmp_net_rx(struct avtp_state_s *state,struct acmp_du_s *msg, ssize_t len)
@@ -171,6 +199,9 @@ void acmp_net_rx(struct avtp_state_s *state,struct acmp_du_s *msg, ssize_t len)
   case ACMP_MSG_TYPE_CONNECT_TX_RESPONSE:
     handle_acmp_connect_tx_response(state, msg);
     break;
+  case ACMP_MSG_TYPE_CONNECT_RX_RESPONSE:
+    handle_acmp_connect_rx_response(state, msg);
+   break;
   default:
     ESP_LOGW(TAG, "Received unimplemented ACMP message type: 0x%1X", msg->header.message_type);
   }

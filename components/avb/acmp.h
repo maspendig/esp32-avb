@@ -25,6 +25,9 @@
 #define ACMP_MSG_TYPE_GET_TX_CONNECTION_COMMAND  0xc
 #define ACMP_MSG_TYPE_GET_TX_CONNECTION_RESPONSE  0xd
 
+#define ACMP_STATUS_SUCCESS 0x00
+#define ACMP_STATUS_LISTENER_TALKER_TIMEOUT 0x07
+
 #define MULTICAST_ACMP_MAC ( 0x91e0f0010000ULL )
 
 struct acmp_header_s {
@@ -77,7 +80,7 @@ struct acmp_du_s {
 #define ACMP_SET_CTRL_DATA_STATUS(hdr, status, cdl) \
   (hdr->control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)))
 
-int send_acmp_talker_command(const struct avtp_state_s *state, uint8_t msg_type);
-int send_acmp_listener_command(const struct avtp_state_s *state, uint8_t msg_type);
+int send_acmp_connect_rx_command(const struct avtp_state_s *state, uint8_t msg_type);
+int send_acmp_connect_tx_command(const struct avtp_state_s *state, uint8_t msg_type);
 void acmp_net_rx(struct avtp_state_s *state,struct acmp_du_s *msg, ssize_t len);
 #endif //ETHERNET_PTP_ACMP_H

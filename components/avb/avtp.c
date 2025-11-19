@@ -716,8 +716,8 @@ static void avtp_listener_task(void *arg)
     if (!state->connected) {
       if (has_available_talker(state)) {
         ESP_LOGI(TAG, "Not connected, sending ACMP connect message to available talker");
-        send_acmp_talker_command(state, ACMP_MSG_TYPE_CONNECT_RX_COMMAND);
-        if (send_acmp_listener_command(state, ACMP_MSG_TYPE_CONNECT_TX_COMMAND) == ESP_OK) {;
+        send_acmp_connect_rx_command(state, ACMP_MSG_TYPE_CONNECT_RX_COMMAND);
+        if (send_acmp_connect_tx_command(state, ACMP_MSG_TYPE_CONNECT_TX_COMMAND) == ESP_OK) {;
           state->connected = true;
         }
       }
