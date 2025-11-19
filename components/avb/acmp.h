@@ -37,17 +37,12 @@ struct acmp_header_s {
   uint8_t message_type : 4;             // 4 bits
   uint8_t version : 3;                  // 3 bits
   uint8_t h : 1;                        // 1 bit (header specific)
-
-  uint16_t control_data_length : 11;    // 11 bits
-  uint16_t status : 5;                  // 5 bits
 #else
   uint8_t h : 1;                        // 1 bit (header specific)
   uint8_t version : 3;                  // 3 bits
   uint8_t message_type : 4;             // 4 bits
-
-  uint16_t status : 5;                  // 5 bits
-  uint16_t control_data_length : 11;    // 11 bits
 #endif
+  uint16_t control_data_len_status;
 };
 
 /* ATDECC Connection Management Protocol Data Unit */
@@ -72,6 +67,15 @@ struct acmp_du_s {
   uint64_t source_ip_address[2];
   uint64_t destination_ip_address[2];
 };
+
+#define ACMP_GET_STATUS(hdr) \
+  ((ntohs((hdr)->control_data_len_status) >> 11) & 0x1F)
+
+#define ACMP_GET_CTRL_DATA_LEN(hdr) \
+  (ntohs(hdr->control_data_len_status) & 0x7FF)
+
+#define ACMP_SET_CTRL_DATA_STATUS(hdr, status, cdl) \
+  (hdr->control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)))
 
 int send_acmp_message(const struct avtp_state_s *state);
 void acmp_net_rx(struct avtp_state_s *state,struct acmp_du_s *msg, ssize_t len);

@@ -32,6 +32,7 @@
 #endif
 
 
+
 int send_acmp_message(const struct avtp_state_s *state)
 {
   ESP_LOGI(TAG, "Sent ACMP Connect TX Command to %02X:%02X:%02X:%02X:%02X:%02X entity_id=0x%016llx",
@@ -56,9 +57,8 @@ int send_acmp_message(const struct avtp_state_s *state)
   msg.header.version = 0;
   msg.header.message_type = ACMP_MSG_TYPE_CONNECT_TX_COMMAND;
 
-  /* Calculate control_data_length: everything after the AECP common header */
-  msg.header.control_data_length = htons(4);
-  msg.header.status = 0; // SUCCESS
+  const auto hdr = &msg.header;
+  ACMP_SET_CTRL_DATA_STATUS(hdr, 0, 44);
 
   /* ACMP payload - convert to network byte order */
   msg.stream_id[7] = 0x01;
@@ -92,12 +92,29 @@ int send_acmp_message(const struct avtp_state_s *state)
     return ESP_OK;
   }
 }
+
+void handle_acmp_connect_tx_response(struct avtp_state_s *state, struct acmp_du_s *msg)
+{
+  ESP_LOGI(TAG, "Received ACMP Connect TX Response",
+           (unsigned long long)ntohll(*(uint64_t *)msg->stream_id));
+
+  auto status = ACMP_GET_STATUS(&msg->header);
+  /* Check status */
+  if (status != 0) {
+    ESP_LOGE(TAG, "ACMP Connect TX Response failed with status: %d", status);
+    return;
+  }
+
+  /* Connection established successfully */
+  ESP_LOGI(TAG, "ACMP Connect TX successful, connection established.");
+}
+
 void acmp_net_rx(struct avtp_state_s *state,struct acmp_du_s *msg, ssize_t len)
 {
   switch (msg->header.message_type)
   {
   case ACMP_MSG_TYPE_CONNECT_TX_RESPONSE:
-    ESP_LOGI(TAG, "Received ACMP Connect TX Response");
+    handle_acmp_connect_tx_response(state, msg);
     break;
   default:
     ESP_LOGW(TAG, "Received unimplemented ACMP message type: 0x%1X", msg->header.message_type);
