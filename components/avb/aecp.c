@@ -269,12 +269,14 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
     handle_aecp_aem_read_desc_cmd(s_state, msg, len);
     break;
   case ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION:
-    ESP_LOGI(TAG, "Received AECP ACM Register Unsolicited Notification Command");
+    ESP_LOGI(TAG, "Received AECP ACM register Unsolicited Notification Command");
     handle_aecp_acm_register_unsol_notification(s_state, msg, len);
     break;
   case ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION:
-    ESP_LOGI(TAG, "Received AECP ACM Register Unsolicited Notification Command");
-
+    ESP_LOGI(TAG, "Received AECP ACM unregister Unsolicited Notification Command");
+    break;
+  case ACM_COMMAND_TYPE_GET_SAMPLING_RATE:
+    ESP_LOGI(TAG, "Received AECP ACM GET_SAMPLING_RATE Command");
     break;
   default:
     ESP_LOGW(TAG, "Recieved unimplemented AECP ACM Command type: 0x%04X", command_type);
