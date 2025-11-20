@@ -20,6 +20,33 @@
 #define ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION 0x0025
 #define ACM_COMMAND_TYPE_IDENTIFY_NOTIFICATION 0x0026
 
+#define AEM_DESC_TYPE_ENTITY 0x0000
+#define AEM_DESC_TYPE_CONFIGURATION 0x0001
+#define AEM_DESC_TYPE_AUDIO_UNIT 0x0002
+#define AEM_DESC_TYPE_STREAM_INPUT 0x0005
+#define AEM_DESC_TYPE_STREAM_OUTPUT 0x0006
+#define AEM_DESC_TYPE_AVB_INTERFACE 0x0009
+#define AEM_DESC_TYPE_CLOCK_SOURCE 0x000A
+#define AEM_DESC_TYPE_LOCALE 0x000C
+#define AEM_DESC_TYPE_STRINGS 0x000D
+#define AEM_DESC_TYPE_CLOCK_DOMAIN 0x0024
+
+struct desc_count_s
+{
+  u16 descriptor_type;
+  u16 count;
+} __attribute__((packed));
+
+struct config_desc_s
+{
+  u16 descriptor_type;
+  u8 descriptor_index[64];
+  u16 localized_description;
+  u16 descriptor_counts_count;
+  u16 descriptor_counts_offset;
+  struct desc_count_s descriptor_counts[];
+} __attribute__((packed));
+
 struct aecp_aem_read_desc_cmd
 {
   u16 configuration;

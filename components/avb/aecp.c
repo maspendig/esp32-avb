@@ -11,8 +11,7 @@
 
 #define TAG "aecp"
 
-static void send_entity_descriptor_response(struct avtp_state_s* s_state, struct aecp_data_unit_s* request_msg,
-                                            uint16_t configuration_index)
+static void send_entity_descriptor_response(struct avtp_state_s* s_state, struct aecp_data_unit_s* request_msg)
 {
   if (s_state == NULL || s_state->socket < 0)
   {
@@ -99,17 +98,123 @@ static void send_entity_descriptor_response(struct avtp_state_s* s_state, struct
   }
 }
 
+void send_configuration_response(struct avtp_state_s* s_state, struct aecp_data_unit_s* request_msg)
+{
+  if (s_state == NULL || s_state->socket < 0)
+  {
+    ESP_LOGE(TAG, "Socket not ready to send AECP response");
+    return;
+  }
+
+  struct config_response
+  {
+    struct aecp_data_unit_s aecp_header;
+    uint16_t configuration_index;
+    uint16_t reserved;
+    struct config_desc_s config_desc;
+  } __attribute__((packed));
+
+  // Define the number of descriptor types
+  const size_t num_desc_types = 8;
+
+  // Calculate total response size
+  const size_t response_size = sizeof(struct aecp_data_unit_s) +
+    sizeof(uint16_t) * 2 + // configuration_index + reserved
+    sizeof(struct config_desc_s) +
+    num_desc_types * sizeof(struct desc_count_s);
+
+  // Allocate response with space for the flexible array member
+  struct config_response* resp = malloc(response_size);
+
+  if (resp == NULL)
+  {
+    ESP_LOGE(TAG, "Failed to allocate memory for configuration response");
+    return;
+  }
+
+  // Copy AECP header from request and swap MAC addresses
+  memcpy(resp->aecp_header.header.dst_mac, request_msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp->aecp_header.header.src_mac, request_msg->header.dst_mac, ETH_ADDR_LEN);
+
+  // Copy Ethernet type
+  resp->aecp_header.header.eth_type[0] = request_msg->header.eth_type[0];
+  resp->aecp_header.header.eth_type[1] = request_msg->header.eth_type[1];
+
+  // Copy and modify AECP fields
+  resp->aecp_header.subtype = request_msg->subtype;
+  resp->aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE; // Change to response
+  resp->aecp_header.version = request_msg->version;
+  resp->aecp_header.h = request_msg->h;
+  // Set control data length and status
+  const uint16_t desc_data_len = sizeof(struct config_desc_s) + num_desc_types * sizeof(struct desc_count_s);
+  ACMP_SET_CTRL_DATA_STATUS((&resp->aecp_header), 0, desc_data_len);
+
+  // Copy entity IDs and sequence ID
+  resp->aecp_header.target_entity_id = request_msg->target_entity_id;
+  resp->aecp_header.controller_entity_id = request_msg->controller_entity_id;
+  resp->aecp_header.sequence_id = request_msg->sequence_id;
+  resp->aecp_header.command_type = request_msg->command_type;
+
+  // Set configuration index and reserved
+  resp->configuration_index = htons(0);
+  resp->reserved = htons(0);
+
+  // Initialize the configuration descriptor fields
+  resp->config_desc.descriptor_type = htons(AEM_DESC_TYPE_CONFIGURATION);
+  memset(resp->config_desc.descriptor_index, 0, sizeof(resp->config_desc.descriptor_index));
+  resp->config_desc.localized_description = htons(0);
+  resp->config_desc.descriptor_counts_count = htons(num_desc_types);
+  resp->config_desc.descriptor_counts_offset = htons(74); // Offset to descriptor_counts array
+
+  // Populate the descriptor_counts array
+  resp->config_desc.descriptor_counts[0].descriptor_type = htons(AEM_DESC_TYPE_AUDIO_UNIT);
+  resp->config_desc.descriptor_counts[0].count = htons(1);
+  resp->config_desc.descriptor_counts[1].descriptor_type = htons(AEM_DESC_TYPE_STREAM_INPUT);
+  resp->config_desc.descriptor_counts[1].count = htons(1);
+  resp->config_desc.descriptor_counts[2].descriptor_type = htons(AEM_DESC_TYPE_STREAM_OUTPUT);
+  resp->config_desc.descriptor_counts[2].count = htons(1);
+  resp->config_desc.descriptor_counts[3].descriptor_type = htons(AEM_DESC_TYPE_AVB_INTERFACE);
+  resp->config_desc.descriptor_counts[3].count = htons(1);
+  resp->config_desc.descriptor_counts[4].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_SOURCE);
+  resp->config_desc.descriptor_counts[4].count = htons(1);
+  resp->config_desc.descriptor_counts[5].descriptor_type = htons(AEM_DESC_TYPE_LOCALE);
+  resp->config_desc.descriptor_counts[5].count = htons(1);
+  resp->config_desc.descriptor_counts[6].descriptor_type = htons(AEM_DESC_TYPE_STRINGS);
+  resp->config_desc.descriptor_counts[6].count = htons(1);
+  resp->config_desc.descriptor_counts[7].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
+  resp->config_desc.descriptor_counts[7].count = htons(1);
+
+  // Send configuration descriptor response
+  ssize_t written = write(s_state->socket, resp, response_size);
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send CONFIGURATION descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP Configuration Descriptor Response (%zd bytes)", written);
+  }
+
+  // Free allocated memory
+  free(resp);
+}
+
 void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
 {
   struct aecp_aem_read_desc_cmd* read_desc_cmd = (struct aecp_aem_read_desc_cmd*)(msg + 1);
-  switch (read_desc_cmd->descriptor_type)
+  auto desc_type = ntohs(read_desc_cmd->descriptor_type);
+  switch (desc_type)
   {
-  case 0x0000: // ENTITY Descriptor
-    ESP_LOGI(TAG, "Received AECP ACM Read Entity Descriptor Request");
-    send_entity_descriptor_response(s_state, msg, read_desc_cmd->configuration);
+  case AEM_DESC_TYPE_ENTITY: // ENTITY Descriptor
+    ESP_LOGI(TAG, "Received ACM Read ENTITY Descriptor Request");
+    send_entity_descriptor_response(s_state, msg);
+    break;
+  case AEM_DESC_TYPE_CONFIGURATION:
+    ESP_LOGI(TAG, "Received ACM Read CONFIGURATION Descriptor Request");
+    send_configuration_response(s_state, msg);
     break;
   default:
-    ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", read_desc_cmd->descriptor_type);
+    ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", desc_type);
     break;
   }
 }
@@ -145,11 +250,6 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
 
   /* Convert command_type from network byte order to host byte order */
   uint16_t command_type = ntohs(msg->command_type);
-
-  auto ctrl_data_length = ACMP_GET_CTRL_DATA_LEN(msg);
-  auto status = ACMP_GET_STATUS(msg);
-
-  ESP_LOGI(TAG, "  Control Data Length: %u, Status: 0x%02X", ctrl_data_length, status);
 
   uint64_t target_entity_id = ntohll(msg->target_entity_id);
   if (target_entity_id != s_state->entity_id)
