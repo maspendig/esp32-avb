@@ -161,24 +161,6 @@ const uint8_t AVTP_STREAMID_VALID_MASK = 0x80; /* 8th bit */
 const uint8_t AVTP_VERSION_MASK = 0x70; /* bits 7..5 */
 const uint8_t AVTP_MSGTYPE_MASK = 0x0F; /* bits 4..0 */
 
-/* Define ntohll and htonll if not already defined */
-#ifndef ntohll
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#define ntohll(x) ((uint64_t)( \
-    (((uint64_t)(x) & 0x00000000000000ffULL) << 56) | \
-    (((uint64_t)(x) & 0x000000000000ff00ULL) << 40) | \
-    (((uint64_t)(x) & 0x0000000000ff0000ULL) << 24) | \
-    (((uint64_t)(x) & 0x00000000ff000000ULL) << 8)  | \
-    (((uint64_t)(x) & 0x000000ff00000000ULL) >> 8)  | \
-    (((uint64_t)(x) & 0x0000ff0000000000ULL) >> 24) | \
-    (((uint64_t)(x) & 0x00ff000000000000ULL) >> 40) | \
-    (((uint64_t)(x) & 0xff00000000000000ULL) >> 56) ))
-#define htonll(x) ntohll(x)
-#else
-#define ntohll(x) ((uint64_t)(x))
-#define htonll(x) ((uint64_t)(x))
-#endif
-#endif
 
 /* Forward declarations */
 static uint64_t mac_to_entity_id(uint64_t mac);

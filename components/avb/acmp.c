@@ -1,5 +1,8 @@
 #include <esp_log.h>
+
+#include "avtp.h"
 #include "acmp.h"
+#include "types.h"
 
 #include <cc.h>
 #include <esp_err.h>
@@ -8,28 +11,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "avtp.h"
-
 #define TAG "acmp"
-
-/* Define ntohll and htonll if not already defined */
-#ifndef ntohll
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#define ntohll(x) ((uint64_t)( \
-    (((uint64_t)(x) & 0x00000000000000ffULL) << 56) | \
-    (((uint64_t)(x) & 0x000000000000ff00ULL) << 40) | \
-    (((uint64_t)(x) & 0x0000000000ff0000ULL) << 24) | \
-    (((uint64_t)(x) & 0x00000000ff000000ULL) << 8)  | \
-    (((uint64_t)(x) & 0x000000ff00000000ULL) >> 8)  | \
-    (((uint64_t)(x) & 0x0000ff0000000000ULL) >> 24) | \
-    (((uint64_t)(x) & 0x00ff000000000000ULL) >> 40) | \
-    (((uint64_t)(x) & 0xff00000000000000ULL) >> 56) ))
-#define htonll(x) ntohll(x)
-#else
-#define ntohll(x) ((uint64_t)(x))
-#define htonll(x) ((uint64_t)(x))
-#endif
-#endif
 
 void eui48_from_uint64(uint8_t* mac[6], uint64_t other)
 {
