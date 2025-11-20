@@ -14,10 +14,19 @@
 /* ATDECC Entity Model Command response */
 #define AECP_MSG_TYPE_AEM_RESPONSE  0x1
 
+#define ACM_COMMAND_TYPE_ACQUIRE_ENTITY 0x0000
 #define ACM_COMMAND_TYPE_READ_DESCRIPTOR 0x0004
 #define ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION 0x0024
 #define ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION 0x0025
 #define ACM_COMMAND_TYPE_IDENTIFY_NOTIFICATION 0x0026
+
+struct aecp_aem_read_desc_cmd
+{
+  u16 configuration;
+  u16 reserved;
+  u16 descriptor_type;
+  u16 descriptor_index;
+} __attribute__((packed));
 
 struct aecp_data_unit_s
 {
@@ -29,9 +38,9 @@ struct aecp_data_unit_s
   u8 version : 3; // 3 bits
   u8 h : 1; // 1 bit (header specific)
 #else
-  uint8_t h : 1; // 1 bit (header specific)
-  uint8_t version : 3; // 3 bits
-  uint8_t message_type : 4; // 4 bits
+  u8 h : 1; // 1 bit (header specific)
+  u8 version : 3; // 3 bits
+  u8 message_type : 4; // 4 bits
 #endif
 
   u16 control_data_len_status; // 16 bits
@@ -65,7 +74,7 @@ struct atdecc_entity_descriptor_s
   uint8_t serial_number[64]; // UTF-8 serial number string
   uint16_t configurations_count; // Number of configuration descriptors
   uint16_t current_configuration; // Index of current configuration
-};
+} __attribute__((packed));
 
 /* AECP READ_DESCRIPTOR Response structure */
 struct aecp_read_descriptor_response_s

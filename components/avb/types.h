@@ -5,6 +5,8 @@
 #ifndef ETHERNET_PTP_TYPES_H
 #define ETHERNET_PTP_TYPES_H
 
+#include <stdint.h>
+
 typedef uint64_t u64;
 typedef uint32_t u32;
 typedef uint16_t u16;
@@ -12,9 +14,9 @@ typedef uint8_t u8;
 
 struct header_s
 {
-  uint8_t dst_mac[6];
-  uint8_t src_mac[6];
-  uint8_t eth_type[2];
+  u8 dst_mac[6];
+  u8 src_mac[6];
+  u8 eth_type[2];
 };
 
 #ifndef ntohll

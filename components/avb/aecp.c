@@ -1,15 +1,12 @@
-
+#include "types.h"
 #include "aecp.h"
-
-#include <acmp.h>
-
+#include "acmp.h"
 #include "avtp.h"
 
 #include <cc.h>
 #include <esp_err.h>
 #include <esp_eth_spec.h>
 #include <esp_log.h>
-#include <types.h>
 #include <sys/unistd.h>
 
 #define TAG "aecp"
@@ -27,7 +24,7 @@ static void send_entity_descriptor_response(struct avtp_state_s* s_state, struct
 
   /* Copy Ethernet header from request and swap MAC addresses */
   memcpy(response.aecp_header.header.dst_mac, request_msg->header.src_mac, ETH_ADDR_LEN);
-  memcpy(response.aecp_header.header.src_mac, s_state->intf_hw_addr, ETH_ADDR_LEN);
+  memcpy(response.aecp_header.header.src_mac, request_msg->header.dst_mac, ETH_ADDR_LEN);
 
   /* Ethernet type (big-endian) */
   response.aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
@@ -39,11 +36,11 @@ static void send_entity_descriptor_response(struct avtp_state_s* s_state, struct
   response.aecp_header.version = 0;
   response.aecp_header.h = 0;
 
-  ACMP_SET_CTRL_DATA_STATUS((&response.aecp_header), 0, 44);
+  ACMP_SET_CTRL_DATA_STATUS((&response.aecp_header), 0, 328);
 
   /* Swap entity IDs - we become the target, controller becomes the controller */
-  response.aecp_header.target_entity_id = request_msg->controller_entity_id;
-  response.aecp_header.controller_entity_id = request_msg->target_entity_id;
+  response.aecp_header.target_entity_id = request_msg->target_entity_id;
+  response.aecp_header.controller_entity_id = request_msg->controller_entity_id;
   response.aecp_header.sequence_id = request_msg->sequence_id; // Echo sequence ID
   response.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
 
@@ -102,6 +99,40 @@ static void send_entity_descriptor_response(struct avtp_state_s* s_state, struct
   }
 }
 
+void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
+{
+  struct aecp_aem_read_desc_cmd* read_desc_cmd = (struct aecp_aem_read_desc_cmd*)(msg + 1);
+  switch (read_desc_cmd->descriptor_type)
+  {
+  case 0x0000: // ENTITY Descriptor
+    ESP_LOGI(TAG, "Received AECP ACM Read Entity Descriptor Request");
+    send_entity_descriptor_response(s_state, msg, read_desc_cmd->configuration);
+    break;
+  default:
+    ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", read_desc_cmd->descriptor_type);
+    break;
+  }
+}
+
+void handle_aecp_acm_register_unsol_notification(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg,
+                                                 ssize_t len)
+{
+  struct aecp_data_unit_s response = {0};
+  memcpy(&response, msg, sizeof(struct aecp_data_unit_s));
+
+  response.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+
+  /* Send the response */
+  ssize_t written = write(s_state->socket, &response, sizeof(response));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send ENTITY descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP Entity Descriptor Response");
+  }
+}
 
 /* Handle AECP ATDECC Entity Model Command messages */
 int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
@@ -115,64 +146,39 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
   /* Convert command_type from network byte order to host byte order */
   uint16_t command_type = ntohs(msg->command_type);
 
-  /* Check if the message is targeted to this entity */
+  auto ctrl_data_length = ACMP_GET_CTRL_DATA_LEN(msg);
+  auto status = ACMP_GET_STATUS(msg);
+
+  ESP_LOGI(TAG, "  Control Data Length: %u, Status: 0x%02X", ctrl_data_length, status);
+
   uint64_t target_entity_id = ntohll(msg->target_entity_id);
   if (target_entity_id != s_state->entity_id)
   {
-    ESP_LOGV(TAG, "AECP message not for this entity (target: 0x%016llX, our: 0x%016llX)",
-             (unsigned long long)target_entity_id, (unsigned long long)s_state->entity_id);
+    // TODO change to debug level once verified
+    ESP_LOGW(TAG, "AECP message not for this entity (target: 0x%016llX, our: 0x%016llX)",
+             target_entity_id, s_state->entity_id);
     return ESP_OK;
   }
 
-  uint8_t* payload = (uint8_t*)msg + sizeof(struct aecp_data_unit_s);
   switch (command_type)
   {
+  case ACM_COMMAND_TYPE_ACQUIRE_ENTITY:
+    ESP_LOGI(TAG, "Received AECP ACM Acquire Entity Command");
+    break;
   case ACM_COMMAND_TYPE_READ_DESCRIPTOR:
-    {
-      uint16_t configuration_index = ntohs(*(uint16_t*)(payload + 0));
-      uint16_t descriptor_type = ntohs(*(uint16_t*)(payload + 4));
-
-      switch (descriptor_type)
-      {
-      case 0x0000: // ENTITY Descriptor
-        ESP_LOGI(TAG, "Received AECP ACM Read Entity Descriptor Request");
-        send_entity_descriptor_response(s_state, msg, configuration_index);
-        break;
-      default:
-        ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", descriptor_type);
-        break;
-      }
-    }
+    handle_aecp_aem_read_desc_cmd(s_state, msg, len);
     break;
   case ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION:
-    {
-      ESP_LOGI(TAG, "Received AECP ACM Register Unsolicited Notification Command");
-
-      /* Check if message has payload (flags field) */
-      ssize_t payload_offset = sizeof(struct aecp_data_unit_s);
-      bool time_limited = 0;
-
-      if (len > payload_offset)
-      {
-        /* Payload exists, read flags and extract time_limited bit */
-        uint32_t flags = ntohl(*(uint32_t*)(payload + 0));
-        time_limited = flags & 0x1; // Least significant bit
-        ESP_LOGI(TAG, "  Flags: 0x%08X, Time Limited: %d", flags, time_limited);
-      }
-      else
-      {
-        /* No payload, time_limited defaults to 0 */
-        ESP_LOGI(TAG, "  No payload, Time Limited: 0");
-      }
-    }
+    ESP_LOGI(TAG, "Received AECP ACM Register Unsolicited Notification Command");
+    handle_aecp_acm_register_unsol_notification(s_state, msg, len);
     break;
   case ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION:
     ESP_LOGI(TAG, "Received AECP ACM Register Unsolicited Notification Command");
+
     break;
   default:
     ESP_LOGW(TAG, "Recieved unimplemented AECP ACM Command type: 0x%04X", command_type);
   }
-
   return ESP_OK;
 }
 

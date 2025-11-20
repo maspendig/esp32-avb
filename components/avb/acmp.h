@@ -66,7 +66,7 @@ struct acmp_du_s
   u16 dest_port;
   u64 source_ip_address[2];
   u64 destination_ip_address[2];
-};
+} __attribute__((packed));
 
 #define ACMP_GET_STATUS(hdr) \
   ((ntohs((hdr)->control_data_len_status) >> 11) & 0x1F)

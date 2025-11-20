@@ -148,6 +148,7 @@ static void avtp_listener_task(void* arg)
     struct aecp_data_unit_s aecp;
     struct acmp_du_s acmp;
     struct avtp_header_s header;
+    u8 raw[100];
   } buf;
 
   struct avtp_state_s* state = calloc(1, sizeof(struct avtp_state_s));
@@ -178,9 +179,12 @@ static void avtp_listener_task(void* arg)
         adp_net_rx(state, &buf.adp, len);
         break;
       case AVTP_SUBTYPE_AECP:
+
+        // ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)&buf.raw + 15, 45, ESP_LOG_INFO);
         aecp_net_rx(state, &buf.aecp, len);
         break;
       case AVTP_SUBTYPE_ACMP:
+
         acmp_net_rx(state, &buf.acmp, len);
         break;
       case AVTP_SUBTYPE_MAAP:
