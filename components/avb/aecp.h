@@ -5,7 +5,6 @@
 #ifndef ETHERNET_PTP_AECP_H
 #define ETHERNET_PTP_AECP_H
 
-#include "avtp.h"
 #include <stdint.h>
 #include <types.h>
 #include <sys/types.h>
@@ -42,6 +41,32 @@ struct aecp_data_unit_s
   u16 command_type; // 16 bits (ACM command type)
 } __attribute__((packed));
 
+
+/* IEEE 1722.1-2021 ENTITY Descriptor (7.2.1) */
+struct atdecc_entity_descriptor_s
+{
+  uint16_t descriptor_type; // 0x0000 for ENTITY
+  uint16_t descriptor_index; // 0x0000 for ENTITY (only one per entity)
+  uint64_t entity_id; // Unique identifier for the ATDECC Entity
+  uint64_t entity_model_id; // Unique identifier for the Entity model
+  uint32_t entity_capabilities; // Entity capability flags
+  uint16_t talker_stream_sources; // Number of talker stream sources
+  uint16_t talker_capabilities; // Talker capability flags
+  uint16_t listener_stream_sinks; // Number of listener stream sinks
+  uint16_t listener_capabilities; // Listener capability flags
+  uint32_t controller_capabilities; // Controller capability flags
+  uint32_t available_index; // Incremented on ADP available
+  uint64_t association_id; // Association ID for grouping entities
+  uint8_t entity_name[64]; // UTF-8 entity name
+  uint16_t vendor_name_string; // Localized string reference
+  uint16_t model_name_string; // Localized string reference
+  uint8_t firmware_version[64]; // UTF-8 firmware version string
+  uint8_t group_name[64]; // UTF-8 group name string
+  uint8_t serial_number[64]; // UTF-8 serial number string
+  uint16_t configurations_count; // Number of configuration descriptors
+  uint16_t current_configuration; // Index of current configuration
+};
+
 /* AECP READ_DESCRIPTOR Response structure */
 struct aecp_read_descriptor_response_s
 {
@@ -51,5 +76,6 @@ struct aecp_read_descriptor_response_s
   struct atdecc_entity_descriptor_s descriptor;
 } __attribute__((packed));
 
+struct avtp_state_s;
 int aecp_net_rx(struct avtp_state_s* state, struct aecp_data_unit_s* msg, ssize_t len);
 #endif //ETHERNET_PTP_AECP_H

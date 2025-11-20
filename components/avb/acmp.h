@@ -6,7 +6,9 @@
 #ifndef ETHERNET_PTP_ACMP_H
 #define ETHERNET_PTP_ACMP_H
 
-#include "avtp.h"
+#include <sys/types.h>
+
+#include <avtp.h>
 #include "types.h"
 
 #define AVTP_SUBTYPE_ACMP 0xFC
@@ -31,47 +33,39 @@
 
 #define MULTICAST_ACMP_MAC ( 0x91e0f0010000ULL )
 
-struct acmp_header_s
-{
-  uint8_t dst_mac[6];
-  uint8_t src_mac[6];
-  uint8_t eth_type[2];
-  uint8_t subtype;
-
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-  uint8_t message_type : 4; // 4 bits
-  uint8_t version : 3; // 3 bits
-  uint8_t h : 1; // 1 bit (header specific)
-#else
-  uint8_t h : 1; // 1 bit (header specific)
-  uint8_t version : 3; // 3 bits
-  uint8_t message_type : 4; // 4 bits
-#endif
-  uint16_t control_data_len_status;
-};
-
 /* ATDECC Connection Management Protocol Data Unit */
 struct acmp_du_s
 {
-  struct acmp_header_s header;
-  uint8_t stream_id[8];
-  uint8_t controller_entity_id[8];
-  uint8_t talker_entity_id[8];
-  uint8_t listener_entity_id[8];
-  uint16_t talker_unique_id;
-  uint16_t listener_unique_id;
-  uint8_t stream_dest_mac[6];
-  uint16_t connection_count;
-  uint16_t sequence_id;
-  uint16_t flags;
-  uint16_t stream_vlan_id;
-  uint16_t connected_listeners_entries;
-  uint16_t ip_flags;
-  uint16_t reserved;
-  uint16_t source_port;
-  uint16_t dest_port;
-  uint64_t source_ip_address[2];
-  uint64_t destination_ip_address[2];
+  struct header_s header;
+  u8 subtype;
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  u8 message_type : 4; // 4 bits
+  u8 version : 3; // 3 bits
+  u8 h : 1; // 1 bit (header specific)
+#else
+  u8 h : 1; // 1 bit (header specific)
+  u8 version : 3; // 3 bits
+  u8 message_type : 4; // 4 bits
+#endif
+  u16 control_data_len_status;
+  u8 stream_id[8];
+  u8 controller_entity_id[8];
+  u8 talker_entity_id[8];
+  u8 listener_entity_id[8];
+  u16 talker_unique_id;
+  u16 listener_unique_id;
+  u8 stream_dest_mac[6];
+  u16 connection_count;
+  u16 sequence_id;
+  u16 flags;
+  u16 stream_vlan_id;
+  u16 connected_listeners_entries;
+  u16 ip_flags;
+  u16 reserved;
+  u16 source_port;
+  u16 dest_port;
+  u64 source_ip_address[2];
+  u64 destination_ip_address[2];
 };
 
 #define ACMP_GET_STATUS(hdr) \
@@ -82,6 +76,8 @@ struct acmp_du_s
 
 #define ACMP_SET_CTRL_DATA_STATUS(hdr, status, cdl) \
   (hdr->control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)))
+
+struct avtp_state_s;
 
 int send_acmp_connect_rx_command(struct avtp_state_s* state, u8 msg_type);
 int send_acmp_connect_tx_command(struct avtp_state_s* state, u8 msg_type);

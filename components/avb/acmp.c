@@ -35,11 +35,11 @@ void acmp_set_common_header(struct avtp_state_s* state, struct acmp_du_s* msg, u
   msg->header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
   msg->header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
 
-  msg->header.subtype = AVTP_SUBTYPE_ACMP;
-  msg->header.h = 0;
-  msg->header.version = 0;
-  msg->header.message_type = msg_type;
-  ACMP_SET_CTRL_DATA_STATUS((&msg->header), status, length);
+  msg->subtype = AVTP_SUBTYPE_ACMP;
+  msg->h = 0;
+  msg->version = 0;
+  msg->message_type = msg_type;
+  ACMP_SET_CTRL_DATA_STATUS(msg, status, length);
 }
 
 void acmp_set_common_du(struct avtp_state_s* state, struct acmp_du_s* msg)
@@ -120,7 +120,7 @@ int send_acmp_connect_rx_command(struct avtp_state_s* state, uint8_t msg_type)
 
 void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
-  const auto status = ACMP_GET_STATUS(&msg->header);
+  const auto status = ACMP_GET_STATUS(msg);
   /* Check status */
   if (status != 0)
   {
@@ -176,7 +176,7 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s*
 
 int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
-  const auto status = ACMP_GET_STATUS(&msg->header);
+  const auto status = ACMP_GET_STATUS(msg);
   /* Check status */
   switch (status)
   {
@@ -197,7 +197,7 @@ int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_du_s
 
 void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)
 {
-  switch (msg->header.message_type)
+  switch (msg->message_type)
   {
   case ACMP_MSG_TYPE_CONNECT_TX_COMMAND:
     handle_acmp_connect_tx_command(state, msg);
@@ -209,6 +209,6 @@ void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)
     handle_acmp_connect_rx_response(state, msg);
     break;
   default:
-    ESP_LOGW(TAG, "Received unimplemented ACMP message type: 0x%1X", msg->header.message_type);
+    ESP_LOGW(TAG, "Received unimplemented ACMP message type: 0x%1X", msg->message_type);
   }
 }

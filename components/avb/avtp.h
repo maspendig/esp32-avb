@@ -4,6 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <time.h>
+#include <types.h>
+
+#include <aecp.h>
+#include <acmp.h>
 
 #define ETH_TYPE_AVTP 0x22F0
 #define MAX_ADP_ENTITIES 32
@@ -13,30 +17,61 @@
 #define AVTP_SUBTYPE_AECP 0xFB
 #define AVTP_SUBTYPE_MAAP 0xFE
 
-/* IEEE 1722.1-2021 ENTITY Descriptor (7.2.1) */
-struct atdecc_entity_descriptor_s
+/* Masks for avtp_ctl byte */
+#define AVTP_STREAMID_VALID_MASK  0x80 /* 8th bit */
+#define AVTP_VERSION_MASK  0x70 /* bits 7..5 */
+#define AVTP_MSGTYPE_MASK  0x0F /* bits 4..0 */
+
+
+struct avtp_discovery_msg_s
 {
-  uint16_t descriptor_type; // 0x0000 for ENTITY
-  uint16_t descriptor_index; // 0x0000 for ENTITY (only one per entity)
-  uint64_t entity_id; // Unique identifier for the ATDECC Entity
-  uint64_t entity_model_id; // Unique identifier for the Entity model
-  uint32_t entity_capabilities; // Entity capability flags
-  uint16_t talker_stream_sources; // Number of talker stream sources
-  uint16_t talker_capabilities; // Talker capability flags
-  uint16_t listener_stream_sinks; // Number of listener stream sinks
-  uint16_t listener_capabilities; // Listener capability flags
-  uint32_t controller_capabilities; // Controller capability flags
-  uint32_t available_index; // Incremented on ADP available
-  uint64_t association_id; // Association ID for grouping entities
-  uint8_t entity_name[64]; // UTF-8 entity name
-  uint16_t vendor_name_string; // Localized string reference
-  uint16_t model_name_string; // Localized string reference
-  uint8_t firmware_version[64]; // UTF-8 firmware version string
-  uint8_t group_name[64]; // UTF-8 group name string
-  uint8_t serial_number[64]; // UTF-8 serial number string
-  uint16_t configurations_count; // Number of configuration descriptors
-  uint16_t current_configuration; // Index of current configuration
-} __attribute__((packed));
+  struct header_s header;
+  uint8_t subtype;
+  /** AVTP control field containing
+   * - Stream ID valid (bit 0)
+   * - AVTP version (bits 1..4)
+   * - Message type (bits 5..7)
+   *
+   * use AVTP_STREAMID_VALID_MASK, AVTP_VERSION_MASK, AVTP_MSGTYPE_MASK to extract values
+   */
+  uint8_t control;
+
+  /** Control data length field containing valid_time (5 bits) and control_data_length (11 bits) */
+  union
+  {
+    struct
+    {
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+      uint16_t control_data_length : 11; /* 11 bits for control data length */
+      uint16_t valid_time : 5; /* 5 bits for valid time */
+#else
+      uint16_t valid_time : 5; /* 5 bits for valid time */
+      uint16_t control_data_length : 11; /* 11 bits for control data length */
+#endif
+    } __attribute__((packed));
+
+    uint8_t raw[2]; /* Raw bytes for network transmission */
+    uint16_t raw_u16; /* Raw 16-bit value for easy manipulation */
+  } control_data_length_field;
+
+  uint8_t entity_id[8];
+  uint8_t entity_model_id[8];
+  uint8_t entity_capabilities[4];
+  uint8_t talker_stream_sources[2];
+  uint8_t talker_capabilities[2];
+  uint8_t listener_stream_sinks[2];
+  uint8_t listener_capabilities[2];
+  uint8_t controller_capabilities[4];
+  uint8_t available_index[4];
+  uint8_t gptp_grandmaster_id[8];
+  uint8_t association_id[8];
+};
+
+struct avtp_header_s
+{
+  struct header_s header;
+  u8 subtype;
+};
 
 /* Structure to hold discovered ADP entity information */
 struct adp_entity_entry_s
