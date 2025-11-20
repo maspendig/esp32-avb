@@ -41,7 +41,7 @@ void eui48_from_uint64(uint8_t* mac[6], uint64_t other)
   *mac[5] = (uint8_t)((other >> (0 * 8)) & 0xff);
 }
 
-void acmp_set_common_header(const struct avtp_state_s* state, struct acmp_du_s* msg, uint8_t msg_type, uint16_t length,
+void acmp_set_common_header(struct avtp_state_s* state, struct acmp_du_s* msg, uint8_t msg_type, uint16_t length,
                             uint8_t status)
 {
   /* Set Ethernet header */
@@ -60,14 +60,14 @@ void acmp_set_common_header(const struct avtp_state_s* state, struct acmp_du_s* 
   ACMP_SET_CTRL_DATA_STATUS((&msg->header), status, length);
 }
 
-void acmp_set_common_du(const struct avtp_state_s* state, struct acmp_du_s* msg)
+void acmp_set_common_du(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
   const uint64_t entity_id = htonll(state->entity_id);
   memcpy(msg->controller_entity_id, &entity_id, sizeof(msg->controller_entity_id));
   msg->talker_unique_id = htons(0);
   msg->listener_unique_id = htons(0);
   msg->connection_count = htons(0);
-  msg->sequence_id = htons(1);
+  msg->sequence_id = htons(state->acmp_sequence_id++);
   msg->flags = htons(0);
   msg->stream_vlan_id = htons(0);
   msg->reserved = htons(0);
@@ -85,7 +85,7 @@ int send_msg(int socket, void* buffer, int buflen)
   return ESP_OK;
 }
 
-int send_acmp_connect_tx_command(const struct avtp_state_s* state, uint8_t msg_type)
+int send_acmp_connect_tx_command(struct avtp_state_s* state, uint8_t msg_type)
 {
   ESP_LOGI(TAG, "Sent ACMP Connect TX Command to %02X:%02X:%02X:%02X:%02X:%02X entity_id=0x%016llx",
            state->adp_entities[0].mac[0], state->adp_entities[0].mac[1],
@@ -103,13 +103,14 @@ int send_acmp_connect_tx_command(const struct avtp_state_s* state, uint8_t msg_t
   memcpy(msg.talker_entity_id, &talker_entity_id, sizeof(msg.talker_entity_id));
   memcpy(msg.listener_entity_id, &entity_id, sizeof(msg.listener_entity_id));
 
-  memcpy(msg.stream_dest_mac, state->adp_entities[0].mac, sizeof(msg.stream_dest_mac));
+  const uint8_t zero_mac[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  memcpy(msg.stream_dest_mac, zero_mac, sizeof(msg.stream_dest_mac));
 
   /* Send the message */
   return send_msg(state->socket, &msg, sizeof(msg));
 }
 
-int send_acmp_connect_rx_command(const struct avtp_state_s* state, uint8_t msg_type)
+int send_acmp_connect_rx_command(struct avtp_state_s* state, uint8_t msg_type)
 {
   struct acmp_du_s msg = {0};
 
@@ -122,7 +123,9 @@ int send_acmp_connect_rx_command(const struct avtp_state_s* state, uint8_t msg_t
   const uint64_t talker_entity_id = htonll(talker->entity_id);
   memcpy(msg.talker_entity_id, &entity_id, sizeof(msg.talker_entity_id));
   memcpy(msg.listener_entity_id, &talker_entity_id, sizeof(msg.listener_entity_id));
-  memcpy(msg.stream_dest_mac, talker->mac, sizeof(msg.stream_dest_mac));
+
+  const uint8_t zero_mac[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  memcpy(msg.stream_dest_mac, zero_mac, sizeof(msg.stream_dest_mac));
 
   if (send_msg(state->socket, &msg, sizeof(msg)) != ESP_OK)
   {
@@ -173,9 +176,8 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s*
   /* ACMP payload - convert to network byte order */
   memcpy(resp.talker_entity_id, &msg->talker_entity_id, sizeof(resp.talker_entity_id));
   memcpy(resp.listener_entity_id, &msg->listener_entity_id, sizeof(resp.listener_entity_id));
-  uint8_t mac[6] = {0x91, 0xE0, 0xF0, 0x00, 0xfe, 0x00}; // MAAP fake address
-  // TODO: This should be the stream destination MAC address!
-  memcpy(resp.stream_dest_mac, mac, sizeof(resp.stream_dest_mac));
+
+  memcpy(resp.stream_dest_mac, msg->stream_dest_mac, sizeof(resp.stream_dest_mac));
 
   resp.connection_count = htons(1); // One connection established
   resp.stream_vlan_id = msg->stream_vlan_id; // Keep the same VLAN ID

@@ -125,18 +125,13 @@ struct aecp_data_unit_s
   uint8_t message_type : 4; // 4 bits
   uint8_t version : 3; // 3 bits
   uint8_t h : 1; // 1 bit (header specific)
-
-  uint16_t control_data_length : 11; // 11 bits
-  uint16_t status : 5; // 5 bits
 #else
   uint8_t h : 1; // 1 bit (header specific)
   uint8_t version : 3; // 3 bits
   uint8_t message_type : 4; // 4 bits
-
-  uint16_t status : 5; // 5 bits
-  uint16_t control_data_length : 11; // 11 bits
 #endif
 
+  uint16_t control_data_len_status; // 16 bits
   uint64_t target_entity_id; // 64 bits
   uint64_t controller_entity_id; // 64 bits
   uint16_t sequence_id; // 16 bits
@@ -310,11 +305,8 @@ static void send_entity_descriptor_response(struct aecp_data_unit_s* request_msg
   response.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
   response.aecp_header.version = 0;
   response.aecp_header.h = 0;
-  response.aecp_header.status = 0; // SUCCESS
 
-  /* Calculate control_data_length: everything after the AECP common header */
-  uint16_t control_data_length = sizeof(response) - sizeof(struct header_s) - 2; // header + subtype + control fields
-  response.aecp_header.control_data_length = control_data_length;
+  ACMP_SET_CTRL_DATA_STATUS((&response.aecp_header), 0, 44);
 
   /* Swap entity IDs - we become the target, controller becomes the controller */
   response.aecp_header.target_entity_id = request_msg->controller_entity_id;
@@ -332,9 +324,9 @@ static void send_entity_descriptor_response(struct aecp_data_unit_s* request_msg
   response.descriptor.entity_id = htonll(s_state->entity_id);
   response.descriptor.entity_model_id = htonll(s_state->entity_model_id);
   response.descriptor.entity_capabilities = htonl(0x0000C508); // Example capabilities
-  response.descriptor.talker_stream_sources = htons(0);
-  response.descriptor.talker_capabilities = htons(0);
-  response.descriptor.listener_stream_sinks = htons(4);
+  response.descriptor.talker_stream_sources = htons(1);
+  response.descriptor.talker_capabilities = htons(0x4001);
+  response.descriptor.listener_stream_sinks = htons(1);
   response.descriptor.listener_capabilities = htons(0x4001);
   response.descriptor.controller_capabilities = htonl(0);
   response.descriptor.available_index = htonl(s_state->adp_available_index);
@@ -637,7 +629,7 @@ void send_adp_entity_available()
   msg.talker_stream_sources[1] = 0x01;
   /* Set 4 listener stream sinks (big-endian 0x0004) */
   msg.listener_stream_sinks[0] = 0x00;
-  msg.listener_stream_sinks[1] = 0x04;
+  msg.listener_stream_sinks[1] = 0x01;
   msg.listener_capabilities[0] = 0x40;
   msg.listener_capabilities[1] = 0x01;
 
@@ -752,14 +744,11 @@ static void avtp_listener_task(void* arg)
       if (has_available_talker(state))
       {
         ESP_LOGI(TAG, "Not connected, sending ACMP connect message to available talker");
+        send_acmp_connect_tx_command(state, ACMP_MSG_TYPE_CONNECT_TX_COMMAND);
         if (send_acmp_connect_rx_command(state, ACMP_MSG_TYPE_CONNECT_RX_COMMAND) == ESP_OK)
         {
           state->connected = true;
         }
-
-        // if (send_acmp_connect_tx_command(state, ACMP_MSG_TYPE_CONNECT_TX_COMMAND) == ESP_OK) {;
-        //   state->connected = true;
-        // }
       }
     }
 

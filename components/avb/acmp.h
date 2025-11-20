@@ -30,26 +30,28 @@
 
 #define MULTICAST_ACMP_MAC ( 0x91e0f0010000ULL )
 
-struct acmp_header_s {
+struct acmp_header_s
+{
   uint8_t dst_mac[6];
   uint8_t src_mac[6];
   uint8_t eth_type[2];
   uint8_t subtype;
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-  uint8_t message_type : 4;             // 4 bits
-  uint8_t version : 3;                  // 3 bits
-  uint8_t h : 1;                        // 1 bit (header specific)
+  uint8_t message_type : 4; // 4 bits
+  uint8_t version : 3; // 3 bits
+  uint8_t h : 1; // 1 bit (header specific)
 #else
-  uint8_t h : 1;                        // 1 bit (header specific)
-  uint8_t version : 3;                  // 3 bits
-  uint8_t message_type : 4;             // 4 bits
+  uint8_t h : 1; // 1 bit (header specific)
+  uint8_t version : 3; // 3 bits
+  uint8_t message_type : 4; // 4 bits
 #endif
   uint16_t control_data_len_status;
 };
 
 /* ATDECC Connection Management Protocol Data Unit */
-struct acmp_du_s {
+struct acmp_du_s
+{
   struct acmp_header_s header;
   uint8_t stream_id[8];
   uint8_t controller_entity_id[8];
@@ -80,7 +82,7 @@ struct acmp_du_s {
 #define ACMP_SET_CTRL_DATA_STATUS(hdr, status, cdl) \
   (hdr->control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)))
 
-int send_acmp_connect_rx_command(const struct avtp_state_s *state, uint8_t msg_type);
-int send_acmp_connect_tx_command(const struct avtp_state_s *state, uint8_t msg_type);
-void acmp_net_rx(struct avtp_state_s *state,struct acmp_du_s *msg, ssize_t len);
+int send_acmp_connect_rx_command(struct avtp_state_s* state, uint8_t msg_type);
+int send_acmp_connect_tx_command(struct avtp_state_s* state, uint8_t msg_type);
+void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len);
 #endif //ETHERNET_PTP_ACMP_H
