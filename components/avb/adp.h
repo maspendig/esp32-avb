@@ -1,0 +1,12 @@
+//
+// Created by max on 11/20/25.
+//
+
+#ifndef ETHERNET_PTP_ADP_H
+#define ETHERNET_PTP_ADP_H
+
+#define ADP_MSG_TYPE_ENTITY_AVAILABLE 0x0
+#define ADP_MSG_TYPE_ENTITY_DEPARTING 0x1
+#define ADP_MSG_TYPE_ENTITY_DISCOVER  0x2
+
+#endif //ETHERNET_PTP_ADP_H
