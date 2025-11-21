@@ -162,8 +162,10 @@ void send_configuration_response(struct avtp_state_s* s_state, struct aecp_data_
 
   // Initialize the configuration descriptor fields
   resp->config_desc.descriptor_type = htons(AEM_DESC_TYPE_CONFIGURATION);
-  memset(resp->config_desc.descriptor_index, 0, sizeof(resp->config_desc.descriptor_index));
-  resp->config_desc.localized_description = htons(0);
+
+  resp->config_desc.descriptor_index = htons(0);
+  memset(resp->config_desc.object_name, 0, sizeof(resp->config_desc.object_name));
+  resp->config_desc.localized_description = htons(2);
   resp->config_desc.descriptor_counts_count = htons(num_desc_types);
   resp->config_desc.descriptor_counts_offset = htons(74); // Offset to descriptor_counts array
 
@@ -184,6 +186,8 @@ void send_configuration_response(struct avtp_state_s* s_state, struct aecp_data_
   resp->config_desc.descriptor_counts[6].count = htons(1);
   resp->config_desc.descriptor_counts[7].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
   resp->config_desc.descriptor_counts[7].count = htons(1);
+
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)resp, response_size, ESP_LOG_INFO);
 
   // Send configuration descriptor response
   ssize_t written = write(s_state->socket, resp, response_size);
@@ -274,7 +278,7 @@ void handle_acm_get_sampling_rate(struct avtp_state_s* s_state, struct aecp_data
   // Padding is already filled with 0x00 due to struct initialization with {0}
   memset(response.padding, 0x00, sizeof(response.padding));
 
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)&response, sizeof(response), ESP_LOG_INFO);
+  // ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)&response, sizeof(response), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &response, sizeof(response));

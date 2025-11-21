@@ -71,7 +71,8 @@ struct aecp_sampling_rate_s
 struct config_desc_s
 {
   u16 descriptor_type;
-  u8 descriptor_index[64];
+  u16 descriptor_index;
+  u8 object_name[64];
   u16 localized_description;
   u16 descriptor_counts_count;
   u16 descriptor_counts_offset;
