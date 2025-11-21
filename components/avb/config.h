@@ -1,0 +1,10 @@
+//
+// Created by max on 11/21/25.
+//
+
+#ifndef ETHERNET_PTP_CONFIG_H
+#define ETHERNET_PTP_CONFIG_H
+
+#define CONFIG_SAMPLING_RATE 48000
+
+#endif //ETHERNET_PTP_CONFIG_H

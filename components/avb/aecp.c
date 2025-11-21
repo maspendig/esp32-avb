@@ -2,6 +2,7 @@
 #include "aecp.h"
 #include "acmp.h"
 #include "avtp.h"
+#include "config.h"
 
 #include <cc.h>
 #include <esp_err.h>
@@ -239,6 +240,54 @@ void handle_aecp_acm_register_unsol_notification(struct avtp_state_s* s_state, s
   }
 }
 
+void handle_acm_get_sampling_rate(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
+{
+  struct aecp_sampling_rate_response_s
+  {
+    struct header_s header;
+    struct subtype_data_s subtype_data;
+    struct aecp_common_data_s common_data;
+    struct aecp_sampling_rate_s data;
+    u8 padding[18]; // Padding to make total size 64 bytes
+  } __attribute__((packed));
+
+  struct aecp_sampling_rate_response_s response = {0};
+  memcpy(response.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(response.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+  memcpy(response.header.eth_type, msg->header.eth_type, sizeof(msg->header.eth_type));
+
+  response.subtype_data.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  response.subtype_data.version = msg->version;
+  response.subtype_data.h = msg->h;
+  response.subtype_data.subtype = msg->subtype;
+  AECP_SET_CTRL_DATA_STATUS((&response.subtype_data), 0, 20);
+  response.common_data.target_entity_id = msg->target_entity_id;
+  response.common_data.controller_entity_id = msg->controller_entity_id;
+  response.common_data.sequence_id = msg->sequence_id;
+  response.common_data.command_type = htons(ACM_COMMAND_TYPE_GET_SAMPLING_RATE);
+
+  response.data.descriptor_type = htons(AEM_DESC_TYPE_AUDIO_UNIT);
+  response.data.descriptor_index = 0;
+
+  response.data.sampling_rate = htonl(CONFIG_SAMPLING_RATE);
+
+  // Padding is already filled with 0x00 due to struct initialization with {0}
+  memset(response.padding, 0x00, sizeof(response.padding));
+
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)&response, sizeof(response), ESP_LOG_INFO);
+
+  /* Send the response */
+  ssize_t written = write(s_state->socket, &response, sizeof(response));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send ENTITY descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Respond to ACM GET_SAMPLE_RATE request (64 bytes)");
+  }
+}
+
 /* Handle AECP ATDECC Entity Model Command messages */
 int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
 {
@@ -277,6 +326,7 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
     break;
   case ACM_COMMAND_TYPE_GET_SAMPLING_RATE:
     ESP_LOGI(TAG, "Received AECP ACM GET_SAMPLING_RATE Command");
+    handle_acm_get_sampling_rate(s_state, msg);
     break;
   default:
     ESP_LOGW(TAG, "Recieved unimplemented AECP ACM Command type: 0x%04X", command_type);

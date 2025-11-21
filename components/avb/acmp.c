@@ -208,6 +208,12 @@ void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)
   case ACMP_MSG_TYPE_CONNECT_RX_RESPONSE:
     handle_acmp_connect_rx_response(state, msg);
     break;
+  case ACMP_MSG_TYPE_GET_RX_STATE_COMMAND:
+    ESP_LOGI(TAG, "Received ACMP Get RX State Command");
+    break;
+  case ACMP_MSG_TYPE_GET_RX_STATE_RESPONSE:
+    ESP_LOGI(TAG, "Received ACMP Get RX State Response");
+    break;
   default:
     ESP_LOGW(TAG, "Received unimplemented ACMP message type: 0x%1X", msg->message_type);
   }

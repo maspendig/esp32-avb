@@ -38,6 +38,36 @@ struct desc_count_s
   u16 count;
 } __attribute__((packed));
 
+struct subtype_data_s
+{
+  u8 subtype;
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  u8 message_type : 4; // 4 bits
+  u8 version : 3; // 3 bits
+  u8 h : 1; // 1 bit (header specific)
+#else
+  u8 h : 1; // 1 bit (header specific)
+  u8 version : 3; // 3 bits
+  u8 message_type : 4; // 4 bits
+#endif
+  u16 control_data_len_status;
+} __attribute__((packed));
+
+struct aecp_common_data_s
+{
+  u64 target_entity_id;
+  u64 controller_entity_id;
+  u16 sequence_id;
+  u16 command_type;
+} __attribute__((packed));
+
+struct aecp_sampling_rate_s
+{
+  u16 descriptor_type;
+  u16 descriptor_index;
+  u32 sampling_rate;
+} __attribute__((packed));
+
 struct config_desc_s
 {
   u16 descriptor_type;
@@ -112,6 +142,9 @@ struct aecp_read_descriptor_response_s
   uint16_t reserved; // 16 bits
   struct atdecc_entity_descriptor_s descriptor;
 } __attribute__((packed));
+
+#define AECP_SET_CTRL_DATA_STATUS(hdr, status, cdl) \
+(hdr->control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)))
 
 struct avtp_state_s;
 int aecp_net_rx(struct avtp_state_s* state, struct aecp_data_unit_s* msg, ssize_t len);
