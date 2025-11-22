@@ -30,6 +30,8 @@
 #define AEM_DESC_TYPE_CLOCK_SOURCE 0x000A
 #define AEM_DESC_TYPE_LOCALE 0x000C
 #define AEM_DESC_TYPE_STRINGS 0x000D
+#define AEM_DESC_TYPE_STREAM_PORT_INPUT 0x000E
+#define AEM_DESC_TYPE_STREAM_PORT_OUTPUT 0x000F
 #define AEM_DESC_TYPE_CLOCK_DOMAIN 0x0024
 
 struct desc_count_s
@@ -99,19 +101,52 @@ struct aecp_audio_unit_s
   u16 base_splitter;
   u16 number_of_combiners;
   u16 base_combiner;
-  u16 number_of_demultiplexers;
-  u16 base_demultiplexer;
-  u16 number_of_multiplexers;
-  u16 base_multiplexer;
-  u16 number_of_transcoders;
-  u16 base_transcoder;
-  u16 number_of_control_blocks;
-  u16 base_control_block;
   u32 current_sampling_rate;
   u16 sampling_rates_offset;
   u16 sampling_rates_count;
   // FIXME make this a flexible array member
   u32 sampling_rates[1];
+} __attribute__((packed));
+
+struct acm_desc_stream_s
+{
+  u16 descriptor_type;
+  u16 descriptor_index;
+  u8 object_name[64];
+  u16 localized_description;
+  u16 clock_domain_index;
+  u16 stream_flags;
+  u64 current_format;
+  u16 formats_offset;
+  u16 number_of_formats;
+  u64 backup_talker_entity_id_0;
+  u16 backup_talker_unique_id_0;
+  u64 backup_talker_entity_id_1;
+  u16 backup_talker_unique_id_1;
+  u64 backup_talker_entity_id_2;
+  u16 backup_talker_unique_id_2;
+  u64 backedup_talker_entity_id;
+  u16 backedup_talker_unique_id;
+  u16 avb_interface_index;
+  u32 buffer_length;
+  u16 redundant_offset;
+  u16 number_of_redundant_streams;
+  u16 timing;
+  u64 formats[];
+} __attribute__((packed));
+
+struct acm_desc_stream_port_s
+{
+  u16 descriptor_type;
+  u16 descriptor_index;
+  u16 clock_domain_index;
+  u16 port_flags;
+  u16 number_of_controls;
+  u16 base_control;
+  u16 number_of_clusters;
+  u16 base_cluster;
+  u16 number_of_maps;
+  u16 base_map;
 } __attribute__((packed));
 
 struct config_desc_s
