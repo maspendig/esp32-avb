@@ -12,7 +12,7 @@
 
 #define TAG "aecp"
 
-static void send_entity_descriptor_response(struct avtp_state_s* s_state, struct aecp_data_unit_s* request_msg)
+static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aecp_data_unit_s* request_msg)
 {
   if (s_state == NULL || s_state->socket < 0)
   {
@@ -99,7 +99,7 @@ static void send_entity_descriptor_response(struct avtp_state_s* s_state, struct
   }
 }
 
-void send_configuration_response(struct avtp_state_s* s_state, struct aecp_data_unit_s* request_msg)
+void handle_aem_read_configuration(struct avtp_state_s* s_state, struct aecp_data_unit_s* request_msg)
 {
   if (s_state == NULL || s_state->socket < 0)
   {
@@ -639,21 +639,80 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
 void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
 {
   ESP_LOGI(TAG, "Received ACM Read AUDIO CLUSTER Descriptor Request");
+
+  struct aecp_aem_read_desc_cmd* read_desc_cmd = (struct aecp_aem_read_desc_cmd*)(msg + 1);
+
+  struct aecp_audio_cluster_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    uint16_t configuration_index;
+    uint16_t reserved;
+    struct aecp_audio_cluster_s audio_cluster_desc;
+  } __attribute__((packed));
+
+  struct aecp_audio_cluster_response_s resp = {0};
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+  /* Ethernet type (big-endian) */
+  resp.aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  resp.aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+  /* AECP header fields */
+  resp.aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  resp.aecp_header.version = 0;
+  resp.aecp_header.h = 0;
+
+  auto status = 0; // Success
+  auto cdl = sizeof(struct aecp_audio_cluster_s) + 4;
+  (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
+  resp.aecp_header.target_entity_id = msg->target_entity_id;
+  resp.aecp_header.controller_entity_id = msg->controller_entity_id;
+
+  resp.aecp_header.sequence_id = msg->sequence_id;
+  resp.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
+  /* Response payload fields */
+  resp.configuration_index = 0;
+  resp.reserved = 0;
+  /* Fill AUDIO_CLUSTER descriptor */
+  resp.audio_cluster_desc.descriptor_type = htons(AEM_DESC_TYPE_AUDIO_CLUSTER);
+  resp.audio_cluster_desc.descriptor_index = read_desc_cmd->descriptor_index;
+  memset(resp.audio_cluster_desc.object_name, 0, sizeof(resp.audio_cluster_desc.object_name));
+  resp.audio_cluster_desc.localized_description = htons(0);
+  resp.audio_cluster_desc.signal_type = htons(-1);
+  resp.audio_cluster_desc.signal_index = htons(0);
+  resp.audio_cluster_desc.signal_output = htons(0);
+  resp.audio_cluster_desc.path_latency = htonl(0);
+  resp.audio_cluster_desc.block_latency = htonl(0);
+  resp.audio_cluster_desc.channel_count = htons(1);
+  resp.audio_cluster_desc.format = 0x40; // MBLA IEEE1722.1 p.86
+
+  /* Send the response */
+  ssize_t written = write(s_state->socket, &resp, sizeof(resp));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send AUDIO_CLUSTER descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP AUDIO_CLUSTER Descriptor Response");
+  }
 }
 
 void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
 {
+  // TODO create a combined struct to pass down the handler
   struct aecp_aem_read_desc_cmd* read_desc_cmd = (struct aecp_aem_read_desc_cmd*)(msg + 1);
   auto desc_type = ntohs(read_desc_cmd->descriptor_type);
   switch (desc_type)
   {
   case AEM_DESC_TYPE_ENTITY: // ENTITY Descriptor
     ESP_LOGI(TAG, "Received ACM Read ENTITY Descriptor Request");
-    send_entity_descriptor_response(s_state, msg);
+    handle_aem_read_desc_entity(s_state, msg);
     break;
   case AEM_DESC_TYPE_CONFIGURATION:
     ESP_LOGI(TAG, "Received ACM Read CONFIGURATION Descriptor Request");
-    send_configuration_response(s_state, msg);
+    handle_aem_read_configuration(s_state, msg);
     break;
   case AEM_DESC_TYPE_AUDIO_UNIT:
     handle_aem_read_desc_audio_unit(s_state, msg);
@@ -665,16 +724,19 @@ void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_dat
     handle_aem_read_desc_stream_port_output(s_state, msg);
     break;
   case AEM_DESC_TYPE_AUDIO_CLUSTER:
-    ESP_LOGI(TAG, "Received ACM Read AUDIO_CLUSTER Descriptor Request - Not Implemented");
+    handle_aem_read_desc_audio_cluster(s_state, msg);
     break;
   case AEM_DESC_TYPE_AUDIO_MAP:
-    handle_aem_read_desc_audio_cluster(s_state, msg);
+    handle_aem_read_desc_audio_map(s_state, msg);
     break;
   case AEM_DESC_TYPE_STREAM_INPUT:
     handle_aem_read_desc_stream_input(s_state, msg);
     break;
   case AEM_DESC_TYPE_STREAM_OUTPUT:
     handle_aem_read_desc_stream_output(s_state, msg);
+    break;
+  case AEM_DESC_TYPE_AVB_INTERFACE:
+    ESP_LOGI(TAG, "Received ACM Read AVB INTERFACE Descriptor Request");
     break;
   default:
     ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", desc_type);

@@ -149,6 +149,21 @@ struct acm_desc_stream_port_s
   u16 base_map;
 } __attribute__((packed));
 
+struct aecp_audio_cluster_s
+{
+  u16 descriptor_type;
+  u16 descriptor_index;
+  u8 object_name[64];
+  u16 localized_description;
+  u16 signal_type;
+  u16 signal_index;
+  u16 signal_output;
+  u32 path_latency;
+  u32 block_latency;
+  u16 channel_count;
+  u8 format;
+} __attribute__((packed));
+
 struct aecp_audio_mapping_s
 {
   u16 mapping_stream_index;
