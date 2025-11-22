@@ -1,6 +1,5 @@
 //
 // Created by max on 11/21/25.
-//
 
 #ifndef ETHERNET_PTP_CONFIG_H
 #define ETHERNET_PTP_CONFIG_H
@@ -13,7 +12,6 @@
 #define CONFIG_LISTENER_CAPABILITIES 0x4001
 
 #define CONFIG_CONTROLLER_CAPABILITIES 0x0000
-
 
 static uint64_t stream_formats[] = {
   0x00a0010860000800,

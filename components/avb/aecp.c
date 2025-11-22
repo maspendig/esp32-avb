@@ -63,7 +63,7 @@ static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aec
   response.descriptor.association_id = htonll(0);
 
   /* Set entity name */
-  const char* entity_name = "ESP32-AVB Entity";
+  const char* entity_name = "ESP32-P4";
   strncpy((char*)response.descriptor.entity_name, entity_name, sizeof(response.descriptor.entity_name));
 
   response.descriptor.vendor_name_string = htons(0);
@@ -451,7 +451,8 @@ void handle_aem_read_desc_stream_output(struct avtp_state_s* s_state, struct aec
   /* Fill STREAM_OUTPUT descriptor */
   resp->stream_output_desc.descriptor_type = htons(AEM_DESC_TYPE_STREAM_OUTPUT);
   resp->stream_output_desc.descriptor_index = 0;
-  memset(resp->stream_output_desc.object_name, 0, sizeof(resp->stream_output_desc.object_name));
+
+  strncpy((char*)resp->stream_output_desc.object_name, "Stream 1", sizeof(resp->stream_output_desc.object_name));
   resp->stream_output_desc.localized_description = htons(0);
   resp->stream_output_desc.clock_domain_index = htons(0);
   resp->stream_output_desc.stream_flags = htons(0x0001); // clock_sync_source
@@ -535,7 +536,7 @@ void handle_aem_read_desc_stream_input(struct avtp_state_s* s_state, struct aecp
   /* Fill STREAM_INPUT descriptor */
   resp->stream_input_desc.descriptor_type = htons(AEM_DESC_TYPE_STREAM_INPUT);
   resp->stream_input_desc.descriptor_index = 0;
-  memset(resp->stream_input_desc.object_name, 0, sizeof(resp->stream_input_desc.object_name));
+  strncpy((char*)resp->stream_input_desc.object_name, "Stream 1", sizeof(resp->stream_input_desc.object_name));
   resp->stream_input_desc.localized_description = htons(0);
   resp->stream_input_desc.clock_domain_index = htons(0);
   resp->stream_input_desc.stream_flags = htons(0x0001); // clock_sync_source
@@ -699,6 +700,74 @@ void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aec
   }
 }
 
+void handle_aem_read_desc_avb_interface(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
+{
+  ESP_LOGI(TAG, "Received ACM Read AVB INTERFACE Descriptor Request");
+
+  struct aecp_avb_interface_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    uint16_t configuration_index;
+    uint16_t reserved;
+    struct aecp_avb_interface_s avb_interface_desc;
+  } __attribute__((packed));
+
+  struct aecp_avb_interface_response_s resp = {0};
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+  /* Ethernet type (big-endian) */
+  resp.aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  resp.aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+  /* AECP header fields */
+  resp.aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  resp.aecp_header.version = 0;
+  resp.aecp_header.h = 0;
+
+  auto status = 0; // Success
+  auto cdl = sizeof(struct aecp_avb_interface_s) + 4;
+  (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
+  resp.aecp_header.target_entity_id = msg->target_entity_id;
+  resp.aecp_header.controller_entity_id = msg->controller_entity_id;
+
+  resp.aecp_header.sequence_id = msg->sequence_id;
+  resp.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
+  /* Response payload fields */
+  resp.configuration_index = 0;
+  resp.reserved = 0;
+  /* Fill AVB_INTERFACE descriptor */
+  resp.avb_interface_desc.descriptor_type = htons(AEM_DESC_TYPE_AVB_INTERFACE);
+  resp.avb_interface_desc.descriptor_index = 0;
+  memset(resp.avb_interface_desc.object_name, 0, sizeof(resp.avb_interface_desc.object_name));
+  resp.avb_interface_desc.localized_description = htons(0);
+  resp.avb_interface_desc.mac_address = htonll(s_state->entity_id);
+  resp.avb_interface_desc.interface_flags = htons(0);
+  resp.avb_interface_desc.clock_identity = htonll(s_state->entity_id);
+  resp.avb_interface_desc.priority1 = 248;
+  resp.avb_interface_desc.clock_class = 248;
+  resp.avb_interface_desc.offset_scaled_log_variance = htons(0);
+  resp.avb_interface_desc.clock_accuracy = 254;
+  resp.avb_interface_desc.priority2 = 248;
+  resp.avb_interface_desc.domain_number = 0;
+  resp.avb_interface_desc.log_sync_interval = 0;
+  resp.avb_interface_desc.log_announce_interval = 0;
+  resp.avb_interface_desc.log_pdelay_interval = 0;
+  resp.avb_interface_desc.port_number = htons(0);
+
+
+  /* Send the response */
+  ssize_t written = write(s_state->socket, &resp, sizeof(resp));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send AVB_INTERFACE descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP AVB_INTERFACE Descriptor Response");
+  }
+}
+
 void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
 {
   // TODO create a combined struct to pass down the handler
@@ -737,6 +806,7 @@ void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_dat
     break;
   case AEM_DESC_TYPE_AVB_INTERFACE:
     ESP_LOGI(TAG, "Received ACM Read AVB INTERFACE Descriptor Request");
+    handle_aem_read_desc_avb_interface(s_state, msg);
     break;
   default:
     ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", desc_type);
@@ -766,6 +836,7 @@ void handle_aecp_acm_register_unsol_notification(struct avtp_state_s* s_state, s
 
 void handle_acm_get_sampling_rate(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
 {
+  ESP_LOGI(TAG, "Received AECP ACM GET_SAMPLING_RATE Command");
   struct aecp_sampling_rate_response_s
   {
     struct header_s header;
@@ -812,7 +883,59 @@ void handle_acm_get_sampling_rate(struct avtp_state_s* s_state, struct aecp_data
   }
 }
 
-/* Handle AECP ATDECC Entity Model Command messages */
+void handle_acm_get_stream_format(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
+{
+  ESP_LOGI(TAG, "Received ACM GET_STREAM_FORMAT Command");
+
+  struct aecp_get_stream_format_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    uint16_t configuration_index;
+    uint16_t reserved;
+    struct aecp_get_stream_format_s data;
+  } __attribute__((packed));
+
+  struct aecp_get_stream_format_response_s resp = {0};
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+  /* Ethernet type (big-endian) */
+  resp.aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  resp.aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+  /* AECP header fields */
+  resp.aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  resp.aecp_header.version = 0;
+  resp.aecp_header.h = 0;
+
+  auto status = 0; // Success
+  auto cdl = sizeof(struct aecp_get_stream_format_s) + 4;
+  (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
+  resp.aecp_header.target_entity_id = msg->target_entity_id;
+  resp.aecp_header.controller_entity_id = msg->controller_entity_id;
+
+  resp.aecp_header.sequence_id = msg->sequence_id;
+  resp.aecp_header.command_type = htons(ACM_COMMAND_TYPE_GET_STREAM_FORMAT);
+  /* Response payload fields */
+  resp.configuration_index = 0;
+  resp.reserved = 0;
+  /* Fill GET_STREAM_FORMAT descriptor */
+  resp.data.descriptor_type = htons(AEM_DESC_TYPE_STREAM_INPUT);
+  resp.data.descriptor_index = 0;
+  resp.data.stream_format = htonll(stream_formats[0]); // 61883-6 48kHz 2ch 24bit
+
+  /* Send the response */
+  ssize_t written = write(s_state->socket, &resp, sizeof(resp));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send GET_STREAM_FORMAT response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP GET_STREAM_FORMAT Response");
+  }
+}
+
 int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
 {
   if (msg == NULL || len < sizeof(struct aecp_data_unit_s))
@@ -851,6 +974,9 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
   case ACM_COMMAND_TYPE_GET_SAMPLING_RATE:
     ESP_LOGI(TAG, "Received AECP ACM GET_SAMPLING_RATE Command");
     handle_acm_get_sampling_rate(s_state, msg);
+    break;
+  case ACM_COMMAND_TYPE_GET_STREAM_FORMAT:
+    handle_acm_get_stream_format(s_state, msg);
     break;
   default:
     ESP_LOGW(TAG, "Recieved unimplemented AECP ACM Command type: 0x%04X", command_type);

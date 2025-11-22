@@ -16,6 +16,7 @@
 
 #define ACM_COMMAND_TYPE_ACQUIRE_ENTITY 0x0000
 #define ACM_COMMAND_TYPE_READ_DESCRIPTOR 0x0004
+#define ACM_COMMAND_TYPE_GET_STREAM_FORMAT 0x0009
 #define ACM_COMMAND_TYPE_GET_SAMPLING_RATE 0x0015
 #define ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION 0x0024
 #define ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION 0x0025
@@ -36,6 +37,26 @@
 #define AEM_DESC_TYPE_AUDIO_MAP 0x0017
 #define AEM_DESC_TYPE_CLOCK_DOMAIN 0x0024
 
+struct aecp_avb_interface_s
+{
+  u16 descriptor_type;
+  u16 descriptor_index;
+  u8 object_name[64];
+  u16 localized_description;
+  u64 mac_address;
+  u16 interface_flags;
+  u64 clock_identity;
+  u8 priority1;
+  u8 clock_class;
+  u16 offset_scaled_log_variance;
+  u8 clock_accuracy;
+  u8 priority2;
+  u8 domain_number;
+  s8 log_sync_interval;
+  s8 log_announce_interval;
+  s8 log_pdelay_interval;
+  u16 port_number;
+} __attribute__((packed));
 
 struct desc_count_s
 {
@@ -64,6 +85,13 @@ struct aecp_common_data_s
   u64 controller_entity_id;
   u16 sequence_id;
   u16 command_type;
+} __attribute__((packed));
+
+struct aecp_get_stream_format_s
+{
+  u16 descriptor_type;
+  u16 descriptor_index;
+  u64 stream_format;
 } __attribute__((packed));
 
 struct aecp_sampling_rate_s
