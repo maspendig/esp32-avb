@@ -187,7 +187,6 @@ void send_configuration_response(struct avtp_state_s* s_state, struct aecp_data_
   resp->config_desc.descriptor_counts[7].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
   resp->config_desc.descriptor_counts[7].count = htons(1);
 
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)resp, response_size, ESP_LOG_INFO);
 
   // Send configuration descriptor response
   ssize_t written = write(s_state->socket, resp, response_size);
@@ -216,6 +215,8 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
     struct aecp_audio_unit_s audio_unit_desc;
   } __attribute__((packed));
 
+
+  // Allocate response with space for the flexible array member
   struct aecp_audio_unit_response_s resp = {0};
   /* Copy Ethernet header from request and swap MAC addresses */
   memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
@@ -253,6 +254,8 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   resp.audio_unit_desc.sampling_rates_count = htons(1);
   resp.audio_unit_desc.sampling_rates_offset = htons(144);
   resp.audio_unit_desc.sampling_rates[0] = htonl(CONFIG_SAMPLING_RATE);
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
+
   /* Send the response */
   ssize_t written = write(s_state->socket, &resp, sizeof(resp));
   if (written < 0)
@@ -281,6 +284,10 @@ void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_dat
     break;
   case AEM_DESC_TYPE_AUDIO_UNIT:
     handle_aem_read_desc_audio_unit(s_state, msg);
+    break;
+  case AEM_DESC_TYPE_STREAM_INPUT:
+    ESP_LOGI(TAG, "Received ACM Read STREAM_INPUT Descriptor Request");
+    // TODO implement
     break;
   default:
     ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", desc_type);

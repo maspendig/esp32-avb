@@ -110,7 +110,8 @@ struct aecp_audio_unit_s
   u32 current_sampling_rate;
   u16 sampling_rates_offset;
   u16 sampling_rates_count;
-  u32 sampling_rates[];
+  // FIXME make this a flexible array member
+  u32 sampling_rates[1];
 } __attribute__((packed));
 
 struct config_desc_s
