@@ -42,30 +42,30 @@ struct avtp_discovery_msg_s
     struct
     {
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-      uint16_t control_data_length : 11; /* 11 bits for control data length */
-      uint16_t valid_time : 5; /* 5 bits for valid time */
+      u16 control_data_length : 11; /* 11 bits for control data length */
+      u16 valid_time : 5; /* 5 bits for valid time */
 #else
       uint16_t valid_time : 5; /* 5 bits for valid time */
       uint16_t control_data_length : 11; /* 11 bits for control data length */
 #endif
     } __attribute__((packed));
 
-    uint8_t raw[2]; /* Raw bytes for network transmission */
-    uint16_t raw_u16; /* Raw 16-bit value for easy manipulation */
+    u8 raw[2]; /* Raw bytes for network transmission */
+    u16 raw_u16; /* Raw 16-bit value for easy manipulation */
   } control_data_length_field;
 
-  uint8_t entity_id[8];
-  uint8_t entity_model_id[8];
-  uint8_t entity_capabilities[4];
-  uint8_t talker_stream_sources[2];
-  uint8_t talker_capabilities[2];
-  uint8_t listener_stream_sinks[2];
-  uint8_t listener_capabilities[2];
-  uint8_t controller_capabilities[4];
-  uint8_t available_index[4];
-  uint8_t gptp_grandmaster_id[8];
-  uint8_t association_id[8];
-};
+  u64 entity_id;
+  u64 entity_model_id;
+  u32 entity_capabilities;
+  u16 talker_stream_sources;
+  u16 talker_capabilities;
+  u16 listener_stream_sinks;
+  u16 listener_capabilities;
+  u32 controller_capabilities;
+  u32 available_index;
+  u8 gptp_grandmaster_id[8];
+  u64 association_id;
+} __attribute__((packed));
 
 struct avtp_header_s
 {

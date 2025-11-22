@@ -6,6 +6,7 @@
 
 #include <avtp.h>
 #include <cc.h>
+#include <config.h>
 #include <esp_eth_spec.h>
 #include <esp_log.h>
 #include <sys/types.h>
@@ -13,27 +14,20 @@
 
 #define TAG "adp"
 
+void set_values(struct adp_entity_entry_s* self, struct avtp_discovery_msg_s* msg)
+{
+  /* Update existing entry */
+  self->talker_stream_sources = ntohs(msg->talker_stream_sources);
+  self->talker_capabilities = ntohs(msg->talker_capabilities);
+  self->listener_stream_sinks = ntohs(msg->listener_stream_sinks);
+  self->listener_capabilities = ntohs(msg->listener_capabilities);
+  self->controller_capabilities = ntohs(msg->controller_capabilities);
+  self->available_index = ntohl(msg->available_index);
+}
+
 static void adp_upsert_entity(struct avtp_state_s* s_state, struct avtp_discovery_msg_s* msg)
 {
-  /* Extract entity_id (network -> host) */
-  uint64_t entity_id_net;
-  memcpy(&entity_id_net, msg->entity_id, sizeof(entity_id_net));
-  uint64_t entity_id = ntohll(entity_id_net);
-
-  /* Extract capabilities & counts (big-endian byte arrays) */
-  uint16_t talker_stream_sources = ((uint16_t)msg->talker_stream_sources[0] << 8) | msg->talker_stream_sources[1];
-  uint16_t talker_capabilities = ((uint16_t)msg->talker_capabilities[0] << 8) | msg->talker_capabilities[1];
-  uint16_t listener_stream_sinks = ((uint16_t)msg->listener_stream_sinks[0] << 8) | msg->listener_stream_sinks[1];
-  uint16_t listener_capabilities = ((uint16_t)msg->listener_capabilities[0] << 8) | msg->listener_capabilities[1];
-  uint32_t controller_capabilities = ((uint32_t)msg->controller_capabilities[0] << 24) |
-    ((uint32_t)msg->controller_capabilities[1] << 16) |
-    ((uint32_t)msg->controller_capabilities[2] << 8) |
-    ((uint32_t)msg->controller_capabilities[3]);
-  uint32_t available_index = ((uint32_t)msg->available_index[0] << 24) |
-    ((uint32_t)msg->available_index[1] << 16) |
-    ((uint32_t)msg->available_index[2] << 8) |
-    ((uint32_t)msg->available_index[3]);
-
+  uint64_t entity_id = ntohll(msg->entity_id);
   uint8_t* src_mac = msg->header.src_mac;
 
   /* Valid time (5 bits) doubled in seconds */
@@ -49,13 +43,7 @@ static void adp_upsert_entity(struct avtp_state_s* s_state, struct avtp_discover
     {
       if (s_state->adp_entities[i].entity_id == entity_id)
       {
-        /* Update existing entry */
-        s_state->adp_entities[i].talker_stream_sources = talker_stream_sources;
-        s_state->adp_entities[i].talker_capabilities = talker_capabilities;
-        s_state->adp_entities[i].listener_stream_sinks = listener_stream_sinks;
-        s_state->adp_entities[i].listener_capabilities = listener_capabilities;
-        s_state->adp_entities[i].controller_capabilities = controller_capabilities;
-        s_state->adp_entities[i].available_index = available_index;
+        set_values(&s_state->adp_entities[i], msg);
         s_state->adp_entities[i].valid_until = valid_until;
         memcpy(s_state->adp_entities[i].mac, src_mac, 6);
         ESP_LOGI(TAG, "Updated ADP entity 0x%016llX (valid %us)",
@@ -79,12 +67,7 @@ static void adp_upsert_entity(struct avtp_state_s* s_state, struct avtp_discover
   struct adp_entity_entry_s* entry = &s_state->adp_entities[free_index];
   entry->entity_id = entity_id;
   memcpy(entry->mac, src_mac, 6);
-  entry->talker_stream_sources = talker_stream_sources;
-  entry->talker_capabilities = talker_capabilities;
-  entry->listener_stream_sinks = listener_stream_sinks;
-  entry->listener_capabilities = listener_capabilities;
-  entry->controller_capabilities = controller_capabilities;
-  entry->available_index = available_index;
+  set_values(entry, msg);
   entry->valid_until = valid_until;
   entry->in_use = true;
 
@@ -92,8 +75,8 @@ static void adp_upsert_entity(struct avtp_state_s* s_state, struct avtp_discover
     TAG, "Added ADP entity 0x%016llX (MAC: %02X:%02X:%02X:%02X:%02X:%02X, TalkerSrc=%u, ListenerSinks=%u, valid %us)",
     (unsigned long long)entity_id,
     src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5],
-    talker_stream_sources,
-    listener_stream_sinks,
+    entry->talker_stream_sources,
+    entry->listener_stream_sinks,
     (unsigned)(valid_time * 2));
 }
 
@@ -101,10 +84,7 @@ static void adp_remove_entity(struct avtp_state_s* s_state, struct avtp_discover
 {
   if (!s_state) return;
 
-  /* Extract entity_id (network -> host) */
-  uint64_t entity_id_net;
-  memcpy(&entity_id_net, msg->entity_id, sizeof(entity_id_net));
-  uint64_t entity_id = ntohll(entity_id_net);
+  uint64_t entity_id = ntohll(msg->entity_id);
 
   /* Search for entity and mark as not in use */
   for (int i = 0; i < MAX_ADP_ENTITIES; ++i)
@@ -139,13 +119,8 @@ void send_adp_entity_available(struct avtp_state_s* s_state)
   uint8_t dst_mac[6] = {0x91, 0xE0, 0xF0, 0x01, 0x00, 0x00}; // ADP multicast MAC
   memcpy(msg.header.dst_mac, dst_mac, sizeof(dst_mac));
 
-  /* Use entity_id from state and convert to network byte order */
-  uint64_t entity_id_net = htonll(s_state->entity_id);
-  memcpy(msg.entity_id, &entity_id_net, sizeof(msg.entity_id));
-
-  /* Use entity_model_id from state and convert to network byte order */
-  uint64_t entity_model_id_net = htonll(s_state->entity_model_id);
-  memcpy(msg.entity_model_id, &entity_model_id_net, sizeof(msg.entity_model_id));
+  msg.entity_id = htonll(s_state->entity_id);
+  msg.entity_model_id = htonll(s_state->entity_model_id);
 
   /* Ethernet type (big-endian) */
   msg.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
@@ -161,27 +136,16 @@ void send_adp_entity_available(struct avtp_state_s* s_state)
   msg.control_data_length_field.valid_time = 10; /* Set valid_time as needed */
   msg.control_data_length_field.raw_u16 = htons(msg.control_data_length_field.raw_u16);
 
-  memcpy(msg.entity_capabilities, (uint8_t[]){0x00, 0x00, 0xC5, 0x08}, 4); // Example capabilities
+  msg.entity_capabilities = htonl(CONFIG_ENTITY_CAPABILITIES);
+  msg.talker_capabilities = htons(CONFIG_TALKER_CAPABILITIES);
+  msg.talker_stream_sources = htons(CONFIG_TALKER_STREAM_SOURCES);
+  msg.listener_stream_sinks = htons(CONFIG_LISTENER_STREAM_SINKS);
+  msg.listener_capabilities = htons(CONFIG_LISTENER_CAPABILITIES);
+  msg.available_index = htonl(s_state->adp_available_index++);
+  msg.association_id = htonll(0);
 
-  msg.talker_capabilities[0] = 0x40;
-  msg.talker_capabilities[1] = 0x01;
-  msg.talker_stream_sources[0] = 0x00;
-  msg.talker_stream_sources[1] = 0x01;
-  /* Set 4 listener stream sinks (big-endian 0x0004) */
-  msg.listener_stream_sinks[0] = 0x00;
-  msg.listener_stream_sinks[1] = 0x01;
-  msg.listener_capabilities[0] = 0x40;
-  msg.listener_capabilities[1] = 0x01;
-
-  /* Use incremented available_index from state (big-endian) */
-  msg.available_index[0] = (s_state->adp_available_index >> 24) & 0xFF;
-  msg.available_index[1] = (s_state->adp_available_index >> 16) & 0xFF;
-  msg.available_index[2] = (s_state->adp_available_index >> 8) & 0xFF;
-  msg.available_index[3] = s_state->adp_available_index++ & 0xFF;
-
-  memset(msg.association_id, 0x00, sizeof(msg.association_id));
+  // TODO get grandmaster from PTP module
   memcpy(msg.gptp_grandmaster_id, (uint8_t[]){0x00, 0x01, 0xf2, 0xff, 0xfe, 0x00, 0xae, 0x35}, 8);
-  // Example grandmaster ID
 
   ssize_t written = write(s_state->socket, &msg, 82);
   if (written < 0)
@@ -219,4 +183,3 @@ int adp_net_rx(struct avtp_state_s* state, struct avtp_discovery_msg_s* msg, ssi
   }
   return ESP_OK;
 }
-
