@@ -68,6 +68,51 @@ struct aecp_sampling_rate_s
   u32 sampling_rate;
 } __attribute__((packed));
 
+struct aecp_audio_unit_s
+{
+  u16 descriptor_type;
+  u16 descriptor_index;
+  u8 object_name[64];
+  u16 localized_description;
+  u16 clock_domain_index;
+  u16 number_of_stream_input_ports;
+  u16 base_stream_input_port;
+  u16 number_of_stream_output_ports;
+  u16 base_stream_output_port;
+  u16 number_of_external_input_ports;
+  u16 base_external_input_port;
+  u16 number_of_external_output_ports;
+  u16 base_external_output_port;
+  u16 number_of_internal_input_ports;
+  u16 base_internal_input_port;
+  u16 number_of_internal_output_ports;
+  u16 base_internal_output_port;
+  u16 number_of_control;
+  u16 base_control;
+  u16 number_of_signal_selectors;
+  u16 base_signal_selector;
+  u16 number_of_mixers;
+  u16 base_mixer;
+  u16 number_of_matrices;
+  u16 base_matrix;
+  u16 number_of_splitters;
+  u16 base_splitter;
+  u16 number_of_combiners;
+  u16 base_combiner;
+  u16 number_of_demultiplexers;
+  u16 base_demultiplexer;
+  u16 number_of_multiplexers;
+  u16 base_multiplexer;
+  u16 number_of_transcoders;
+  u16 base_transcoder;
+  u16 number_of_control_blocks;
+  u16 base_control_block;
+  u32 current_sampling_rate;
+  u16 sampling_rates_offset;
+  u16 sampling_rates_count;
+  u32 sampling_rates[];
+} __attribute__((packed));
+
 struct config_desc_s
 {
   u16 descriptor_type;
