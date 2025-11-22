@@ -14,26 +14,26 @@
 
 #define TAG "adp"
 
-void set_values(struct adp_entity_entry_s* self, struct avtp_discovery_msg_s* msg)
+void set_entity_values(struct adp_entity_entry_s* entity, struct avtp_discovery_msg_s* msg)
 {
+  /* Valid time (5 bits) doubled in seconds */
+  uint8_t valid_time = msg->control_data_length_field.valid_time & 0x1F;
+  time_t now = time(NULL);
+  time_t valid_until = now + (valid_time * 2);
   /* Update existing entry */
-  self->talker_stream_sources = ntohs(msg->talker_stream_sources);
-  self->talker_capabilities = ntohs(msg->talker_capabilities);
-  self->listener_stream_sinks = ntohs(msg->listener_stream_sinks);
-  self->listener_capabilities = ntohs(msg->listener_capabilities);
-  self->controller_capabilities = ntohs(msg->controller_capabilities);
-  self->available_index = ntohl(msg->available_index);
+  entity->talker_stream_sources = ntohs(msg->talker_stream_sources);
+  entity->talker_capabilities = ntohs(msg->talker_capabilities);
+  entity->listener_stream_sinks = ntohs(msg->listener_stream_sinks);
+  entity->listener_capabilities = ntohs(msg->listener_capabilities);
+  entity->controller_capabilities = ntohs(msg->controller_capabilities);
+  entity->available_index = ntohl(msg->available_index);
+  memcpy(entity->mac, msg->header.src_mac, sizeof(entity->mac));
+  entity->valid_until = valid_until;
 }
 
 static void adp_upsert_entity(struct avtp_state_s* s_state, struct avtp_discovery_msg_s* msg)
 {
   uint64_t entity_id = ntohll(msg->entity_id);
-  uint8_t* src_mac = msg->header.src_mac;
-
-  /* Valid time (5 bits) doubled in seconds */
-  uint8_t valid_time = msg->control_data_length_field.valid_time & 0x1F;
-  time_t now = time(NULL);
-  time_t valid_until = now + (valid_time * 2);
 
   /* Search for existing entry or free slot */
   int free_index = -1;
@@ -43,11 +43,9 @@ static void adp_upsert_entity(struct avtp_state_s* s_state, struct avtp_discover
     {
       if (s_state->adp_entities[i].entity_id == entity_id)
       {
-        set_values(&s_state->adp_entities[i], msg);
-        s_state->adp_entities[i].valid_until = valid_until;
-        memcpy(s_state->adp_entities[i].mac, src_mac, 6);
+        set_entity_values(&s_state->adp_entities[i], msg);
         ESP_LOGI(TAG, "Updated ADP entity 0x%016llX (valid %us)",
-                 (unsigned long long)entity_id, (unsigned)(valid_time * 2));
+                 (unsigned long long)entity_id, (unsigned)(s_state->adp_entities[i].valid_until * 2));
         return;
       }
     }
@@ -66,18 +64,15 @@ static void adp_upsert_entity(struct avtp_state_s* s_state, struct avtp_discover
   /* Add new entry */
   struct adp_entity_entry_s* entry = &s_state->adp_entities[free_index];
   entry->entity_id = entity_id;
-  memcpy(entry->mac, src_mac, 6);
-  set_values(entry, msg);
-  entry->valid_until = valid_until;
+  set_entity_values(entry, msg);
   entry->in_use = true;
 
   ESP_LOGI(
-    TAG, "Added ADP entity 0x%016llX (MAC: %02X:%02X:%02X:%02X:%02X:%02X, TalkerSrc=%u, ListenerSinks=%u, valid %us)",
+    TAG, "Added ADP entity 0x%016llX (MAC: %02X:%02X:%02X:%02X:%02X:%02X, TalkerSrc=%u, ListenerSinks=%u)",
     (unsigned long long)entity_id,
-    src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5],
+    entry->mac[0], entry->mac[1], entry->mac[2], entry->mac[3], entry->mac[4], entry->mac[5],
     entry->talker_stream_sources,
-    entry->listener_stream_sinks,
-    (unsigned)(valid_time * 2));
+    entry->listener_stream_sinks);
 }
 
 static void adp_remove_entity(struct avtp_state_s* s_state, struct avtp_discovery_msg_s* msg)
