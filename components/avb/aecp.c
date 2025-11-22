@@ -49,16 +49,16 @@ static void send_entity_descriptor_response(struct avtp_state_s* s_state, struct
   response.reserved = 0;
 
   /* Fill ENTITY descriptor */
-  response.descriptor.descriptor_type = htons(0x0000); // ENTITY
+  response.descriptor.descriptor_type = htons(AEM_DESC_TYPE_ENTITY); // ENTITY
   response.descriptor.descriptor_index = htons(0x0000);
   response.descriptor.entity_id = htonll(s_state->entity_id);
   response.descriptor.entity_model_id = htonll(s_state->entity_model_id);
-  response.descriptor.entity_capabilities = htonl(0x0000C508); // Example capabilities
-  response.descriptor.talker_stream_sources = htons(1);
-  response.descriptor.talker_capabilities = htons(0x4001);
-  response.descriptor.listener_stream_sinks = htons(1);
-  response.descriptor.listener_capabilities = htons(0x4001);
-  response.descriptor.controller_capabilities = htonl(0);
+  response.descriptor.entity_capabilities = htonl(CONFIG_ENTITY_CAPABILITIES); // Example capabilities
+  response.descriptor.talker_stream_sources = htons(CONFIG_TALKER_STREAM_SOURCES);
+  response.descriptor.talker_capabilities = htons(CONFIG_TALKER_CAPABILITIES);
+  response.descriptor.listener_stream_sinks = htons(CONFIG_LISTENER_STREAM_SINKS);
+  response.descriptor.listener_capabilities = htons(CONFIG_LISTENER_CAPABILITIES);
+  response.descriptor.controller_capabilities = htonl(CONFIG_CONTROLLER_CAPABILITIES);
   response.descriptor.available_index = htonl(s_state->adp_available_index);
   response.descriptor.association_id = htonll(0);
 
@@ -203,6 +203,375 @@ void send_configuration_response(struct avtp_state_s* s_state, struct aecp_data_
   free(resp);
 }
 
+void handle_aem_read_desc_audio_map(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
+{
+  ESP_LOGI(TAG, "Received ACM Read AUDIO_MAP Descriptor Request");
+
+  const size_t num_mappings = 8;
+
+  struct aecp_audio_map_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    uint16_t configuration_index;
+    uint16_t reserved;
+    struct aecp_audio_map_s audio_map_desc;
+  };
+
+  const size_t response_size = sizeof(struct aecp_audio_map_response_s) +
+    num_mappings * sizeof(struct aecp_audio_mapping_s);
+
+  struct aecp_audio_map_response_s* resp = malloc(response_size);
+  if (resp == NULL)
+  {
+    ESP_LOGE(TAG, "Failed to allocate memory for audio map response");
+    return;
+  }
+  memset(resp, 0, response_size);
+
+
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(resp->aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp->aecp_header.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+  /* Ethernet type (big-endian) */
+  resp->aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  resp->aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+  /* AECP header fields */
+  resp->aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  resp->aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  resp->aecp_header.version = 0;
+  resp->aecp_header.h = 0;
+
+  auto status = 0; // Success
+  const uint16_t desc_data_len = sizeof(struct aecp_audio_map_s) + num_mappings * sizeof(struct aecp_audio_mapping_s);
+  AECP_SET_CTRL_DATA_STATUS((&resp->aecp_header), status, desc_data_len);
+  resp->aecp_header.target_entity_id = msg->target_entity_id;
+  resp->aecp_header.controller_entity_id = msg->controller_entity_id;
+
+  resp->aecp_header.sequence_id = msg->sequence_id;
+  resp->aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
+  /* Response payload fields */
+  resp->configuration_index = 0;
+  resp->reserved = 0;
+  /* Fill AUDIO_MAP descriptor */
+  resp->audio_map_desc.descriptor_type = htons(AEM_DESC_TYPE_AUDIO_MAP);
+  resp->audio_map_desc.descriptor_index = 0;
+  resp->audio_map_desc.mappings_offset = htons(8);
+  resp->audio_map_desc.number_of_mappings = htons(num_mappings);
+
+  for (size_t i = 0; i < num_mappings; i++)
+  {
+    resp->audio_map_desc.mappings[i].mapping_stream_index = htons(0);
+    resp->audio_map_desc.mappings[i].mapping_stream_channel = htons(i);
+    resp->audio_map_desc.mappings[i].mapping_cluster_offset = htons(i);
+    resp->audio_map_desc.mappings[i].mapping_cluster_channel = htons(0);
+  }
+
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, resp, response_size, ESP_LOG_INFO);
+
+  /* Send the response */
+  ssize_t written = write(s_state->socket, resp, response_size);
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send AUDIO_MAP descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP AUDIO_MAP Descriptor Response");
+  }
+
+  free(resp);
+}
+
+void handle_aem_read_desc_stream_port_input(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
+{
+  ESP_LOGI(TAG, "Received ACM Read STREAM_PORT_INPUT Descriptor Request");
+
+  struct aecp_stream_port_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    uint16_t configuration_index;
+    uint16_t reserved;
+    struct acm_desc_stream_port_s stream_port_desc;
+  } __attribute__((packed));
+
+  struct aecp_stream_port_response_s resp = {0};
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+  /* Ethernet type (big-endian) */
+  resp.aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  resp.aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+  /* AECP header fields */
+  resp.aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  resp.aecp_header.version = 0;
+  resp.aecp_header.h = 0;
+
+  auto status = 0; // Success
+  auto cdl = 36;
+  (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
+  resp.aecp_header.target_entity_id = msg->target_entity_id;
+  resp.aecp_header.controller_entity_id = msg->controller_entity_id;
+
+  resp.aecp_header.sequence_id = msg->sequence_id;
+  resp.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
+  /* Response payload fields */
+  resp.configuration_index = 0;
+  resp.reserved = 0;
+  /* Fill STREAM_PORT_INPUT descriptor */
+  resp.stream_port_desc.descriptor_type = htons(AEM_DESC_TYPE_STREAM_PORT_INPUT);
+  resp.stream_port_desc.descriptor_index = 0;
+  resp.stream_port_desc.clock_domain_index = htons(0);
+  resp.stream_port_desc.port_flags = htons(0);
+  resp.stream_port_desc.number_of_controls = htons(0);
+  resp.stream_port_desc.base_control = htons(0);
+  resp.stream_port_desc.number_of_clusters = htons(8);
+  resp.stream_port_desc.base_cluster = htons(0);
+  resp.stream_port_desc.number_of_maps = htons(1);
+  resp.stream_port_desc.base_map = htons(0);
+
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
+
+  /* Send the response */
+  ssize_t written = write(s_state->socket, &resp, sizeof(resp));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send STREAM_PORT_INPUT descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP STREAM_PORT_INPUT Descriptor Response");
+  }
+}
+
+void handle_aem_read_desc_stream_port_output(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
+{
+  ESP_LOGI(TAG, "Received ACM Read STREAM_PORT_OUTPUT Descriptor Request");
+
+  struct aecp_stream_port_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    uint16_t configuration_index;
+    uint16_t reserved;
+    struct acm_desc_stream_port_s stream_port_desc;
+  } __attribute__((packed));
+
+  struct aecp_stream_port_response_s resp = {0};
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+  /* Ethernet type (big-endian) */
+  resp.aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  resp.aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+  /* AECP header fields */
+  resp.aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  resp.aecp_header.version = 0;
+  resp.aecp_header.h = 0;
+
+  auto status = 0; // Success
+  auto cdl = 36;
+  (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
+  resp.aecp_header.target_entity_id = msg->target_entity_id;
+  resp.aecp_header.controller_entity_id = msg->controller_entity_id;
+
+  resp.aecp_header.sequence_id = msg->sequence_id;
+  resp.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
+  /* Response payload fields */
+  resp.configuration_index = 0;
+  resp.reserved = 0;
+  /* Fill STREAM_PORT_OUTPUT descriptor */
+  resp.stream_port_desc.descriptor_type = htons(AEM_DESC_TYPE_STREAM_PORT_OUTPUT);
+  resp.stream_port_desc.descriptor_index = 0;
+  resp.stream_port_desc.clock_domain_index = htons(0);
+  resp.stream_port_desc.port_flags = htons(0);
+  resp.stream_port_desc.number_of_controls = htons(0);
+  resp.stream_port_desc.base_control = htons(0);
+  resp.stream_port_desc.number_of_clusters = htons(8);
+  resp.stream_port_desc.base_cluster = htons(0);
+  resp.stream_port_desc.number_of_maps = htons(1);
+  resp.stream_port_desc.base_map = htons(0);
+
+  /* Send the response */
+  ssize_t written = write(s_state->socket, &resp, sizeof(resp));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send STREAM_PORT_OUTPUT descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP STREAM_PORT_OUTPUT Descriptor Response");
+  }
+}
+
+void handle_aem_read_desc_stream_output(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
+{
+  ESP_LOGI(TAG, "Received ACM Read STREAM_OUTPUT Descriptor Request");
+
+
+  const size_t num_formats = sizeof(stream_formats) / sizeof(stream_formats[0]);
+
+  struct aecp_stream_input_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    uint16_t configuration_index;
+    uint16_t reserved;
+    struct acm_desc_stream_s stream_output_desc;
+  };
+
+  const size_t response_size = sizeof(struct aecp_stream_input_response_s) + (num_formats * sizeof(uint64_t));
+  struct aecp_stream_input_response_s* resp = malloc(response_size);
+  if (resp == NULL)
+  {
+    ESP_LOGE(TAG, "Failed to allocate memory for stream input response");
+    return;
+  }
+  memset(resp, 0, response_size);
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(resp->aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp->aecp_header.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+
+  resp->aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  resp->aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+  resp->aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  resp->aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  resp->aecp_header.version = 0;
+  resp->aecp_header.h = 0;
+
+  auto status = 0; // Success
+  auto cdl = sizeof(struct acm_desc_stream_s) + 4;
+  resp->aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF));
+  resp->aecp_header.target_entity_id = msg->target_entity_id;
+  resp->aecp_header.controller_entity_id = msg->controller_entity_id;
+
+  resp->aecp_header.sequence_id = msg->sequence_id;
+  resp->aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
+  resp->configuration_index = 0;
+  resp->reserved = 0;
+  /* Fill STREAM_OUTPUT descriptor */
+  resp->stream_output_desc.descriptor_type = htons(AEM_DESC_TYPE_STREAM_OUTPUT);
+  resp->stream_output_desc.descriptor_index = 0;
+  memset(resp->stream_output_desc.object_name, 0, sizeof(resp->stream_output_desc.object_name));
+  resp->stream_output_desc.localized_description = htons(0);
+  resp->stream_output_desc.clock_domain_index = htons(0);
+  resp->stream_output_desc.stream_flags = htons(0x0001); // clock_sync_source
+  resp->stream_output_desc.current_format = htonll(0x00A0020201000030); // 61883-6 48kHz 2ch 24bit
+  resp->stream_output_desc.formats_offset = htons(0);
+  resp->stream_output_desc.number_of_formats = htons(1);
+  resp->stream_output_desc.backup_talker_entity_id_0 = htonll(0);
+  resp->stream_output_desc.backup_talker_unique_id_0 = htons(0);
+  resp->stream_output_desc.backup_talker_entity_id_1 = htonll(0);
+  resp->stream_output_desc.backup_talker_unique_id_1 = htons(0);
+  resp->stream_output_desc.backup_talker_entity_id_2 = htonll(0);
+  resp->stream_output_desc.backup_talker_unique_id_2 = htons(0);
+  resp->stream_output_desc.backedup_talker_entity_id = htonll(0);
+  resp->stream_output_desc.backedup_talker_unique_id = htons(0);
+  resp->stream_output_desc.avb_interface_index = htons(0);
+  resp->stream_output_desc.buffer_length = htonl(8);
+
+  for (size_t i = 0; i < num_formats; ++i)
+  {
+    resp->stream_output_desc.formats[i] = htonll(stream_formats[i]);
+  }
+
+  ssize_t written = write(s_state->socket, resp, response_size);
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send STREAM_OUTPUT descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP STREAM_OUTPUT Descriptor Response");
+  }
+  free(resp);
+}
+
+void handle_aem_read_desc_stream_input(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
+{
+  ESP_LOGI(TAG, "Received ACM Read STREAM_INPUT Descriptor Request");
+
+  const size_t num_formats = sizeof(stream_formats) / sizeof(stream_formats[0]);
+
+  struct aecp_stream_input_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    uint16_t configuration_index;
+    uint16_t reserved;
+    struct acm_desc_stream_s stream_input_desc;
+  };
+
+  const size_t response_size = sizeof(struct aecp_stream_input_response_s) + (num_formats * sizeof(uint64_t));
+  struct aecp_stream_input_response_s* resp = malloc(response_size);
+  if (resp == NULL)
+  {
+    ESP_LOGE(TAG, "Failed to allocate memory for stream input response");
+    return;
+  }
+  memset(resp, 0, response_size);
+
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(resp->aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp->aecp_header.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+  /* Ethernet type (big-endian) */
+  resp->aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  resp->aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+  /* AECP header fields */
+  resp->aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  resp->aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  resp->aecp_header.version = 0;
+  resp->aecp_header.h = 0;
+
+  auto status = 0; // Success
+  const uint16_t desc_data_len = sizeof(struct acm_desc_stream_s) + (num_formats * sizeof(uint64_t));
+  AECP_SET_CTRL_DATA_STATUS((&resp->aecp_header), status, desc_data_len);
+  resp->aecp_header.target_entity_id = msg->target_entity_id;
+  resp->aecp_header.controller_entity_id = msg->controller_entity_id;
+
+  resp->aecp_header.sequence_id = msg->sequence_id;
+  resp->aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
+  /* Response payload fields */
+  resp->configuration_index = 0;
+  resp->reserved = 0;
+  /* Fill STREAM_INPUT descriptor */
+  resp->stream_input_desc.descriptor_type = htons(AEM_DESC_TYPE_STREAM_INPUT);
+  resp->stream_input_desc.descriptor_index = 0;
+  memset(resp->stream_input_desc.object_name, 0, sizeof(resp->stream_input_desc.object_name));
+  resp->stream_input_desc.localized_description = htons(0);
+  resp->stream_input_desc.clock_domain_index = htons(0);
+  resp->stream_input_desc.stream_flags = htons(0x0001); // clock_sync_source
+  resp->stream_input_desc.current_format = htonll(stream_formats[0]);
+  resp->stream_input_desc.formats_offset = htons(offsetof(struct acm_desc_stream_s, formats));
+  resp->stream_input_desc.number_of_formats = htons(num_formats);
+  resp->stream_input_desc.backup_talker_entity_id_0 = htonll(0);
+  resp->stream_input_desc.backup_talker_unique_id_0 = htons(0);
+  resp->stream_input_desc.backup_talker_entity_id_1 = htonll(0);
+  resp->stream_input_desc.backup_talker_unique_id_1 = htons(0);
+  resp->stream_input_desc.backup_talker_entity_id_2 = htonll(0);
+  resp->stream_input_desc.backup_talker_unique_id_2 = htons(0);
+  resp->stream_input_desc.backedup_talker_entity_id = htonll(0);
+  resp->stream_input_desc.backedup_talker_unique_id = htons(0);
+  resp->stream_input_desc.avb_interface_index = htons(0);
+  resp->stream_input_desc.buffer_length = htonl(8);
+
+  for (size_t i = 0; i < num_formats; ++i)
+  {
+    resp->stream_input_desc.formats[i] = htonll(stream_formats[i]);
+  }
+
+
+  /* Send the response */
+  ssize_t written = write(s_state->socket, resp, response_size);
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send STREAM_INPUT descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP STREAM_INPUT Descriptor Response");
+  }
+  free(resp);
+}
+
 void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
 {
   ESP_LOGI(TAG, "Received ACM Read AUDIO UNIT Descriptor Request");
@@ -254,7 +623,6 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   resp.audio_unit_desc.sampling_rates_count = htons(1);
   resp.audio_unit_desc.sampling_rates_offset = htons(144);
   resp.audio_unit_desc.sampling_rates[0] = htonl(CONFIG_SAMPLING_RATE);
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &resp, sizeof(resp));
@@ -266,6 +634,11 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   {
     ESP_LOGI(TAG, "Sent AECP AUDIO UNIT Descriptor Response");
   }
+}
+
+void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
+{
+  ESP_LOGI(TAG, "Received ACM Read AUDIO CLUSTER Descriptor Request");
 }
 
 void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
@@ -285,9 +658,23 @@ void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_dat
   case AEM_DESC_TYPE_AUDIO_UNIT:
     handle_aem_read_desc_audio_unit(s_state, msg);
     break;
+  case AEM_DESC_TYPE_STREAM_PORT_INPUT:
+    handle_aem_read_desc_stream_port_input(s_state, msg);
+    break;
+  case AEM_DESC_TYPE_STREAM_PORT_OUTPUT:
+    handle_aem_read_desc_stream_port_output(s_state, msg);
+    break;
+  case AEM_DESC_TYPE_AUDIO_CLUSTER:
+    ESP_LOGI(TAG, "Received ACM Read AUDIO_CLUSTER Descriptor Request - Not Implemented");
+    break;
+  case AEM_DESC_TYPE_AUDIO_MAP:
+    handle_aem_read_desc_audio_cluster(s_state, msg);
+    break;
   case AEM_DESC_TYPE_STREAM_INPUT:
-    ESP_LOGI(TAG, "Received ACM Read STREAM_INPUT Descriptor Request");
-    // TODO implement
+    handle_aem_read_desc_stream_input(s_state, msg);
+    break;
+  case AEM_DESC_TYPE_STREAM_OUTPUT:
+    handle_aem_read_desc_stream_output(s_state, msg);
     break;
   default:
     ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", desc_type);

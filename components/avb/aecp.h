@@ -32,7 +32,10 @@
 #define AEM_DESC_TYPE_STRINGS 0x000D
 #define AEM_DESC_TYPE_STREAM_PORT_INPUT 0x000E
 #define AEM_DESC_TYPE_STREAM_PORT_OUTPUT 0x000F
+#define AEM_DESC_TYPE_AUDIO_CLUSTER 0x0014
+#define AEM_DESC_TYPE_AUDIO_MAP 0x0017
 #define AEM_DESC_TYPE_CLOCK_DOMAIN 0x0024
+
 
 struct desc_count_s
 {
@@ -129,9 +132,6 @@ struct acm_desc_stream_s
   u16 backedup_talker_unique_id;
   u16 avb_interface_index;
   u32 buffer_length;
-  u16 redundant_offset;
-  u16 number_of_redundant_streams;
-  u16 timing;
   u64 formats[];
 } __attribute__((packed));
 
@@ -147,6 +147,23 @@ struct acm_desc_stream_port_s
   u16 base_cluster;
   u16 number_of_maps;
   u16 base_map;
+} __attribute__((packed));
+
+struct aecp_audio_mapping_s
+{
+  u16 mapping_stream_index;
+  u16 mapping_stream_channel;
+  u16 mapping_cluster_offset;
+  u16 mapping_cluster_channel;
+} __attribute__((packed));
+
+struct aecp_audio_map_s
+{
+  u16 descriptor_type;
+  u16 descriptor_index;
+  u16 mappings_offset;
+  u16 number_of_mappings;
+  struct aecp_audio_mapping_s mappings[];
 } __attribute__((packed));
 
 struct config_desc_s
