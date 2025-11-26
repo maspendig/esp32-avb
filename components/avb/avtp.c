@@ -233,7 +233,7 @@ int start_avtp_listener(const char* interface)
   if (s_state == NULL)
   {
     xTaskCreate(avtp_listener_task, "AVTP", 4096,
-                (void*)interface, tskIDLE_PRIORITY + 1, nullptr);
+                (void*)interface, tskIDLE_PRIORITY + 1, NULL);
     return ESP_OK;
   }
   ESP_LOGE(TAG, "Other instance of AVTP is already running");

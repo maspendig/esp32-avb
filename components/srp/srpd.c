@@ -190,7 +190,7 @@ int srpd_start(const char* interface)
   if (s_state == NULL)
   {
     xTaskCreate(srp_daemon, "SRPD", 4096,
-                (void*)interface, tskIDLE_PRIORITY + 1, nullptr);
+                (void*)interface, tskIDLE_PRIORITY + 1, NULL);
     return ESP_OK;
   }
   ESP_LOGE(TAG, "Other instance of MRP is already running");

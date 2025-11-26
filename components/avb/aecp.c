@@ -241,7 +241,7 @@ void handle_aem_read_desc_audio_map(struct avtp_state_s* s_state, struct aecp_da
   resp->aecp_header.version = 0;
   resp->aecp_header.h = 0;
 
-  auto status = 0; // Success
+  u8 status = 0; // Success
   const uint16_t desc_data_len = sizeof(struct aecp_audio_map_s) + num_mappings * sizeof(struct aecp_audio_mapping_s);
   AECP_SET_CTRL_DATA_STATUS((&resp->aecp_header), status, desc_data_len);
   resp->aecp_header.target_entity_id = msg->target_entity_id;
@@ -307,8 +307,8 @@ void handle_aem_read_desc_stream_port_input(struct avtp_state_s* s_state, struct
   resp.aecp_header.version = 0;
   resp.aecp_header.h = 0;
 
-  auto status = 0; // Success
-  auto cdl = 36;
+  u8 status = 0; // Success
+  u16 cdl = 36;
   (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
   resp.aecp_header.target_entity_id = msg->target_entity_id;
   resp.aecp_header.controller_entity_id = msg->controller_entity_id;
@@ -369,8 +369,8 @@ void handle_aem_read_desc_stream_port_output(struct avtp_state_s* s_state, struc
   resp.aecp_header.version = 0;
   resp.aecp_header.h = 0;
 
-  auto status = 0; // Success
-  auto cdl = 36;
+  u8 status = 0; // Success
+  u16 cdl = 36;
   (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
   resp.aecp_header.target_entity_id = msg->target_entity_id;
   resp.aecp_header.controller_entity_id = msg->controller_entity_id;
@@ -438,8 +438,8 @@ void handle_aem_read_desc_stream_output(struct avtp_state_s* s_state, struct aec
   resp->aecp_header.version = 0;
   resp->aecp_header.h = 0;
 
-  auto status = 0; // Success
-  auto cdl = sizeof(struct acm_desc_stream_s) + 4;
+  u8 status = 0; // Success
+  u16 cdl = sizeof(struct acm_desc_stream_s) + 4;
   resp->aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF));
   resp->aecp_header.target_entity_id = msg->target_entity_id;
   resp->aecp_header.controller_entity_id = msg->controller_entity_id;
@@ -522,7 +522,7 @@ void handle_aem_read_desc_stream_input(struct avtp_state_s* s_state, struct aecp
   resp->aecp_header.version = 0;
   resp->aecp_header.h = 0;
 
-  auto status = 0; // Success
+  u8 status = 0; // Success
   const uint16_t desc_data_len = sizeof(struct acm_desc_stream_s) + (num_formats * sizeof(uint64_t));
   AECP_SET_CTRL_DATA_STATUS((&resp->aecp_header), status, desc_data_len);
   resp->aecp_header.target_entity_id = msg->target_entity_id;
@@ -600,8 +600,8 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   resp.aecp_header.version = 0;
   resp.aecp_header.h = 0;
 
-  auto status = 0; // Success
-  auto cdl = 160;
+  u8 status = 0; // Success
+  u16 cdl = 160;
   (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
   resp.aecp_header.target_entity_id = msg->target_entity_id;
   resp.aecp_header.controller_entity_id = msg->controller_entity_id;
@@ -666,8 +666,8 @@ void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aec
   resp.aecp_header.version = 0;
   resp.aecp_header.h = 0;
 
-  auto status = 0; // Success
-  auto cdl = sizeof(struct aecp_audio_cluster_s) + 4;
+  u8 status = 0; // Success
+  u16 cdl = sizeof(struct aecp_audio_cluster_s) + 4;
   (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
   resp.aecp_header.target_entity_id = msg->target_entity_id;
   resp.aecp_header.controller_entity_id = msg->controller_entity_id;
@@ -727,8 +727,8 @@ void handle_aem_read_desc_avb_interface(struct avtp_state_s* s_state, struct aec
   resp.aecp_header.version = 0;
   resp.aecp_header.h = 0;
 
-  auto status = 0; // Success
-  auto cdl = sizeof(struct aecp_avb_interface_s) + 4;
+  u8 status = 0; // Success
+  u16 cdl = sizeof(struct aecp_avb_interface_s) + 4;
   (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
   resp.aecp_header.target_entity_id = msg->target_entity_id;
   resp.aecp_header.controller_entity_id = msg->controller_entity_id;
@@ -774,7 +774,7 @@ void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_dat
 {
   // TODO create a combined struct to pass down the handler
   struct aecp_aem_read_desc_cmd* read_desc_cmd = (struct aecp_aem_read_desc_cmd*)(msg + 1);
-  auto desc_type = ntohs(read_desc_cmd->descriptor_type);
+  u16 desc_type = ntohs(read_desc_cmd->descriptor_type);
   switch (desc_type)
   {
   case AEM_DESC_TYPE_ENTITY: // ENTITY Descriptor
@@ -910,8 +910,8 @@ void handle_acm_get_stream_format(struct avtp_state_s* s_state, struct aecp_data
   resp.aecp_header.version = 0;
   resp.aecp_header.h = 0;
 
-  auto status = 0; // Success
-  auto cdl = sizeof(struct aecp_get_stream_format_s) + 4;
+  u8 status = 0; // Success
+  u16 cdl = sizeof(struct aecp_get_stream_format_s) + 4;
   (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
   resp.aecp_header.target_entity_id = msg->target_entity_id;
   resp.aecp_header.controller_entity_id = msg->controller_entity_id;
@@ -981,7 +981,7 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
     handle_acm_get_stream_format(s_state, msg);
     break;
   default:
-    ESP_LOGW(TAG, "Recieved unimplemented AECP ACM Command type: 0x%04X", command_type);
+    ESP_LOGW(TAG, "Received unimplemented AECP ACM Command type: 0x%04X", command_type);
   }
   return ESP_OK;
 }

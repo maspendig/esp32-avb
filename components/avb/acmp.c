@@ -98,7 +98,7 @@ int send_acmp_connect_rx_command(struct avtp_state_s* state, uint8_t msg_type)
 
   acmp_set_common_header(state, &msg, msg_type, 44, 0);
   acmp_set_common_du(state, &msg);
-  auto talker = &(state->adp_entities[0]);
+  struct adp_entity_entry_s* talker = &(state->adp_entities[0]);
 
   /* ACMP payload - convert to network byte order */
   const uint64_t entity_id = htonll(state->entity_id);
@@ -120,7 +120,7 @@ int send_acmp_connect_rx_command(struct avtp_state_s* state, uint8_t msg_type)
 
 void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
-  const auto status = ACMP_GET_STATUS(msg);
+  const int status = ACMP_GET_STATUS(msg);
   /* Check status */
   if (status != 0)
   {
@@ -176,8 +176,7 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s*
 
 int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
-  const auto status = ACMP_GET_STATUS(msg);
-  /* Check status */
+  u8 status = ACMP_GET_STATUS(msg);
   switch (status)
   {
   case ACMP_STATUS_SUCCESS:

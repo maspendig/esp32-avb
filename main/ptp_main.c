@@ -34,7 +34,7 @@ void init_ethernet_and_netif(void)
 
   ESP_ERROR_CHECK(esp_netif_init());
 
-  ESP_ERROR_CHECK(esp_vfs_l2tap_intf_register(nullptr));
+  ESP_ERROR_CHECK(esp_vfs_l2tap_intf_register(NULL));
 
   esp_netif_inherent_config_t esp_netif_base_config = ESP_NETIF_INHERENT_DEFAULT_ETH();
   esp_netif_config_t esp_netif_config = {
