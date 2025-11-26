@@ -12,116 +12,10 @@ dependencies:
       type: local
     version: '*'
   espressif/ethernet_init:
-    component_hash: b7303f1482091766b9b653ec8332775a9485f4df3c69141577de82847c4d2adf
-    dependencies:
-    - matches:
-      - if: $CONFIG{ETHERNET_SPI_USE_CH390} == 1
-      name: espressif/ch390
-      registry_url: https://components.espressif.com
-      require: private
-      version: '*'
-    - matches:
-      - if: $CONFIG{ETHERNET_SPI_USE_DM9051} == 1
-      name: espressif/dm9051
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      version: '*'
-    - matches:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      name: espressif/dp83848
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: target in [esp32, esp32p4]
-      - if: $CONFIG{ETHERNET_PHY_USE_DP83848} == 1
-      version: '*'
-    - matches:
-      - if: $CONFIG{ETHERNET_SPI_USE_ENC28J60} == 1
-      name: espressif/enc28j60
-      registry_url: https://components.espressif.com
-      require: private
-      version: '*'
-    - matches:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      name: espressif/ip101
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: target in [esp32, esp32p4]
-      - if: $CONFIG{ETHERNET_PHY_USE_IP101} == 1
-      version: '*'
-    - matches:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      name: espressif/ksz80xx
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: target in [esp32, esp32p4]
-      - if: $CONFIG{ETHERNET_PHY_USE_KSZ80XX} == 1
-      version: '*'
-    - matches:
-      - if: $CONFIG{ETHERNET_SPI_USE_KSZ8851SNL} == 1
-      name: espressif/ksz8851snl
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      version: '*'
-    - matches:
-      - if: $CONFIG{ETHERNET_SPI_USE_LAN865X} == 1
-      name: espressif/lan865x
-      registry_url: https://components.espressif.com
-      require: private
-      version: ^0.1.1
-    - name: espressif/lan867x
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: target in [esp32, esp32p4]
-      - if: $CONFIG{ETHERNET_PHY_USE_LAN867X} == 1
-      version: '>=2.0.0'
-    - matches:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      name: espressif/lan87xx
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: target in [esp32, esp32p4]
-      - if: $CONFIG{ETHERNET_PHY_USE_LAN87XX} == 1
-      version: '*'
-    - matches:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      name: espressif/rtl8201
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: target in [esp32, esp32p4]
-      - if: $CONFIG{ETHERNET_PHY_USE_RTL8201} == 1
-      version: '*'
-    - matches:
-      - if: $CONFIG{ETHERNET_SPI_USE_W5500} == 1
-      name: espressif/w5500
-      registry_url: https://components.espressif.com
-      require: private
-      rules:
-      - if: idf_version >=6.0
-        version: ^1.0.0
-      version: '*'
-    - name: idf
-      require: private
-      version: '>=5.4.3,!=5.5.0,!=5.5.1'
+    dependencies: []
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      path: /home/max/Projects/fh/thesis/esp32-avb/managed_components/espressif__ethernet_init
+      type: local
     version: 1.2.0
   espressif/ip101:
     component_hash: e3be457b9ae50d7b348e5418ef1a334b3f943a1f0df16a4d42767b89ae15d533
@@ -130,7 +24,7 @@ dependencies:
       require: private
       version: '>=6.0'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     targets:
     - esp32
@@ -140,12 +34,6 @@ dependencies:
     source:
       type: idf
     version: 6.0.0
-  mrpd:
-    dependencies: []
-    source:
-      path: /home/max/Projects/fh/thesis/esp32-avb/components/mrpd
-      type: local
-    version: '*'
   ptpd:
     dependencies:
     - name: esp_eth_time
@@ -154,12 +42,20 @@ dependencies:
       path: /home/max/Projects/esp/esp-idf/examples/ethernet/ptp/components/ptpd
       type: local
     version: '*'
+  srp:
+    dependencies: []
+    source:
+      path: /home/max/Projects/fh/thesis/esp32-avb/components/srp
+      type: local
+    version: '*'
 direct_dependencies:
 - avb
 - esp_eth_time
 - espressif/ethernet_init
-- mrpd
+- espressif/ip101
+- idf
 - ptpd
-manifest_hash: 8588bfe258c27c64d5df4e7f8d244ab5c2bb4668b21969b7407840d8ea776e71
+- srp
+manifest_hash: c9f13b031bf7a7a077b4a0d343427717735d0e9223af6a2c95e2172b289d945e
 target: esp32p4
 version: 2.0.0

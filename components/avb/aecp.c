@@ -266,7 +266,7 @@ void handle_aem_read_desc_audio_map(struct avtp_state_s* s_state, struct aecp_da
     resp->audio_map_desc.mappings[i].mapping_cluster_channel = htons(0);
   }
 
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, resp, response_size, ESP_LOG_INFO);
+  // ESP_LOG_BUFFER_HEX_LEVEL(TAG, resp, response_size, ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, resp, response_size);
@@ -330,7 +330,7 @@ void handle_aem_read_desc_stream_port_input(struct avtp_state_s* s_state, struct
   resp.stream_port_desc.number_of_maps = htons(1);
   resp.stream_port_desc.base_map = htons(0);
 
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
+  // ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &resp, sizeof(resp));
@@ -601,7 +601,7 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   resp.aecp_header.h = 0;
 
   auto status = 0; // Success
-  auto cdl = sizeof(struct aecp_audio_unit_s) + 4;
+  auto cdl = 160;
   (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
   resp.aecp_header.target_entity_id = msg->target_entity_id;
   resp.aecp_header.controller_entity_id = msg->controller_entity_id;
@@ -624,6 +624,8 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   resp.audio_unit_desc.sampling_rates_count = htons(1);
   resp.audio_unit_desc.sampling_rates_offset = htons(144);
   resp.audio_unit_desc.sampling_rates[0] = htonl(CONFIG_SAMPLING_RATE);
+
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &resp, sizeof(resp));
@@ -869,7 +871,7 @@ void handle_acm_get_sampling_rate(struct avtp_state_s* s_state, struct aecp_data
   // Padding is already filled with 0x00 due to struct initialization with {0}
   memset(response.padding, 0x00, sizeof(response.padding));
 
-  // ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)&response, sizeof(response), ESP_LOG_INFO);
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)&response, sizeof(response), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &response, sizeof(response));

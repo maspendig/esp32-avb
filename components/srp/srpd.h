@@ -9,5 +9,8 @@
 #define FAR
 #endif
 
-int mrpd_start (const char *interface);
+#define ETH_TYPE_MSRP 0x22EA
+#define ETH_TYPE_MVRP 0x88F5
+
+int srpd_start(const char* interface);
 #endif //ETHERNET_PTP_MRPD_H
