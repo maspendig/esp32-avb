@@ -1,0 +1,105 @@
+dependencies:
+  avb:
+    dependencies: []
+    source:
+      path: /home/max/Projects/fh/thesis/esp32-avb/components/avb
+      type: local
+    version: '*'
+  esp_eth_time:
+    dependencies: []
+    source:
+      path: /home/max/Projects/esp-idf/examples/ethernet/ptp/components/esp_eth_time
+      type: local
+    version: '*'
+  espressif/ch390:
+    dependencies: []
+    source:
+      path: /home/max/Projects/fh/thesis/esp32-avb/managed_components/espressif__ch390
+      type: local
+    version: 0.3.0
+  espressif/enc28j60:
+    dependencies: []
+    source:
+      path: /home/max/Projects/fh/thesis/esp32-avb/managed_components/espressif__enc28j60
+      type: local
+    version: 1.0.1
+  espressif/ethernet_init:
+    dependencies: []
+    source:
+      path: /home/max/Projects/fh/thesis/esp32-avb/managed_components/espressif__ethernet_init
+      type: local
+    version: 1.0.0
+  espressif/lan865x:
+    component_hash: 2a27887016922bea266f6052bd811b720b30e516188863051971cbc809710b4e
+    dependencies:
+    - name: espressif/lan86xx_common
+      registry_url: https://components.espressif.com
+      require: private
+      version: '*'
+    - name: idf
+      require: private
+      version: '>=5.2'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 0.1.2
+  espressif/lan867x:
+    component_hash: 651c9d6e3d96acb08bd5066144b12a12e94df0a6241127a0538d8680689de2c4
+    dependencies:
+    - name: espressif/lan86xx_common
+      registry_url: https://components.espressif.com
+      require: private
+      version: '*'
+    - name: idf
+      require: private
+      version: '>=5.3'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32
+    - esp32p4
+    version: 2.0.0
+  espressif/lan86xx_common:
+    component_hash: 6dcb1be9f43ae940979bd628fa5bee278949b66c545e1fe2321e486102e81026
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.2'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.0.0
+  idf:
+    source:
+      type: idf
+    version: 5.5.1
+  ptpd:
+    dependencies:
+    - name: esp_eth_time
+      path: ${IDF_PATH}/examples/ethernet/ptp/components/esp_eth_time
+    source:
+      path: /home/max/Projects/esp-idf/examples/ethernet/ptp/components/ptpd
+      type: local
+    version: '*'
+  srp:
+    dependencies: []
+    source:
+      path: /home/max/Projects/fh/thesis/esp32-avb/components/srp
+      type: local
+    version: '*'
+direct_dependencies:
+- avb
+- esp_eth_time
+- espressif/ch390
+- espressif/enc28j60
+- espressif/ethernet_init
+- espressif/lan865x
+- espressif/lan867x
+- espressif/lan86xx_common
+- idf
+- ptpd
+- srp
+manifest_hash: df0285cd01005c5905ab24b8672bdc94eddd7654f4815fe577b6e31f42541054
+target: esp32p4
+version: 2.0.0
