@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <time.h>
-#include <types.h>
+#include "types.h"
 
 #include <aecp.h>
 #include <acmp.h>
@@ -92,6 +92,7 @@ struct avtp_state_s
 {
   bool stop;
   int socket;
+  int msrp_socket;
   uint16_t acmp_sequence_id;
   uint8_t intf_hw_addr[6];
   uint64_t entity_id;

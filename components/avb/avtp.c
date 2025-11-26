@@ -12,6 +12,7 @@
 #include "acmp.h"
 
 #include <fcntl.h>
+#include <msrp.h>
 
 #include "esp_eth_spec.h"
 #include "pthread.h"
@@ -62,6 +63,8 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
     ESP_LOGE(TAG, "failed to get ethernet handle: %d\n", errno);
     return ESP_FAIL;
   }
+
+  state->msrp_socket = msrp_init(interface);
 
   // get HW address
   esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, &state->intf_hw_addr);
@@ -195,6 +198,8 @@ static void avtp_listener_task(void* arg)
         break;
       }
     }
+
+    read_msrp_net(state);
 
     /* Check connection status and attempt to connect to available talkers */
     if (!state->connected)

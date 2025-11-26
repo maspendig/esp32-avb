@@ -5,7 +5,5 @@ dependencies:
     path: ${IDF_PATH}/examples/ethernet/ptp/components/esp_eth_time
   ptpd:
     path: ${IDF_PATH}/examples/ethernet/ptp/components/ptpd
-  srp:
-    path: ../components/srp
   avb:
     path: ../components/avb

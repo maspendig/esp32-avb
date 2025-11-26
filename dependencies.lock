@@ -82,12 +82,6 @@ dependencies:
       path: /home/max/Projects/esp-idf/examples/ethernet/ptp/components/ptpd
       type: local
     version: '*'
-  srp:
-    dependencies: []
-    source:
-      path: /home/max/Projects/fh/thesis/esp32-avb/components/srp
-      type: local
-    version: '*'
 direct_dependencies:
 - avb
 - esp_eth_time
@@ -99,7 +93,6 @@ direct_dependencies:
 - espressif/lan86xx_common
 - idf
 - ptpd
-- srp
-manifest_hash: df0285cd01005c5905ab24b8672bdc94eddd7654f4815fe577b6e31f42541054
+manifest_hash: e91e5e44bdee3137b6083911c1fde2aafebf540d13ff5b0c93cec4f4be597fa1
 target: esp32p4
 version: 2.0.0
