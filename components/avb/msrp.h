@@ -14,6 +14,15 @@
 
 #define ETH_TYPE_MSRP 0x22EA
 
+struct msrp_header_s
+{
+  struct header_s header;
+  u8 protocol_version;
+  u8 attribute_type;
+  u8 attribute_length;
+  u16 attribute_list_length;
+};
+
 struct talker_advertise_s
 {
   struct header_s header;
@@ -27,9 +36,15 @@ struct talker_advertise_s
   u16 stream_vlan_id;
   u16 max_frame_size;
   u16 max_frame_interval;
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  u8 reserved : 4;
+  u8 rank : 1;
+  u8 priority : 3;
+#else
   u8 priority : 3;
   u8 rank : 1;
   u8 reserved : 4;
+#endif
   u32 accumulated_latency;
   u8 attribute_event;
   u16 end_mark_attribute_list;

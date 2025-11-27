@@ -116,17 +116,34 @@ void read_msrp_net(const struct avtp_state_s* state)
 {
   union
   {
+    struct msrp_header_s header;
     u8 raw[100];
   } buf;
   const ssize_t len = read(state->msrp_socket, &buf, sizeof(buf));
   if (len > 0)
   {
-    ESP_LOGI(TAG, "MSRP message received, length: %d", len);
-    ESP_LOG_BUFFER_HEX_LEVEL(TAG, buf.raw, len, ESP_LOG_DEBUG);
+    switch (buf.header.attribute_type)
+    {
+    case MSRP_ATTRIBUTE_TYPE_TALKER_ADVERTISE:
+      ESP_LOGI(TAG, "Received MSRP Talker Advertise message");
+      break;
+    case MSRP_ATTRIBUTE_TYPE_TALKER_FAILED:
+      ESP_LOGI(TAG, "Received MSRP Talker Failed message");
+      break;
+    case MSRP_ATTRIBUTE_TYPE_LISTENER:
+      ESP_LOGI(TAG, "Received MSRP Listener message");
+      break;
+    case MSRP_ATTRIBUTE_TYPE_DOMAIN:
+      ESP_LOGI(TAG, "Received MSRP Domain message");
+      break;
+    default:
+      ESP_LOGW(TAG, "Unknown MSRP attribute type received: %d", buf.header.attribute_type);
+      break;
+    }
   }
   else if (len < 0)
   {
-    ESP_LOGE(TAG, "MSRP read error: %d (errno: %d)", len, errno);
+    ESP_LOGE(TAG, "Failed to read MSRP message: %d (errno: %d)", len, errno);
   }
 }
 
