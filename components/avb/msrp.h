@@ -14,8 +14,31 @@
 
 #define ETH_TYPE_MSRP 0x22EA
 
+struct talker_advertise_s
+{
+  struct header_s header;
+  u8 protocol_version;
+  u8 attribute_type;
+  u8 attribute_length;
+  u16 attribute_list_length;
+  u16 number_of_values;
+  u64 stream_id;
+  u8 stream_da[6];
+  u16 stream_vlan_id;
+  u16 max_frame_size;
+  u16 max_frame_interval;
+  u8 priority : 3;
+  u8 rank : 1;
+  u8 reserved : 4;
+  u32 accumulated_latency;
+  u8 attribute_event;
+  u16 end_mark_attribute_list;
+  u16 end_mark;
+} __attribute__((packed));
+
 int msrp_init(const char* interface);
 void read_msrp_net(const struct avtp_state_s* state);
 int msrp_send_listener_join_request(struct avtp_state_s* state);
+int msrp_send_talker_advertise(struct avtp_state_s* state);
 
 #endif //ETHERNET_PTP_MSRP_H

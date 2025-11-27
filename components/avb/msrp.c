@@ -19,7 +19,44 @@
 
 #define TAG "msrp"
 
-int msrp_send_talker_advertise(struct avtp_state_s* state);
+int msrp_send_talker_advertise(struct avtp_state_s* state)
+{
+  struct talker_advertise_s msg = {0};
+
+  const u8 acmp_multicast_mac[6] = {0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E}; // MSRP multicast MAC
+  memcpy(msg.header.dst_mac, acmp_multicast_mac, sizeof(msg.header.dst_mac));
+  memcpy(msg.header.src_mac, state->intf_hw_addr, sizeof(msg.header.src_mac));
+  msg.header.eth_type[0] = (ETH_TYPE_MSRP >> 8) & 0xFF;
+  msg.header.eth_type[1] = ETH_TYPE_MSRP & 0xFF;
+
+  msg.attribute_type = MSRP_ATTRIBUTE_TYPE_TALKER_ADVERTISE;
+  msg.attribute_length = 25; // IEEE 802.1Qat-2010 P.57 Table 35-2
+  msg.attribute_list_length = htons(30);
+
+  msg.number_of_values = htons(1);
+  msg.stream_id = htonll(0x0000000000000001); //
+  const u8 maap_mac[6] = {0x91, 0xe0, 0xf0, 0x00, 0xfe, 0x00}; // Example MAAP MAC
+  memcpy(msg.stream_da, maap_mac, sizeof(msg.stream_da));
+  msg.stream_vlan_id = htons(2);
+  msg.max_frame_size = htons(224);
+  msg.max_frame_interval = htons(1);
+  msg.priority = 3;
+  msg.rank = 1;
+  msg.accumulated_latency = htonl(100095);
+  msg.attribute_event = 0x6c; // Talker Advertise
+
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)&msg, sizeof(msg), ESP_LOG_INFO);
+
+  // send via msrp_socket
+  const ssize_t written = write(state->msrp_socket, &msg, sizeof(msg));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send MSRP Talker Advertise: %d (errno: %d)", written, errno);
+    return ESP_FAIL;
+  }
+
+  return ESP_OK;
+}
 
 int msrp_send_listener_join_request(struct avtp_state_s* state)
 {

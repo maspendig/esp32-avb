@@ -242,6 +242,7 @@ static void avtp_listener_task(void* arg)
           // msrp_send_listener_join_request(state);
           state->connected = true;
         }
+        msrp_send_talker_advertise(state);
       }
     }
 
