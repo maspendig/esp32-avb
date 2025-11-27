@@ -159,7 +159,8 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s*
   memcpy(resp.talker_entity_id, &msg->talker_entity_id, sizeof(resp.talker_entity_id));
   memcpy(resp.listener_entity_id, &msg->listener_entity_id, sizeof(resp.listener_entity_id));
 
-  memcpy(resp.stream_dest_mac, msg->stream_dest_mac, sizeof(resp.stream_dest_mac));
+  const u8 maap_mac[6] = {0x91, 0xe0, 0xf0, 0x00, 0xfe, 0x00}; // Example MAAP MAC
+  memcpy(resp.stream_dest_mac, maap_mac, sizeof(resp.stream_dest_mac));
 
   resp.connection_count = htons(1); // One connection established
   resp.stream_vlan_id = msg->stream_vlan_id; // Keep the same VLAN ID

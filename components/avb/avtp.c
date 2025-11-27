@@ -171,6 +171,7 @@ static void avtp_listener_task(void* arg)
 
   ESP_LOGI(TAG, "AVTP listener started on interface: %s", interface);
 
+  msrp_send_domain_request(state);
   while (!state->stop)
   {
     fd_set readfds;
