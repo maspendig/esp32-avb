@@ -19,6 +19,7 @@
 #include "sys/ioctl.h"
 #include <arpa/inet.h>
 #include <time.h>
+#include <sys/select.h>
 
 #define CONFIG_ADP_SEND_INTERVAL_MSEC 5800
 
@@ -172,34 +173,62 @@ static void avtp_listener_task(void* arg)
 
   while (!state->stop)
   {
-    const ssize_t len = read(state->socket, &buf, sizeof(buf));
-    if (len > 0)
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(state->socket, &readfds);
+    FD_SET(state->msrp_socket, &readfds);
+
+    int max_fd = (state->socket > state->msrp_socket) ? state->socket : state->msrp_socket;
+
+    // Set timeout for select to allow periodic tasks (ADP sending, etc.)
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 100000; // 100ms timeout
+
+    int ret = select(max_fd + 1, &readfds, NULL, NULL, &timeout);
+
+    if (ret < 0)
     {
-      // TODO implement discovery state machine like in IEEE 1722-2022 p. 60
-      switch (buf.header.subtype)
+      ESP_LOGE(TAG, "select() error: %d (errno: %d)", ret, errno);
+      continue;
+    }
+
+    // Check if AVTP socket has data
+    if (FD_ISSET(state->socket, &readfds))
+    {
+      const ssize_t len = read(state->socket, &buf, sizeof(buf));
+      if (len > 0)
       {
-      case AVTP_SUBTYPE_ADP:
-        adp_net_rx(state, &buf.adp, len);
-        break;
-      case AVTP_SUBTYPE_AECP:
+        // TODO implement discovery state machine like in IEEE 1722-2022 p. 60
+        switch (buf.header.subtype)
+        {
+        case AVTP_SUBTYPE_ADP:
+          adp_net_rx(state, &buf.adp, len);
+          break;
+        case AVTP_SUBTYPE_AECP:
 
-        // ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)&buf.raw + 15, 45, ESP_LOG_INFO);
-        aecp_net_rx(state, &buf.aecp, len);
-        break;
-      case AVTP_SUBTYPE_ACMP:
+          // ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)&buf.raw + 15, 45, ESP_LOG_INFO);
+          aecp_net_rx(state, &buf.aecp, len);
+          break;
+        case AVTP_SUBTYPE_ACMP:
 
-        acmp_net_rx(state, &buf.acmp, len);
-        break;
-      case AVTP_SUBTYPE_MAAP:
-        ESP_LOGI(TAG, "MAAP Announce received");
-        break;
-      default:
-        ESP_LOGW(TAG, "Unknown AVTP subtype received: 0x%02X", buf.header.subtype);
-        break;
+          acmp_net_rx(state, &buf.acmp, len);
+          break;
+        case AVTP_SUBTYPE_MAAP:
+          ESP_LOGI(TAG, "MAAP Announce received");
+          break;
+        default:
+          ESP_LOGW(TAG, "Unknown AVTP subtype received: 0x%02X", buf.header.subtype);
+          break;
+        }
       }
     }
 
-    read_msrp_net(state);
+    // Check if MSRP socket has data
+    if (FD_ISSET(state->msrp_socket, &readfds))
+    {
+      read_msrp_net(state);
+    }
 
     /* Check connection status and attempt to connect to available talkers */
     if (!state->connected)

@@ -19,6 +19,8 @@
 
 #define TAG "msrp"
 
+int msrp_send_talker_advertise(struct avtp_state_s* state);
+
 int msrp_send_listener_join_request(struct avtp_state_s* state)
 {
   struct attribute_vector_s
@@ -83,6 +85,11 @@ void read_msrp_net(const struct avtp_state_s* state)
   if (len > 0)
   {
     ESP_LOGI(TAG, "MSRP message received, length: %d", len);
+    ESP_LOG_BUFFER_HEX_LEVEL(TAG, buf.raw, len, ESP_LOG_DEBUG);
+  }
+  else if (len < 0)
+  {
+    ESP_LOGE(TAG, "MSRP read error: %d (errno: %d)", len, errno);
   }
 }
 
