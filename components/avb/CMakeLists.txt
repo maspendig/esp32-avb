@@ -1,4 +1,4 @@
-idf_component_register(SRCS "avtp.c" "acmp.c" "aecp.c" "adp.c" "msrp.c"
+idf_component_register(SRCS "avtp.c" "acmp.c" "aecp.c" "adp.c" "msrp.c" "mvrp.c"
         PRIV_REQUIRES esp_eth esp_netif
         INCLUDE_DIRS ".")
 

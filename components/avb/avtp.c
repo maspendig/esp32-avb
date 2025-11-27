@@ -13,6 +13,7 @@
 
 #include <fcntl.h>
 #include <msrp.h>
+#include <mvrp.h>
 
 #include "esp_eth_spec.h"
 #include "pthread.h"
@@ -66,6 +67,7 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   }
 
   state->msrp_socket = msrp_init(interface);
+  state->mvrp_socket = mvrp_init(interface);
 
   // get HW address
   esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, &state->intf_hw_addr);
@@ -172,14 +174,18 @@ static void avtp_listener_task(void* arg)
   ESP_LOGI(TAG, "AVTP listener started on interface: %s", interface);
 
   msrp_send_domain_request(state);
+  mvrp_send_vlan_join(state, 2);
   while (!state->stop)
   {
     fd_set readfds;
     FD_ZERO(&readfds);
     FD_SET(state->socket, &readfds);
     FD_SET(state->msrp_socket, &readfds);
+    FD_SET(state->mvrp_socket, &readfds);
 
-    int max_fd = (state->socket > state->msrp_socket) ? state->socket : state->msrp_socket;
+    int max_fd = state->socket;
+    if (state->msrp_socket > max_fd) max_fd = state->msrp_socket;
+    if (state->mvrp_socket > max_fd) max_fd = state->mvrp_socket;
 
     // Set timeout for select to allow periodic tasks (ADP sending, etc.)
     struct timeval timeout;
@@ -223,6 +229,11 @@ static void avtp_listener_task(void* arg)
           break;
         }
       }
+    }
+
+    if (FD_ISSET(state->mvrp_socket, &readfds))
+    {
+      read_mvrp_net(state);
     }
 
     // Check if MSRP socket has data
