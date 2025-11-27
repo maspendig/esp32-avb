@@ -14,6 +14,7 @@
 
 static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aecp_data_unit_s* request_msg)
 {
+  ESP_LOGI(TAG, "Received ACM Read ENTITY Descriptor Request");
   if (s_state == NULL || s_state->socket < 0)
   {
     ESP_LOGE(TAG, "Socket not ready to send AECP response");
@@ -86,6 +87,8 @@ static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aec
 
   response.descriptor.configurations_count = htons(1);
   response.descriptor.current_configuration = htons(0);
+
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)&response, sizeof(response), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &response, sizeof(response));
@@ -619,7 +622,7 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   resp.audio_unit_desc.number_of_stream_input_ports = htons(1);
   resp.audio_unit_desc.number_of_stream_output_ports = htons(1);
   resp.audio_unit_desc.number_of_external_input_ports = htons(CONFIG_LISTENER_STREAM_SINKS);
-  resp.audio_unit_desc.number_of_external_input_ports = htons(CONFIG_TALKER_STREAM_SOURCES);
+  resp.audio_unit_desc.number_of_external_output_ports = htons(CONFIG_TALKER_STREAM_SOURCES);
   resp.audio_unit_desc.current_sampling_rate = htonl(CONFIG_SAMPLING_RATE);
   resp.audio_unit_desc.sampling_rates_count = htons(1);
   resp.audio_unit_desc.sampling_rates_offset = htons(144);
@@ -778,7 +781,6 @@ void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_dat
   switch (desc_type)
   {
   case AEM_DESC_TYPE_ENTITY: // ENTITY Descriptor
-    ESP_LOGI(TAG, "Received ACM Read ENTITY Descriptor Request");
     handle_aem_read_desc_entity(s_state, msg);
     break;
   case AEM_DESC_TYPE_CONFIGURATION:

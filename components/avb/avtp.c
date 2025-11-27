@@ -210,6 +210,7 @@ static void avtp_listener_task(void* arg)
         send_acmp_connect_tx_command(state, ACMP_MSG_TYPE_CONNECT_TX_COMMAND);
         if (send_acmp_connect_rx_command(state, ACMP_MSG_TYPE_CONNECT_RX_COMMAND) == ESP_OK)
         {
+          // msrp_send_listener_join_request(state);
           state->connected = true;
         }
       }

@@ -14,8 +14,8 @@
 
 #define ETH_TYPE_MSRP 0x22EA
 
-void msrp_net_rx();
 int msrp_init(const char* interface);
 void read_msrp_net(const struct avtp_state_s* state);
+int msrp_send_listener_join_request(struct avtp_state_s* state);
 
 #endif //ETHERNET_PTP_MSRP_H

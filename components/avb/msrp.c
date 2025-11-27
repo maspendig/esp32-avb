@@ -19,7 +19,7 @@
 
 #define TAG "msrp"
 
-int send_msrp_listener_join_request(struct avtp_state_s* state)
+int msrp_send_listener_join_request(struct avtp_state_s* state)
 {
   struct attribute_vector_s
   {
@@ -54,7 +54,7 @@ int send_msrp_listener_join_request(struct avtp_state_s* state)
   msg.attribute_type = MSRP_ATTRIBUTE_TYPE_LISTENER;
   msg.attribute_length = 8; // IEEE 802.1Qat-2010 P.57 Table 35-2
   msg.attribute_list_length = htons(14);
-  msg.attribute_list[0].stream_id = htonll(0x0000000000000001); // Example stream ID
+  msg.attribute_list[0].stream_id = htonll(0x0000000000000000); // Example stream ID
   msg.attribute_list[0].leave_all_event = 0;
   msg.attribute_list[0].number_of_values = htons(1);
   msg.attribute_list[0].attribute_event = 0x24;
