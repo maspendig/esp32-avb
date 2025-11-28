@@ -21,6 +21,8 @@ static uint64_t stream_formats[] = {
   0x00a0050860000800,
   0x00a0060860000800,
 };
+// current stream format differs from above formats by having 0840 instead of 0860 - why?
+// 0x00a0020840000800,
 
 #endif //ETHERNET_PTP_CONFIG_H
 

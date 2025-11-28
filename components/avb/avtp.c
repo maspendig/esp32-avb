@@ -213,12 +213,9 @@ static void avtp_listener_task(void* arg)
           adp_net_rx(state, &buf.adp, len);
           break;
         case AVTP_SUBTYPE_AECP:
-
-          // ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)&buf.raw + 15, 45, ESP_LOG_INFO);
           aecp_net_rx(state, &buf.aecp, len);
           break;
         case AVTP_SUBTYPE_ACMP:
-
           acmp_net_rx(state, &buf.acmp, len);
           break;
         case AVTP_SUBTYPE_MAAP:

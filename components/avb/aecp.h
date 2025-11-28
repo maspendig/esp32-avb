@@ -13,6 +13,7 @@
 #define AECP_MSG_TYPE_AEM_COMMAND   0x0
 /* ATDECC Entity Model Command response */
 #define AECP_MSG_TYPE_AEM_RESPONSE  0x1
+#define AECP_MSG_TYPE_VENDOR_UNIQUE_COMMAND 0x6
 
 #define ACM_COMMAND_TYPE_ACQUIRE_ENTITY 0x0000
 #define ACM_COMMAND_TYPE_READ_DESCRIPTOR 0x0004
@@ -136,7 +137,7 @@ struct aecp_audio_unit_s
   u16 sampling_rates_offset;
   u16 sampling_rates_count;
   // FIXME make this a flexible array member
-  u32 sampling_rates[1];
+  u32 sampling_rates[2];
 } __attribute__((packed));
 
 struct acm_desc_stream_s

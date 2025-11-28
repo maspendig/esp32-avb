@@ -190,7 +190,6 @@ void handle_aem_read_configuration(struct avtp_state_s* s_state, struct aecp_dat
   resp->config_desc.descriptor_counts[7].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
   resp->config_desc.descriptor_counts[7].count = htons(1);
 
-
   // Send configuration descriptor response
   ssize_t written = write(s_state->socket, resp, response_size);
   if (written < 0)
@@ -459,7 +458,7 @@ void handle_aem_read_desc_stream_output(struct avtp_state_s* s_state, struct aec
   resp->stream_output_desc.localized_description = htons(0);
   resp->stream_output_desc.clock_domain_index = htons(0);
   resp->stream_output_desc.stream_flags = htons(0x0001); // clock_sync_source
-  resp->stream_output_desc.current_format = htonll(0x00A0020201000030); // 61883-6 48kHz 2ch 24bit
+  resp->stream_output_desc.current_format = htonll(0x00a0020840000800);
   resp->stream_output_desc.formats_offset = htons(0);
   resp->stream_output_desc.number_of_formats = htons(1);
   resp->stream_output_desc.backup_talker_entity_id_0 = htonll(0);
@@ -543,7 +542,7 @@ void handle_aem_read_desc_stream_input(struct avtp_state_s* s_state, struct aecp
   resp->stream_input_desc.localized_description = htons(0);
   resp->stream_input_desc.clock_domain_index = htons(0);
   resp->stream_input_desc.stream_flags = htons(0x0001); // clock_sync_source
-  resp->stream_input_desc.current_format = htonll(stream_formats[0]);
+  resp->stream_input_desc.current_format = htonll(0x00a0020840000800);
   resp->stream_input_desc.formats_offset = htons(offsetof(struct acm_desc_stream_s, formats));
   resp->stream_input_desc.number_of_formats = htons(num_formats);
   resp->stream_input_desc.backup_talker_entity_id_0 = htonll(0);
@@ -624,9 +623,10 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   resp.audio_unit_desc.number_of_external_input_ports = htons(CONFIG_LISTENER_STREAM_SINKS);
   resp.audio_unit_desc.number_of_external_output_ports = htons(CONFIG_TALKER_STREAM_SOURCES);
   resp.audio_unit_desc.current_sampling_rate = htonl(CONFIG_SAMPLING_RATE);
-  resp.audio_unit_desc.sampling_rates_count = htons(1);
+  resp.audio_unit_desc.sampling_rates_count = htons(2);
   resp.audio_unit_desc.sampling_rates_offset = htons(144);
   resp.audio_unit_desc.sampling_rates[0] = htonl(CONFIG_SAMPLING_RATE);
+  resp.audio_unit_desc.sampling_rates[1] = htonl(44100);
 
   ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
 
@@ -760,6 +760,7 @@ void handle_aem_read_desc_avb_interface(struct avtp_state_s* s_state, struct aec
   resp.avb_interface_desc.log_pdelay_interval = 0;
   resp.avb_interface_desc.port_number = htons(0);
 
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &resp, sizeof(resp));
@@ -887,22 +888,35 @@ void handle_acm_get_sampling_rate(struct avtp_state_s* s_state, struct aecp_data
   }
 }
 
-void handle_acm_get_stream_format(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
+struct aecp_get_stream_format_request_s
 {
-  ESP_LOGI(TAG, "Received ACM GET_STREAM_FORMAT Command");
+  struct aecp_data_unit_s aecp_header;
+  uint16_t descriptor_type;
+  uint16_t descriptor_index;
+} __attribute__((packed));
+
+void handle_acm_get_stream_format(struct avtp_state_s* s_state, struct aecp_get_stream_format_request_s* msg)
+{
+  char* desc_type_str = msg->descriptor_type == htons(AEM_DESC_TYPE_STREAM_INPUT)
+                          ? "STREAM_INPUT"
+                          : msg->descriptor_type == htons(AEM_DESC_TYPE_STREAM_OUTPUT)
+                          ? "STREAM_OUTPUT"
+                          : "UNKNOWN";
+  ESP_LOGI(TAG, "Received ACM GET_STREAM_FORMAT Command for %s Descriptor", desc_type_str);
 
   struct aecp_get_stream_format_response_s
   {
     struct aecp_data_unit_s aecp_header;
-    uint16_t configuration_index;
-    uint16_t reserved;
-    struct aecp_get_stream_format_s data;
+    u16 descriptor_type;
+    u16 descriptor_index;
+    u64 stream_format;
+    u8 padding[14];
   } __attribute__((packed));
 
   struct aecp_get_stream_format_response_s resp = {0};
   /* Copy Ethernet header from request and swap MAC addresses */
-  memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
-  memcpy(resp.aecp_header.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.dst_mac, msg->aecp_header.header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, msg->aecp_header.header.dst_mac, ETH_ADDR_LEN);
   /* Ethernet type (big-endian) */
   resp.aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
   resp.aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
@@ -913,20 +927,19 @@ void handle_acm_get_stream_format(struct avtp_state_s* s_state, struct aecp_data
   resp.aecp_header.h = 0;
 
   u8 status = 0; // Success
-  u16 cdl = sizeof(struct aecp_get_stream_format_s) + 4;
+  u16 cdl = 24;
   (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
-  resp.aecp_header.target_entity_id = msg->target_entity_id;
-  resp.aecp_header.controller_entity_id = msg->controller_entity_id;
+  resp.aecp_header.target_entity_id = msg->aecp_header.target_entity_id;
+  resp.aecp_header.controller_entity_id = msg->aecp_header.controller_entity_id;
 
-  resp.aecp_header.sequence_id = msg->sequence_id;
+  resp.aecp_header.sequence_id = msg->aecp_header.sequence_id;
   resp.aecp_header.command_type = htons(ACM_COMMAND_TYPE_GET_STREAM_FORMAT);
-  /* Response payload fields */
-  resp.configuration_index = 0;
-  resp.reserved = 0;
   /* Fill GET_STREAM_FORMAT descriptor */
-  resp.data.descriptor_type = htons(AEM_DESC_TYPE_STREAM_INPUT);
-  resp.data.descriptor_index = 0;
-  resp.data.stream_format = htonll(stream_formats[0]); // 61883-6 48kHz 2ch 24bit
+  resp.descriptor_type = msg->descriptor_type;
+  resp.descriptor_index = msg->descriptor_index;
+  resp.stream_format = htonll(0x00a0020804000800); // 61883-6 48kHz 2ch 24bit
+
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &resp, sizeof(resp));
@@ -980,7 +993,7 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
     handle_acm_get_sampling_rate(s_state, msg);
     break;
   case ACM_COMMAND_TYPE_GET_STREAM_FORMAT:
-    handle_acm_get_stream_format(s_state, msg);
+    handle_acm_get_stream_format(s_state, (void*)msg);
     break;
   default:
     ESP_LOGW(TAG, "Received unimplemented AECP ACM Command type: 0x%04X", command_type);
@@ -1003,6 +1016,9 @@ int aecp_net_rx(struct avtp_state_s* state, struct aecp_data_unit_s* msg, ssize_
     break;
   case AECP_MSG_TYPE_AEM_RESPONSE:
     ESP_LOGI(TAG, "AECP ACM Response Message Received");
+    break;
+  case AECP_MSG_TYPE_VENDOR_UNIQUE_COMMAND:
+    ESP_LOGW(TAG, "AECP Vendor Unique Command Message Received - unimplemented");
     break;
   default:
     ESP_LOGW(TAG, "Unknown AECP message type: 0x%X", msg->message_type);

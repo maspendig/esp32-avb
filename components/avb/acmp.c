@@ -175,6 +175,13 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s*
   return ESP_OK;
 }
 
+int handle_acmp_connect_rx_command(struct avtp_state_s* state, struct acmp_du_s* msg)
+{
+  ESP_LOGI(TAG, "Received ACMP Connect RX Command");
+  // TODO Respond with a CONNECT_TX_COMMAND to the Talker - IEEE Std 1722.1TM-2021 p.335
+  return ESP_OK;
+}
+
 int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
   u8 status = ACMP_GET_STATUS(msg);
@@ -213,6 +220,9 @@ void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)
     break;
   case ACMP_MSG_TYPE_GET_RX_STATE_RESPONSE:
     ESP_LOGI(TAG, "Received ACMP Get RX State Response");
+    break;
+  case ACMP_MSG_TYPE_CONNECT_RX_COMMAND:
+    handle_acmp_connect_rx_command(state, msg);
     break;
   default:
     ESP_LOGW(TAG, "Received unimplemented ACMP message type: 0x%1X", msg->message_type);
