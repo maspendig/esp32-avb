@@ -48,9 +48,9 @@ struct acmp_du_s
   u8 message_type : 4; // 4 bits
 #endif
   u16 control_data_len_status;
-  u8 stream_id[8];
+  u64 stream_id;
   u64 controller_entity_id;
-  u8 talker_entity_id[8];
+  u64 talker_entity_id;
   u64 listener_entity_id;
   u16 talker_unique_id;
   u16 listener_unique_id;

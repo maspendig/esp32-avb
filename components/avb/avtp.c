@@ -66,6 +66,7 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
     return ESP_FAIL;
   }
 
+  state->acmp_sequence_id = 0;
   state->msrp_socket = msrp_init(interface);
   state->mvrp_socket = mvrp_init(interface);
 
@@ -175,6 +176,7 @@ static void avtp_listener_task(void* arg)
 
   msrp_send_domain_request(state);
   mvrp_send_vlan_join(state, 2);
+  msrp_send_talker_advertise(state);
   while (!state->stop)
   {
     fd_set readfds;
@@ -239,21 +241,22 @@ static void avtp_listener_task(void* arg)
       read_msrp_net(state);
     }
 
+    /* we use the MOTU as AVB controller to establish the input / output streams */
     /* Check connection status and attempt to connect to available talkers */
-    if (!state->connected)
-    {
-      if (has_available_talker(state))
-      {
-        ESP_LOGI(TAG, "Not connected, sending ACMP connect message to available talker");
-        send_acmp_connect_tx_command(state, ACMP_MSG_TYPE_CONNECT_TX_COMMAND);
-        if (send_acmp_connect_rx_command(state, ACMP_MSG_TYPE_CONNECT_RX_COMMAND) == ESP_OK)
-        {
-          // msrp_send_listener_join_request(state);
-          state->connected = true;
-        }
-        msrp_send_talker_advertise(state);
-      }
-    }
+    // if (!state->connected)
+    // {
+    //   if (has_available_talker(state))
+    //   {
+    //     ESP_LOGI(TAG, "Not connected, sending ACMP connect message to available talker");
+    //     // send_acmp_connect_tx_command(state, ACMP_MSG_TYPE_CONNECT_TX_COMMAND);
+    //     if (send_acmp_connect_rx_command(state, ACMP_MSG_TYPE_CONNECT_RX_COMMAND) == ESP_OK)
+    //     {
+    //       // msrp_send_listener_join_request(state);
+    //       state->connected = true;
+    //     }
+    //     msrp_send_talker_advertise(state);
+    //   }
+    // }
 
     struct timespec time_now;
     struct timespec delta;
