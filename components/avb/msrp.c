@@ -5,6 +5,7 @@
 #include "msrp.h"
 
 #include <cc.h>
+#include <config.h>
 
 #include "avtp.h"
 #include "types.h"
@@ -24,8 +25,7 @@ int msrp_send_talker_advertise(struct avtp_state_s* state)
 {
   struct talker_advertise_s msg = {0};
 
-  const u8 acmp_multicast_mac[6] = {0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E}; // MSRP multicast MAC
-  memcpy(msg.header.dst_mac, acmp_multicast_mac, sizeof(msg.header.dst_mac));
+  memcpy(msg.header.dst_mac, ACMP_MULTICAST_MAC, sizeof(msg.header.dst_mac));
   memcpy(msg.header.src_mac, state->intf_hw_addr, sizeof(msg.header.src_mac));
   msg.header.eth_type[0] = (ETH_TYPE_MSRP >> 8) & 0xFF;
   msg.header.eth_type[1] = ETH_TYPE_MSRP & 0xFF;
@@ -36,8 +36,7 @@ int msrp_send_talker_advertise(struct avtp_state_s* state)
 
   msg.number_of_values = htons(1);
   msg.stream_id = htonll(0x0000000000000001); //
-  const u8 maap_mac[6] = {0x91, 0xe0, 0xf0, 0x00, 0xfe, 0x00}; // Example MAAP MAC
-  memcpy(msg.stream_da, maap_mac, sizeof(msg.stream_da));
+  memcpy(msg.stream_da, MAAP_MAC_ADDRESS, sizeof(msg.stream_da));
   msg.stream_vlan_id = htons(2);
   msg.max_frame_size = htons(224);
   msg.max_frame_interval = htons(1);
@@ -84,8 +83,7 @@ int msrp_send_listener_join_request(struct avtp_state_s* state)
   } __attribute__((packed));
   struct msrp_listener_join_request msg;
 
-  const u8 acmp_multicast_mac[6] = {0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E}; // MSRP multicast MAC
-  memcpy(msg.header.dst_mac, acmp_multicast_mac, sizeof(msg.header.dst_mac));
+  memcpy(msg.header.dst_mac, ACMP_MULTICAST_MAC, sizeof(msg.header.dst_mac));
   memcpy(msg.header.src_mac, state->intf_hw_addr, sizeof(msg.header.src_mac));
 
   // Ethernet type (big-endian)

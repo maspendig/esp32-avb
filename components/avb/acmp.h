@@ -31,7 +31,7 @@
 #define ACMP_STATUS_SUCCESS 0x00
 #define ACMP_STATUS_LISTENER_TALKER_TIMEOUT 0x07
 
-#define MULTICAST_ACMP_MAC ( 0x91e0f0010000ULL )
+#define ACMP_MULTICAST_MAC (uint8_t[6]){0x91, 0xE0, 0xF0, 0x01, 0x00, 0x00} // for all messages in case of gPTP
 
 /* ATDECC Connection Management Protocol Data Unit */
 struct acmp_du_s
@@ -49,9 +49,9 @@ struct acmp_du_s
 #endif
   u16 control_data_len_status;
   u8 stream_id[8];
-  u8 controller_entity_id[8];
+  u64 controller_entity_id;
   u8 talker_entity_id[8];
-  u8 listener_entity_id[8];
+  u64 listener_entity_id;
   u16 talker_unique_id;
   u16 listener_unique_id;
   u8 stream_dest_mac[6];

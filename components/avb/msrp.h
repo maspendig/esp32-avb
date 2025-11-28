@@ -42,6 +42,8 @@
 #define MSRP_SR_CLASS_A_PRIO	3
 #define MSRP_SR_CLASS_B_PRIO	2
 
+#define MSRP_MULTICAST_MAC (u8[6]){0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E}; // MSRP multicast MAC
+
 struct msrp_header_s
 {
   struct header_s header;

@@ -10,6 +10,7 @@
 #include <sys/unistd.h>
 #include <string.h>
 #include <assert.h>
+#include <config.h>
 
 #define TAG "acmp"
 
@@ -27,8 +28,7 @@ void acmp_set_common_header(struct avtp_state_s* state, struct acmp_du_s* msg, u
                             uint8_t status)
 {
   /* Set Ethernet header */
-  const uint8_t acmp_multicast_mac[6] = {0x91, 0xE0, 0xF0, 0x01, 0x00, 0x00}; // ACMP multicast MAC
-  memcpy(msg->header.dst_mac, acmp_multicast_mac, sizeof(msg->header.dst_mac));
+  memcpy(msg->header.dst_mac, ACMP_MULTICAST_MAC, sizeof(msg->header.dst_mac));
   memcpy(msg->header.src_mac, state->intf_hw_addr, sizeof(msg->header.src_mac));
 
   /* Ethernet type (big-endian) */
@@ -44,8 +44,7 @@ void acmp_set_common_header(struct avtp_state_s* state, struct acmp_du_s* msg, u
 
 void acmp_set_common_du(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
-  const uint64_t entity_id = htonll(state->entity_id);
-  memcpy(msg->controller_entity_id, &entity_id, sizeof(msg->controller_entity_id));
+  msg->controller_entity_id = htonll(state->entity_id);
   msg->talker_unique_id = htons(0);
   msg->listener_unique_id = htons(0);
   msg->connection_count = htons(0);
@@ -80,10 +79,9 @@ int send_acmp_connect_tx_command(struct avtp_state_s* state, uint8_t msg_type)
   acmp_set_common_du(state, &msg);
 
   /* ACMP payload - convert to network byte order */
-  const uint64_t entity_id = htonll(state->entity_id);
   const uint64_t talker_entity_id = htonll(state->adp_entities[0].entity_id);
   memcpy(msg.talker_entity_id, &talker_entity_id, sizeof(msg.talker_entity_id));
-  memcpy(msg.listener_entity_id, &entity_id, sizeof(msg.listener_entity_id));
+  msg.listener_entity_id = htonll(state->entity_id);
 
   const uint8_t zero_mac[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
   memcpy(msg.stream_dest_mac, zero_mac, sizeof(msg.stream_dest_mac));
@@ -102,10 +100,10 @@ int send_acmp_connect_rx_command(struct avtp_state_s* state, uint8_t msg_type)
 
   /* ACMP payload - convert to network byte order */
   const uint64_t entity_id = htonll(state->entity_id);
-  const uint64_t talker_entity_id = htonll(talker->entity_id);
   memcpy(msg.talker_entity_id, &entity_id, sizeof(msg.talker_entity_id));
-  memcpy(msg.listener_entity_id, &talker_entity_id, sizeof(msg.listener_entity_id));
+  msg.listener_entity_id = htonll(talker->entity_id);
 
+  // FIXME - sure??!!
   const uint8_t zero_mac[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
   memcpy(msg.stream_dest_mac, zero_mac, sizeof(msg.stream_dest_mac));
 
@@ -157,7 +155,7 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s*
 
   /* ACMP payload - convert to network byte order */
   memcpy(resp.talker_entity_id, &msg->talker_entity_id, sizeof(resp.talker_entity_id));
-  memcpy(resp.listener_entity_id, &msg->listener_entity_id, sizeof(resp.listener_entity_id));
+  resp.listener_entity_id = msg->listener_entity_id;
 
   const u8 maap_mac[6] = {0x91, 0xe0, 0xf0, 0x00, 0xfe, 0x00}; // Example MAAP MAC
   memcpy(resp.stream_dest_mac, maap_mac, sizeof(resp.stream_dest_mac));
@@ -202,6 +200,36 @@ int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_du_s
   return ESP_OK;
 }
 
+/* We as a listener are asked by the talker about the listening state */
+void handle_acmp_get_rx_state_command(struct avtp_state_s* state, struct acmp_du_s* msg)
+{
+  // check if we are the intended listener
+
+  if (state->entity_id != htonll(msg->listener_entity_id))
+  {
+    ESP_LOGW(TAG, "Ignoring foreign ACMP Get RX State Command (target: 0x%016llX, our: 0x%016llX).",
+             htonll(msg->listener_entity_id),
+             state->entity_id);
+    return;
+  }
+
+  ESP_LOGI(TAG, "Received ACMP Get RX State Command");
+
+  struct acmp_du_s resp = {0};
+
+  resp.connection_count = htons(1);
+  // resp.stream_id =
+  // resp.talker_entity_id
+  resp.controller_entity_id = msg->controller_entity_id;
+  resp.listener_entity_id = msg->listener_entity_id;
+  resp.listener_unique_id = msg->listener_unique_id;
+
+  resp.sequence_id = msg->sequence_id;
+  memcpy(resp.stream_dest_mac, MAAP_MAC_ADDRESS, sizeof(resp.stream_dest_mac));
+  resp.flags = htons(0x0000); // Connected
+  resp.stream_vlan_id = htons(0x0002);
+}
+
 void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)
 {
   switch (msg->message_type)
@@ -216,7 +244,7 @@ void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)
     handle_acmp_connect_rx_response(state, msg);
     break;
   case ACMP_MSG_TYPE_GET_RX_STATE_COMMAND:
-    ESP_LOGI(TAG, "Received ACMP Get RX State Command");
+    handle_acmp_get_rx_state_command(state, msg);
     break;
   case ACMP_MSG_TYPE_GET_RX_STATE_RESPONSE:
     ESP_LOGI(TAG, "Received ACMP Get RX State Response");
