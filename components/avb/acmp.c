@@ -135,6 +135,13 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_
   {
     struct listener_stream_info_s* listenerInfo = &state->listener_stream_infos[listener_unique_id];
     listenerInfo->pending_connection = false;
+    listenerInfo->stream_id = ntohll(msg->stream_id);
+    memcpy(listenerInfo->stream_dest_mac, msg->stream_dest_mac, sizeof(listenerInfo->stream_dest_mac));
+    listenerInfo->controller_entity_id = ntohll(msg->controller_entity_id);
+    listenerInfo->flags = ntohs(msg->flags);
+    listenerInfo->stream_vlan_id = ntohs(msg->stream_vlan_id);
+    listenerInfo->talker_unique_id = ntohs(msg->talker_unique_id);
+    listenerInfo->talker_entity_id = ntohll(msg->talker_entity_id);
 
     ESP_LOGI(TAG, "Updated listener stream info [%u]: pending_connection=false (connection established)",
              listener_unique_id);
@@ -304,17 +311,45 @@ void handle_acmp_get_rx_state_command(struct avtp_state_s* state, struct acmp_du
 
   struct acmp_du_s resp = {0};
 
-  resp.connection_count = htons(1);
-  // resp.stream_id =
-  // resp.talker_entity_id
+  acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_GET_RX_STATE_RESPONSE, 44, ACMP_STATUS_SUCCESS);
+  acmp_set_common_du(state, &resp);
+
+  u16 listener_unique_id = ntohs(msg->listener_unique_id);
+  if (listener_unique_id < MAX_LISTENER_STREAMS)
+  {
+    struct listener_stream_info_s* info = &state->listener_stream_infos[listener_unique_id];
+    /* If an entry exists and is not pending, connection_count = 1, otherwise 0 */
+    resp.connection_count = htons(info->pending_connection ? 0 : 1);
+    // TODO write stream-id
+    resp.stream_id = ntohs(info->stream_id);
+    resp.stream_vlan_id = ntohs(resp.stream_vlan_id);
+    memcpy(resp.stream_dest_mac, info->stream_dest_mac, sizeof(resp.stream_dest_mac));
+
+    resp.talker_entity_id = info->talker_entity_id;
+    resp.talker_unique_id = info->talker_unique_id;
+  }
+  else
+  {
+    /* Out of range -> no connection */
+    resp.connection_count = htons(0);
+  }
+
   resp.controller_entity_id = msg->controller_entity_id;
   resp.listener_entity_id = msg->listener_entity_id;
   resp.listener_unique_id = msg->listener_unique_id;
 
   resp.sequence_id = msg->sequence_id;
-  memcpy(resp.stream_dest_mac, MAAP_MAC_ADDRESS, sizeof(resp.stream_dest_mac));
   resp.flags = htons(0x0000); // Connected
-  resp.stream_vlan_id = htons(0x0002);
+  // send
+  int result = send_msg(state->socket, &resp, sizeof(resp));
+  if (result == ESP_OK)
+  {
+    ESP_LOGI(TAG, "Sent ACMP Get RX State Response to controller");
+  }
+  else
+  {
+    ESP_LOGE(TAG, "Failed to send ACMP Get RX State Response");
+  }
 }
 
 void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)

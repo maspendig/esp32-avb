@@ -91,8 +91,14 @@ struct adp_entity_entry_s
 /* Structure to hold listener stream information for ACMP connections */
 struct listener_stream_info_s
 {
-  uint64_t talker_entity_id;
-  uint16_t talker_unique_id;
+  u64 talker_entity_id;
+  u64 talker_unique_id;
+  bool connected;
+  u64 stream_id;
+  u8 stream_dest_mac[6];
+  u64 controller_entity_id;
+  u16 flags;
+  u16 stream_vlan_id;
   bool pending_connection;
 };
 
