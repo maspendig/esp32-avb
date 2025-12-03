@@ -845,6 +845,90 @@ void handle_aem_read_desc_avb_interface(struct avtp_state_s* s_state, struct aec
   }
 }
 
+void hande_aem_read_desc_locale(struct avtp_state_s* state, struct aecp_data_unit_s* msg)
+{
+  ESP_LOGI(TAG, "Received ACM Read Locale Descriptor Request");
+
+  if (state == NULL || state->socket < 0)
+  {
+    ESP_LOGE(TAG, "Socket not ready to send AECP response");
+    return;
+  }
+
+  // LOCALE descriptor structure according to IEEE 1722.1
+  struct aem_desc_locale_s
+  {
+    u16 descriptor_type; // 0x000C
+    u16 descriptor_index; // Index of this descriptor
+    u8 locale_identifier[64]; // UTF-8 locale string (e.g., "en-US")
+    u16 number_of_strings; // Number of STRINGS descriptors
+    u16 base_strings; // Base index for STRINGS descriptors
+  } __attribute__((packed));
+
+  struct aecp_locale_response_s
+  {
+    struct header_s header;
+    struct subtype_data_s subtype_data;
+    struct aecp_common_data_s common_data;
+    u16 configuration_index;
+    u16 reserved;
+    struct aem_desc_locale_s descriptor;
+  } __attribute__((packed));
+
+  struct aecp_locale_response_s response = {0};
+
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(response.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(response.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+
+  /* Ethernet type (big-endian) */
+  response.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  response.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+
+  /* AECP subtype data */
+  response.subtype_data.subtype = AVTP_SUBTYPE_AECP;
+  response.subtype_data.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  response.subtype_data.version = 0;
+  response.subtype_data.h = 0;
+
+  // Control data length: 14 bytes (descriptor) + 4 bytes (config_index + reserved) = 18 bytes
+  response.subtype_data.control_data_len_status = htons(88);
+
+  /* AECP common data */
+  response.common_data.target_entity_id = msg->target_entity_id;
+  response.common_data.controller_entity_id = msg->controller_entity_id;
+  response.common_data.sequence_id = msg->sequence_id;
+  response.common_data.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
+
+  /* Configuration index */
+  response.configuration_index = 0;
+  response.reserved = 0;
+
+  /* Fill LOCALE descriptor */
+  response.descriptor.descriptor_type = htons(AEM_DESC_TYPE_LOCALE);
+  response.descriptor.descriptor_index = htons(0x0000);
+  // Set locale identifier to "en-US" (null-terminated, rest filled with zeros)
+  const char* locale = "en-US";
+  strncpy((char*)response.descriptor.locale_identifier, locale, sizeof(response.descriptor.locale_identifier));
+
+  // Number of STRINGS descriptors (3 as requested)
+  response.descriptor.number_of_strings = htons(3);
+
+  // Base STRINGS descriptor index (typically 0)
+  response.descriptor.base_strings = htons(0);
+
+  /* Send the response */
+  ssize_t written = write(state->socket, &response, sizeof(response));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send LOCALE descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP LOCALE Descriptor Response (%zd bytes)", written);
+  }
+}
+
 void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
 {
   // TODO create a combined struct to pass down the handler
@@ -885,6 +969,10 @@ void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_dat
     break;
   case AEM_DESC_TYPE_CLOCK_SOURCE:
     handle_aem_read_desc_clock_source(s_state, msg);
+    break;
+  case AEM_DESC_TYPE_LOCALE:
+    hande_aem_read_desc_locale(s_state, msg);
+    break;
   default:
     ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", desc_type);
     break;
