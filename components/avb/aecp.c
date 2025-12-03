@@ -929,6 +929,201 @@ void hande_aem_read_desc_locale(struct avtp_state_s* state, struct aecp_data_uni
   }
 }
 
+void handle_aem_read_desc_clock_domain(struct avtp_state_s* state, struct aecp_data_unit_s* msg)
+{
+  ESP_LOGI(TAG, "Received ACM Read CLOCK DOMAIN Descriptor Request");
+
+  if (state == NULL || state->socket < 0)
+  {
+    ESP_LOGE(TAG, "Socket not ready to send AECP response");
+    return;
+  }
+
+  // CLOCK_DOMAIN descriptor structure according to IEEE 1722.1
+  struct aem_desc_clock_domain_s
+  {
+    u16 descriptor_type; // 0x0024 (AEM_DESC_TYPE_CLOCK_DOMAIN)
+    u16 descriptor_index; // Index of this descriptor
+    u8 object_name[64]; // Name of the clock domain
+    u16 localized_description; // Index to localized description
+    u16 clock_source_index; // Current clock source index
+    u16 clock_sources_offset; // Offset to clock_sources array
+    u16 clock_sources_count; // Number of clock sources
+    u16 clock_sources[1]; // Array of clock source indices (1 element)
+  } __attribute__((packed));
+
+  struct aecp_clock_domain_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    u16 configuration_index;
+    u16 reserved;
+    struct aem_desc_clock_domain_s descriptor;
+  } __attribute__((packed));
+
+  struct aecp_clock_domain_response_s resp = {0};
+
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+
+  /* Ethernet type (big-endian) */
+  resp.aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  resp.aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+
+  /* AECP header fields */
+  resp.aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  resp.aecp_header.version = 0;
+  resp.aecp_header.h = 0;
+
+  // Control data length: descriptor size (76 bytes) + config_index + reserved (4 bytes) = 80 bytes
+  u8 status = 0; // Success
+  u16 cdl = sizeof(struct aem_desc_clock_domain_s) + 4;
+  resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF));
+
+  resp.aecp_header.target_entity_id = msg->target_entity_id;
+  resp.aecp_header.controller_entity_id = msg->controller_entity_id;
+  resp.aecp_header.sequence_id = msg->sequence_id;
+  resp.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
+
+  /* Configuration index */
+  resp.configuration_index = 0;
+  resp.reserved = 0;
+
+  /* Fill CLOCK_DOMAIN descriptor */
+  resp.descriptor.descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
+  resp.descriptor.descriptor_index = htons(0x0000);
+
+  // Set object name
+  const char* name = "Internal Clock Domain";
+  strncpy((char*)resp.descriptor.object_name, name, sizeof(resp.descriptor.object_name));
+
+  // Localized description (0xFFFF = no localized description)
+  resp.descriptor.localized_description = htons(0xFFFF);
+
+  // Current clock source index (0 = internal clock source)
+  resp.descriptor.clock_source_index = htons(0);
+
+  // Clock sources offset (offset from start of descriptor to clock_sources array)
+  // descriptor_type(2) + descriptor_index(2) + object_name(64) + localized_description(2) +
+  // clock_source_index(2) + clock_sources_offset(2) + clock_sources_count(2) = 76 bytes
+  resp.descriptor.clock_sources_offset = htons(76);
+
+  // Number of available clock sources (1 = only internal)
+  resp.descriptor.clock_sources_count = htons(1);
+
+  // Clock sources array - contains index 0 (internal clock source)
+  resp.descriptor.clock_sources[0] = htons(0);
+
+  ESP_LOGI(TAG, "Sending CLOCK_DOMAIN descriptor: index=0, clock_source=0, count=1");
+
+  /* Send the response */
+  ssize_t written = write(state->socket, &resp, sizeof(resp));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send CLOCK DOMAIN descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP CLOCK DOMAIN Descriptor Response (%zd bytes)", written);
+  }
+}
+
+void handle_aem_read_desc_strings(struct avtp_state_s* state, struct aecp_data_unit_s* msg)
+{
+  // print descriptor Index
+  struct aecp_aem_read_desc_cmd* read_desc_cmd = (struct aecp_aem_read_desc_cmd*)(msg + 1);
+  ESP_LOGI(TAG, "Received ACM Read STRINGS Descriptor Request, Index: %d",
+           ntohs(read_desc_cmd->descriptor_index));
+
+  if (state == NULL || state->socket < 0)
+  {
+    ESP_LOGE(TAG, "Socket not ready to send AECP response");
+    return;
+  }
+
+  // STRINGS descriptor structure according to IEEE 1722.1
+  // Contains up to 7 strings (string_0 through string_6), each 64 bytes
+  struct aem_desc_strings_s
+  {
+    u16 descriptor_type; // 0x000D (AEM_DESC_TYPE_STRINGS)
+    u16 descriptor_index; // Index of this descriptor
+    u8 string_0[64]; // First string (HAW Kiel)
+    u8 string_1[64]; // Second string (ESP32-P4)
+    u8 string_2[64]; // Third string (empty)
+    u8 string_3[64]; // Fourth string (empty)
+    u8 string_4[64]; // Fifth string (empty)
+    u8 string_5[64]; // Sixth string (empty)
+    u8 string_6[64]; // Seventh string (empty)
+  } __attribute__((packed));
+
+  struct aecp_strings_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    u16 configuration_index;
+    u16 reserved;
+    struct aem_desc_strings_s descriptor;
+  } __attribute__((packed));
+
+  struct aecp_strings_response_s resp = {0};
+
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+
+  /* Ethernet type (big-endian) */
+  resp.aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  resp.aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+
+  /* AECP header fields */
+  resp.aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  resp.aecp_header.version = 0;
+  resp.aecp_header.h = 0;
+
+  // Control data length: descriptor size (452 bytes) + config_index + reserved (4 bytes) = 456 bytes
+  u8 status = 0; // Success
+  u16 cdl = sizeof(struct aem_desc_strings_s) + 4;
+  resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF));
+
+  resp.aecp_header.target_entity_id = msg->target_entity_id;
+  resp.aecp_header.controller_entity_id = msg->controller_entity_id;
+  resp.aecp_header.sequence_id = msg->sequence_id;
+  resp.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
+
+  /* Configuration index */
+  resp.configuration_index = 0;
+  resp.reserved = 0;
+
+  /* Fill STRINGS descriptor */
+  resp.descriptor.descriptor_type = htons(AEM_DESC_TYPE_STRINGS);
+  resp.descriptor.descriptor_index = read_desc_cmd->descriptor_index; // Echo the requested index
+
+  // Set string_0 to "HAW Kiel"
+  const char* string_0 = "HAW Kiel";
+  strncpy((char*)resp.descriptor.string_0, string_0, sizeof(resp.descriptor.string_0));
+
+  // Set string_1 to "ESP32-P4"
+  const char* string_1 = "ESP32-P4";
+  strncpy((char*)resp.descriptor.string_1, string_1, sizeof(resp.descriptor.string_1));
+
+  // string_2 through string_6 remain zero-filled (empty strings)
+
+  ESP_LOGI(TAG, "Sending STRINGS descriptor [%d]: string_0='%s', string_1='%s'",
+           ntohs(read_desc_cmd->descriptor_index), string_0, string_1);
+
+  /* Send the response */
+  ssize_t written = write(state->socket, &resp, sizeof(resp));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send STRINGS descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP STRINGS Descriptor Response (%zd bytes)", written);
+  }
+}
+
 void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
 {
   // TODO create a combined struct to pass down the handler
@@ -972,6 +1167,12 @@ void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_dat
     break;
   case AEM_DESC_TYPE_LOCALE:
     hande_aem_read_desc_locale(s_state, msg);
+    break;
+  case AEM_DESC_TYPE_CLOCK_DOMAIN:
+    handle_aem_read_desc_clock_domain(s_state, msg);
+    break;
+  case AEM_DESC_TYPE_STRINGS:
+    handle_aem_read_desc_strings(s_state, msg);
     break;
   default:
     ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", desc_type);
