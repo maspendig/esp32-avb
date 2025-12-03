@@ -320,7 +320,6 @@ void handle_acmp_get_rx_state_command(struct avtp_state_s* state, struct acmp_du
     struct listener_stream_info_s* info = &state->listener_stream_infos[listener_unique_id];
     /* If an entry exists and is not pending, connection_count = 1, otherwise 0 */
     resp.connection_count = htons(info->pending_connection ? 0 : 1);
-    // TODO write stream-id
     resp.stream_id = ntohs(info->stream_id);
     resp.stream_vlan_id = ntohs(resp.stream_vlan_id);
     memcpy(resp.stream_dest_mac, info->stream_dest_mac, sizeof(resp.stream_dest_mac));
