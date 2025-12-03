@@ -88,6 +88,16 @@ struct adp_entity_entry_s
   bool in_use;
 };
 
+/* Structure to hold listener stream information for ACMP connections */
+struct listener_stream_info_s
+{
+  uint64_t talker_entity_id;
+  uint16_t talker_unique_id;
+  bool pending_connection;
+};
+
+#define MAX_LISTENER_STREAMS 16
+
 struct avtp_state_s
 {
   bool stop;
@@ -102,6 +112,8 @@ struct avtp_state_s
   uint32_t adp_available_index; // renamed from adp_availabe_index[4] for easier increment
   struct adp_entity_entry_s adp_entities[MAX_ADP_ENTITIES];
   bool connected;
+  /* Listener stream information for ACMP connections */
+  struct listener_stream_info_s listener_stream_infos[MAX_LISTENER_STREAMS];
 };
 
 int start_avtp_listener(const char* interface);

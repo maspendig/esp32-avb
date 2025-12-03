@@ -617,7 +617,7 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   resp.audio_unit_desc.descriptor_type = htons(AEM_DESC_TYPE_AUDIO_UNIT);
   resp.audio_unit_desc.descriptor_index = 0;
   memset(resp.audio_unit_desc.object_name, 0, sizeof(resp.audio_unit_desc.object_name));
-  resp.audio_unit_desc.localized_description = htons(1);
+  resp.audio_unit_desc.localized_description = htons(0xFFFF);
   resp.audio_unit_desc.number_of_stream_input_ports = htons(1);
   resp.audio_unit_desc.number_of_stream_output_ports = htons(1);
   resp.audio_unit_desc.number_of_external_input_ports = htons(CONFIG_LISTENER_STREAM_SINKS);

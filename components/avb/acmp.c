@@ -127,7 +127,51 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_
 
   /* Connection established successfully */
   ESP_LOGI(TAG, "ACMP Connect TX successful, connection established.");
-  // send_acmp_message(state, ACMP_MSG_TYPE_CONNECT_RX_COMMAND);
+
+  // Update listener stream info - set pending_connection to false
+  u16 listener_unique_id = ntohs(msg->listener_unique_id);
+
+  if (listener_unique_id < MAX_LISTENER_STREAMS)
+  {
+    struct listener_stream_info_s* listenerInfo = &state->listener_stream_infos[listener_unique_id];
+    listenerInfo->pending_connection = false;
+
+    ESP_LOGI(TAG, "Updated listener stream info [%u]: pending_connection=false (connection established)",
+             listener_unique_id);
+  }
+  else
+  {
+    ESP_LOGW(TAG, "Listener unique ID %u exceeds MAX_LISTENER_STREAMS (%d), cannot update stream info",
+             listener_unique_id, MAX_LISTENER_STREAMS);
+  }
+
+  // Send CONNECT_RX_RESPONSE message
+  struct acmp_du_s resp = {0};
+
+  acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_RX_RESPONSE, 44, ACMP_STATUS_SUCCESS);
+  // Copy relevant fields from the TX response
+  resp.stream_id = msg->stream_id;
+  resp.controller_entity_id = msg->controller_entity_id;
+  resp.talker_entity_id = msg->talker_entity_id;
+  resp.listener_entity_id = msg->listener_entity_id;
+  resp.talker_unique_id = msg->talker_unique_id;
+  resp.listener_unique_id = msg->listener_unique_id;
+  memcpy(resp.stream_dest_mac, msg->stream_dest_mac, sizeof(resp.stream_dest_mac));
+  resp.connection_count = msg->connection_count;
+  resp.sequence_id = msg->sequence_id;
+  resp.flags = msg->flags;
+  resp.stream_vlan_id = msg->stream_vlan_id;
+
+  int result = send_msg(state->socket, &resp, sizeof(resp));
+
+  if (result == ESP_OK)
+  {
+    ESP_LOGI(TAG, "Sent ACMP Connect RX Response (SUCCESS) to controller");
+  }
+  else
+  {
+    ESP_LOGE(TAG, "Failed to send ACMP Connect RX Response");
+  }
 }
 
 int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s* msg)
@@ -196,7 +240,32 @@ int handle_acmp_connect_rx_command(struct avtp_state_s* state, struct acmp_du_s*
   resp.flags = msg->flags;
   resp.stream_vlan_id = htons(0x0002);
 
-  return send_msg(state->socket, &resp, sizeof(resp));
+  int result = send_msg(state->socket, &resp, sizeof(resp));
+
+  if (result == ESP_OK)
+  {
+    // Save listener stream information
+    u16 listener_unique_id = ntohs(resp.listener_unique_id);
+    if (listener_unique_id < MAX_LISTENER_STREAMS)
+    {
+      struct listener_stream_info_s* listenerInfo = &state->listener_stream_infos[listener_unique_id];
+      listenerInfo->talker_entity_id = ntohll(resp.talker_entity_id);
+      listenerInfo->talker_unique_id = ntohs(resp.talker_unique_id);
+      listenerInfo->pending_connection = true;
+
+      ESP_LOGI(TAG, "Saved listener stream info [%u]: talker_entity_id=0x%016llX, talker_unique_id=%u, pending=true",
+               listener_unique_id,
+               (unsigned long long)listenerInfo->talker_entity_id,
+               listenerInfo->talker_unique_id);
+    }
+    else
+    {
+      ESP_LOGW(TAG, "Listener unique ID %u exceeds MAX_LISTENER_STREAMS (%d), cannot save stream info",
+               listener_unique_id, MAX_LISTENER_STREAMS);
+    }
+  }
+
+  return result;
 }
 
 int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
@@ -223,7 +292,6 @@ int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_du_s
 void handle_acmp_get_rx_state_command(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
   // check if we are the intended listener
-
   if (state->entity_id != htonll(msg->listener_entity_id))
   {
     ESP_LOGW(TAG, "Ignoring foreign ACMP Get RX State Command (target: 0x%016llX, our: 0x%016llX).",
@@ -265,8 +333,8 @@ void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)
   case ACMP_MSG_TYPE_GET_RX_STATE_COMMAND:
     handle_acmp_get_rx_state_command(state, msg);
     break;
-  case ACMP_MSG_TYPE_GET_RX_STATE_RESPONSE:
-    ESP_LOGI(TAG, "Received ACMP Get RX State Response");
+  case ACMP_MSG_TYPE_GET_TX_STATE_RESPONSE:
+    ESP_LOGW(TAG, "Received ACMP Get TX State Response - NOT IMPLEMENTED");
     break;
   case ACMP_MSG_TYPE_CONNECT_RX_COMMAND:
     handle_acmp_connect_rx_command(state, msg);
