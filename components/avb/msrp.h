@@ -138,7 +138,7 @@ struct talker_advertise_s
 
 int msrp_init(const char* interface);
 void read_msrp_net(const struct avtp_state_s* state);
-int msrp_send_listener_join_request(struct avtp_state_s* state);
+int msrp_send_listener_join_request(struct avtp_state_s* state, u64 stream_id);
 int msrp_send_talker_advertise(struct avtp_state_s* state);
 void msrp_send_domain_request(const struct avtp_state_s* state);
 

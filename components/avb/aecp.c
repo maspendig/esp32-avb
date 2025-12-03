@@ -68,7 +68,7 @@ static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aec
   strncpy((char*)response.descriptor.entity_name, entity_name, sizeof(response.descriptor.entity_name));
 
   response.descriptor.vendor_name_string = htons(0);
-  response.descriptor.model_name_string = htons(0);
+  response.descriptor.model_name_string = htons(1);
 
   /* Set firmware version */
   const char* fw_version = "0.0.1";
@@ -150,8 +150,7 @@ void handle_aem_read_configuration(struct avtp_state_s* s_state, struct aecp_dat
   resp->aecp_header.version = request_msg->version;
   resp->aecp_header.h = request_msg->h;
   // Set control data length and status
-  const uint16_t desc_data_len = sizeof(struct config_desc_s) + num_desc_types * sizeof(struct desc_count_s);
-  ACMP_SET_CTRL_DATA_STATUS((&resp->aecp_header), 0, desc_data_len);
+  resp->aecp_header.control_data_len_status = htons(0x007A);
 
   // Copy entity IDs and sequence ID
   resp->aecp_header.target_entity_id = request_msg->target_entity_id;
@@ -168,7 +167,7 @@ void handle_aem_read_configuration(struct avtp_state_s* s_state, struct aecp_dat
 
   resp->config_desc.descriptor_index = htons(0);
   memset(resp->config_desc.object_name, 0, sizeof(resp->config_desc.object_name));
-  resp->config_desc.localized_description = htons(2);
+  resp->config_desc.localized_description = htons(0xFFFF);
   resp->config_desc.descriptor_counts_count = htons(num_desc_types);
   resp->config_desc.descriptor_counts_offset = htons(74); // Offset to descriptor_counts array
 
@@ -190,6 +189,7 @@ void handle_aem_read_configuration(struct avtp_state_s* s_state, struct aecp_dat
   resp->config_desc.descriptor_counts[7].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
   resp->config_desc.descriptor_counts[7].count = htons(1);
 
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)resp, response_size, ESP_LOG_INFO);
   // Send configuration descriptor response
   ssize_t written = write(s_state->socket, resp, response_size);
   if (written < 0)
@@ -705,6 +705,77 @@ void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aec
   }
 }
 
+void handle_aem_read_desc_clock_source(struct avtp_state_s* state, struct aecp_data_unit_s* msg)
+{
+  ESP_LOGI(TAG, "Received ACM Read CLOCK SOURCE Descriptor Request");
+
+  struct aecp_clock_source_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    uint16_t configuration_index;
+    uint16_t reserved;
+    u16 descriptor_type;
+    u16 descriptor_index;
+    u64 object_name;
+    u16 localized_description;
+    u16 clock_source_flags;
+    u16 clock_source_type;
+    u32 clock_source_id;
+    u16 clock_source_location_type;
+    u16 clock_source_location_id;
+  } __attribute__((packed));
+
+  struct aecp_clock_source_response_s resp = {0};
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.eth_type, msg->header.eth_type, 2);
+  /* AECP header fields */
+  resp.aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  resp.aecp_header.version = 0;
+  resp.aecp_header.h = 0;
+  resp.aecp_header.control_data_len_status = htons(102);
+  resp.aecp_header.target_entity_id = msg->target_entity_id;
+  resp.aecp_header.controller_entity_id = msg->controller_entity_id;
+  resp.object_name = 0;
+  resp.aecp_header.sequence_id = msg->sequence_id;
+  resp.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
+  /* Response payload fields */
+  resp.configuration_index = 0;
+  resp.reserved = 0;
+  /* Fill CLOCK SOURCE descriptor */
+  resp.descriptor_type = htons(AEM_DESC_TYPE_CLOCK_SOURCE);
+  resp.descriptor_index = 0;
+  resp.localized_description = htons(0xFFFF);
+  resp.clock_source_flags = 0;
+  resp.clock_source_type = htons(0); // INTERNAL
+  /* Build clock_source_id as own MAC (6 bytes) followed by 0x0000 (2 bytes) */
+  {
+    uint64_t mac64 = ((uint64_t)state->intf_hw_addr[0] << 40) |
+      ((uint64_t)state->intf_hw_addr[1] << 32) |
+      ((uint64_t)state->intf_hw_addr[2] << 24) |
+      ((uint64_t)state->intf_hw_addr[3] << 16) |
+      ((uint64_t)state->intf_hw_addr[4] << 8) |
+      ((uint64_t)state->intf_hw_addr[5] << 0);
+    uint64_t clock_id = (mac64 << 16) | 0x0000; /* MAC << 16 adds two 0x00 bytes at LSB */
+    resp.clock_source_id = htonll(clock_id);
+  }
+  resp.clock_source_location_type = htons(0x0002);
+  resp.clock_source_location_id = htons(0);
+
+  //send
+  ssize_t written = write(state->socket, &resp, sizeof(resp));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send CLOCK SOURCE descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP CLOCK SOURCE Descriptor Response");
+  }
+}
+
 void handle_aem_read_desc_avb_interface(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
 {
   ESP_LOGI(TAG, "Received ACM Read AVB INTERFACE Descriptor Request");
@@ -810,9 +881,10 @@ void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_dat
     handle_aem_read_desc_stream_output(s_state, msg);
     break;
   case AEM_DESC_TYPE_AVB_INTERFACE:
-    ESP_LOGI(TAG, "Received ACM Read AVB INTERFACE Descriptor Request");
     handle_aem_read_desc_avb_interface(s_state, msg);
     break;
+  case AEM_DESC_TYPE_CLOCK_SOURCE:
+    handle_aem_read_desc_clock_source(s_state, msg);
   default:
     ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", desc_type);
     break;

@@ -11,6 +11,7 @@
 #include <string.h>
 #include <assert.h>
 #include <config.h>
+#include <msrp.h>
 
 #define TAG "acmp"
 
@@ -115,6 +116,11 @@ int send_acmp_connect_rx_command(struct avtp_state_s* state, uint8_t msg_type)
   return ESP_OK;
 }
 
+/**
+ * Final answer from the talker to listeners connection request
+ * contains information about streamId and destination MAC
+ * initiates the SRP listener registration
+ */
 void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
   const int status = ACMP_GET_STATUS(msg);
@@ -135,6 +141,7 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_
   {
     struct listener_stream_info_s* listenerInfo = &state->listener_stream_infos[listener_unique_id];
     listenerInfo->pending_connection = false;
+    listenerInfo->connected = true;
     listenerInfo->stream_id = ntohll(msg->stream_id);
     memcpy(listenerInfo->stream_dest_mac, msg->stream_dest_mac, sizeof(listenerInfo->stream_dest_mac));
     listenerInfo->controller_entity_id = ntohll(msg->controller_entity_id);
@@ -142,6 +149,8 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_
     listenerInfo->stream_vlan_id = ntohs(msg->stream_vlan_id);
     listenerInfo->talker_unique_id = ntohs(msg->talker_unique_id);
     listenerInfo->talker_entity_id = ntohll(msg->talker_entity_id);
+
+    msrp_send_listener_join_request(state, listenerInfo->stream_id);
 
     ESP_LOGI(TAG, "Updated listener stream info [%u]: pending_connection=false (connection established)",
              listener_unique_id);
@@ -193,6 +202,8 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s*
     return ESP_OK;
   }
 
+  ESP_LOGI(TAG, "Received ACMP Connect TX Command");
+
   acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_TX_RESPONSE, 44, 0);
   acmp_set_common_du(state, &resp);
 
@@ -213,7 +224,43 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s*
     ESP_LOGE(TAG, "Failed to send ACMP Connect TX Response");
     return ESP_FAIL;
   }
+
   ESP_LOGI(TAG, "Sent ACMP Connect TX Response to Listener 0x%016llX", htonll(msg->listener_entity_id));
+
+  // Save talker stream information
+  u64 listener_entity_id = ntohll(msg->listener_entity_id);
+  u16 listener_unique_id = ntohs(msg->listener_unique_id);
+
+  // Initialize stream info on first connection
+  if (state->talker_stream_info.connection_count == 0)
+  {
+    state->talker_stream_info.stream_id = ntohll(resp.stream_id);
+    memcpy(state->talker_stream_info.stream_dest_mac, resp.stream_dest_mac,
+           sizeof(state->talker_stream_info.stream_dest_mac));
+    state->talker_stream_info.stream_vlan_id = ntohs(resp.stream_vlan_id);
+    state->talker_stream_info.connection_count = 0;
+  }
+  // Add listener to connected_listeners array
+  if (state->talker_stream_info.connection_count < MAX_CONNECTED_LISTENERS)
+  {
+    u16 index = state->talker_stream_info.connection_count;
+    state->talker_stream_info.connected_listeners[index].listener_entity_id = listener_entity_id;
+    state->talker_stream_info.connected_listeners[index].listener_unique_id = listener_unique_id;
+    state->talker_stream_info.connection_count++;
+
+    ESP_LOGI(TAG, "Saved talker stream info: listener[%u]=0x%016llX (unique_id=%u), total_connections=%u",
+             index,
+             (unsigned long long)listener_entity_id,
+             listener_unique_id,
+             state->talker_stream_info.connection_count);
+  }
+  else
+  {
+    ESP_LOGW(TAG, "Maximum connected listeners (%d) reached, cannot add listener 0x%016llX",
+             MAX_CONNECTED_LISTENERS,
+             (unsigned long long)listener_entity_id);
+  }
+
   return ESP_OK;
 }
 
@@ -351,6 +398,69 @@ void handle_acmp_get_rx_state_command(struct avtp_state_s* state, struct acmp_du
   }
 }
 
+void handle_acmp_disconnect_rx_command(struct avtp_state_s* state, struct acmp_du_s* msg)
+{
+  // remove listener stream info. if found and ok, return DISCONNECT_TX_COMMAND
+  if (state->entity_id != htonll(msg->listener_entity_id))
+  {
+    ESP_LOGW(TAG, "Ignoring foreign ACMP DISCONNECT RX Command (target: 0x%016llX, our: 0x%016llX).",
+             htonll(msg->listener_entity_id),
+             state->entity_id);
+    return;
+  }
+
+  ESP_LOGI(TAG, "Received ACMP Disconnect RX Command");
+  state->listener_stream_infos[msg->listener_unique_id] = (struct listener_stream_info_s){0};
+  struct acmp_du_s resp = {0};
+  memcpy(&resp, msg, sizeof(struct acmp_du_s));
+  resp.message_type = ACMP_MSG_TYPE_DISCONNECT_TX_COMMAND;
+
+  memcpy(resp.header.dst_mac, msg->header.src_mac, sizeof(resp.stream_dest_mac));
+  memcpy(resp.header.src_mac, msg->header.dst_mac, sizeof(resp.stream_dest_mac));
+
+  //send
+  int result = send_msg(state->socket, &resp, sizeof(resp));
+  if (result == ESP_OK)
+  {
+    ESP_LOGI(TAG, "Sent ACMP DISCONNECT TX Command to Talker");
+  }
+  else
+  {
+    ESP_LOGE(TAG, "Failed to send ACMP DISCONNECT TX Command");
+  }
+}
+
+void handle_acmp_disconnect_tx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
+{
+  // remove listener stream info. if found and ok, return DISCONNECT_TX_COMMAND
+  if (state->entity_id != htonll(msg->listener_entity_id))
+  {
+    ESP_LOGW(TAG, "Ignoring foreign ACMP DISCONNECT TX Response (target: 0x%016llX, our: 0x%016llX).",
+             htonll(msg->listener_entity_id),
+             state->entity_id);
+    return;
+  }
+
+  ESP_LOGI(TAG, "Received ACMP Disconnect TX RESPONSE");
+  struct acmp_du_s resp = {0};
+  memcpy(&resp, msg, sizeof(struct acmp_du_s));
+  resp.message_type = ACMP_MSG_TYPE_DISCONNECT_RX_RESPONSE;
+
+  memcpy(resp.header.dst_mac, msg->header.src_mac, sizeof(resp.stream_dest_mac));
+  memcpy(resp.header.src_mac, msg->header.dst_mac, sizeof(resp.stream_dest_mac));
+
+  //send
+  int result = send_msg(state->socket, &resp, sizeof(resp));
+  if (result == ESP_OK)
+  {
+    ESP_LOGI(TAG, "Sent ACMP DISCONNECT RX Response to Talker");
+  }
+  else
+  {
+    ESP_LOGE(TAG, "Failed to send ACMP DISCONNECT RX Response");
+  }
+}
+
 void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)
 {
   switch (msg->message_type)
@@ -372,6 +482,12 @@ void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)
     break;
   case ACMP_MSG_TYPE_CONNECT_RX_COMMAND:
     handle_acmp_connect_rx_command(state, msg);
+    break;
+  case ACMP_MSG_TYPE_DISCONNECT_RX_COMMAND:
+    handle_acmp_disconnect_rx_command(state, msg);
+    break;
+  case ACMP_MSG_TYPE_DISCONNECT_TX_RESPONSE:
+    handle_acmp_disconnect_tx_response(state, msg);
     break;
   default:
     ESP_LOGW(TAG, "Received unimplemented ACMP message type: 0x%1X", msg->message_type);

@@ -34,6 +34,7 @@
 #define AEM_DESC_TYPE_STRINGS 0x000D
 #define AEM_DESC_TYPE_STREAM_PORT_INPUT 0x000E
 #define AEM_DESC_TYPE_STREAM_PORT_OUTPUT 0x000F
+#define AEM_DESC_TYPE_CONTROL 0x001A
 #define AEM_DESC_TYPE_AUDIO_CLUSTER 0x0014
 #define AEM_DESC_TYPE_AUDIO_MAP 0x0017
 #define AEM_DESC_TYPE_CLOCK_DOMAIN 0x0024
@@ -268,8 +269,8 @@ struct atdecc_entity_descriptor_s
   uint32_t available_index; // Incremented on ADP available
   uint64_t association_id; // Association ID for grouping entities
   uint8_t entity_name[64]; // UTF-8 entity name
-  uint16_t vendor_name_string; // Localized string reference
-  uint16_t model_name_string; // Localized string reference
+  u16 vendor_name_string; // Localized string reference
+  u16 model_name_string; // Localized string reference
   uint8_t firmware_version[64]; // UTF-8 firmware version string
   uint8_t group_name[64]; // UTF-8 group name string
   uint8_t serial_number[64]; // UTF-8 serial number string
