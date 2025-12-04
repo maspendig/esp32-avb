@@ -196,7 +196,7 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s*
 
   if (state->entity_id != htonll(msg->talker_entity_id))
   {
-    ESP_LOGW(TAG, "Ignoring foreign ACMP Connect TX Command (target: 0x%016llX, our: 0x%016llX).",
+    ESP_LOGI(TAG, "Ignoring foreign ACMP Connect TX Command (target: 0x%016llX, our: 0x%016llX).",
              htonll(msg->talker_entity_id),
              state->entity_id);
     return ESP_OK;

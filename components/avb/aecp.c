@@ -712,15 +712,15 @@ void handle_aem_read_desc_clock_source(struct avtp_state_s* state, struct aecp_d
   struct aecp_clock_source_response_s
   {
     struct aecp_data_unit_s aecp_header;
-    uint16_t configuration_index;
-    uint16_t reserved;
+    u16 configuration_index;
+    u16 reserved;
     u16 descriptor_type;
     u16 descriptor_index;
-    u64 object_name;
+    u8 object_name[64];
     u16 localized_description;
     u16 clock_source_flags;
     u16 clock_source_type;
-    u32 clock_source_id;
+    u64 clock_source_id;
     u16 clock_source_location_type;
     u16 clock_source_location_id;
   } __attribute__((packed));
@@ -738,7 +738,7 @@ void handle_aem_read_desc_clock_source(struct avtp_state_s* state, struct aecp_d
   resp.aecp_header.control_data_len_status = htons(102);
   resp.aecp_header.target_entity_id = msg->target_entity_id;
   resp.aecp_header.controller_entity_id = msg->controller_entity_id;
-  resp.object_name = 0;
+  memset(&resp.object_name, 0, sizeof(resp.object_name));
   resp.aecp_header.sequence_id = msg->sequence_id;
   resp.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
   /* Response payload fields */
@@ -747,23 +747,14 @@ void handle_aem_read_desc_clock_source(struct avtp_state_s* state, struct aecp_d
   /* Fill CLOCK SOURCE descriptor */
   resp.descriptor_type = htons(AEM_DESC_TYPE_CLOCK_SOURCE);
   resp.descriptor_index = 0;
-  resp.localized_description = htons(0xFFFF);
+  resp.localized_description = htons(2);
   resp.clock_source_flags = 0;
   resp.clock_source_type = htons(0); // INTERNAL
-  /* Build clock_source_id as own MAC (6 bytes) followed by 0x0000 (2 bytes) */
-  {
-    uint64_t mac64 = ((uint64_t)state->intf_hw_addr[0] << 40) |
-      ((uint64_t)state->intf_hw_addr[1] << 32) |
-      ((uint64_t)state->intf_hw_addr[2] << 24) |
-      ((uint64_t)state->intf_hw_addr[3] << 16) |
-      ((uint64_t)state->intf_hw_addr[4] << 8) |
-      ((uint64_t)state->intf_hw_addr[5] << 0);
-    uint64_t clock_id = (mac64 << 16) | 0x0000; /* MAC << 16 adds two 0x00 bytes at LSB */
-    resp.clock_source_id = htonll(clock_id);
-  }
+  resp.clock_source_id = htonll(state->entity_id);
   resp.clock_source_location_type = htons(0x0002);
   resp.clock_source_location_id = htons(0);
 
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
   //send
   ssize_t written = write(state->socket, &resp, sizeof(resp));
   if (written < 0)
@@ -1050,7 +1041,7 @@ void handle_aem_read_desc_strings(struct avtp_state_s* state, struct aecp_data_u
     u16 descriptor_index; // Index of this descriptor
     u8 string_0[64]; // First string (HAW Kiel)
     u8 string_1[64]; // Second string (ESP32-P4)
-    u8 string_2[64]; // Third string (empty)
+    u8 string_2[64]; // Third string (Internal)
     u8 string_3[64]; // Fourth string (empty)
     u8 string_4[64]; // Fifth string (empty)
     u8 string_5[64]; // Sixth string (empty)
@@ -1107,7 +1098,9 @@ void handle_aem_read_desc_strings(struct avtp_state_s* state, struct aecp_data_u
   const char* string_1 = "ESP32-P4";
   strncpy((char*)resp.descriptor.string_1, string_1, sizeof(resp.descriptor.string_1));
 
-  // string_2 through string_6 remain zero-filled (empty strings)
+  const char* string_2 = "Internal";
+  strncpy((char*)resp.descriptor.string_2, string_2, sizeof(resp.descriptor.string_2));
+  // string_3 through string_6 remain zero-filled (empty strings)
 
   ESP_LOGI(TAG, "Sending STRINGS descriptor [%d]: string_0='%s', string_1='%s'",
            ntohs(read_desc_cmd->descriptor_index), string_0, string_1);

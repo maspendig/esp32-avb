@@ -21,6 +21,28 @@
 
 #define TAG "msrp"
 
+char* msrp_attribute_event_string(int s)
+{
+  switch (s)
+  {
+  case MSRP_ATTRIBUTE_EVENT_NEW:
+    return "NEW";
+  case MSRP_ATTRIBUTE_EVENT_JOININ:
+    return "JOININ";
+  case MSRP_ATTRIBUTE_EVENT_IN:
+    return "IN";
+  case MSRP_ATTRIBUTE_EVENT_JOINMT:
+    return "JOINMT";
+  case MSRP_ATTRIBUTE_EVENT_MT:
+    return "MT";
+  case MSRP_ATTRIBUTE_EVENT_LV:
+    return "LV";
+  default:
+    return "??";
+  }
+}
+
+
 int msrp_send_talker_advertise(struct avtp_state_s* state)
 {
   struct talker_advertise_s msg = {0};
@@ -96,7 +118,7 @@ int msrp_send_listener_join_request(struct avtp_state_s* state, u64 stream_id)
   msg.attribute_list[0].stream_id = htonll(stream_id); // Example stream ID
   msg.attribute_list[0].leave_all_event = 0;
   msg.attribute_list[0].number_of_values = htons(1);
-  msg.attribute_list[0].attribute_event = 0x24;
+  msg.attribute_list[0].attribute_event = 0x6c;
   msg.attribute_list[0].declaration_type = 0x80;
   msg.end_mark_list = 0;
   msg.end_mark = 0;
@@ -106,10 +128,90 @@ int msrp_send_listener_join_request(struct avtp_state_s* state, u64 stream_id)
   const ssize_t written = write(state->msrp_socket, &msg, 64);
   if (written < 0)
   {
-    ESP_LOGE(TAG, "Failed to send ACMP Message: %d (errno: %d)", written, errno);
+    ESP_LOGE(TAG, "Failed to send MSRP LISTENER Join Message: %d (errno: %d)", written, errno);
     return ESP_FAIL;
   }
+  ESP_LOGI(TAG, "MSRP Listener JOIN Message sent");
   return ESP_OK;
+}
+
+u8 three_packed_event(u8 event)
+{
+  return event / 36;
+}
+
+void handle_msrp_talker_failed(const struct avtp_state_s* state, void* buf)
+{
+  struct talker_failed_s
+  {
+    u16 leave_all_event_and_number_of_values;
+    u64 stream_id;
+    u8 stream_da[6];
+    u16 stream_vlan_id;
+    u16 max_frame_size;
+    u16 max_frame_interval;
+    u8 priority_and_rank;
+    u32 accumulated_latency;
+    u64 failed_bridge_id;
+    u16 failure_code;
+  } __attribute__((packed));
+
+  struct talker_failed_s* msg = buf;
+
+  // print leave all and number of values
+  u16 leave_all = (ntohs(msg->leave_all_event_and_number_of_values) >> 13) & 0x07;
+  u16 number_of_values = ntohs(msg->leave_all_event_and_number_of_values) & 0x1FFF;
+  ESP_LOGI(TAG, "    Leave All: %u", leave_all);
+  ESP_LOGI(TAG, "    Number of Values: %u", number_of_values);
+
+  ESP_LOGI(TAG, "    Stream ID: 0x%016llX", ntohll(msg->stream_id));
+  ESP_LOGI(TAG, "    Stream DA: %02X:%02X:%02X:%02X:%02X:%02X",
+           msg->stream_da[0], msg->stream_da[1], msg->stream_da[2],
+           msg->stream_da[3], msg->stream_da[4], msg->stream_da[5]);
+  ESP_LOGI(TAG, "    Stream VLAN ID: %u", ntohs(msg->stream_vlan_id));
+  ESP_LOGI(TAG, "    Max Frame Size: %u", ntohs(msg->max_frame_size));
+  ESP_LOGI(TAG, "    Max Frame Interval: %u", ntohs(msg->max_frame_interval));
+  ESP_LOGI(TAG, "    Priority: %u", (msg->priority_and_rank >> 5) & 0x07);
+  ESP_LOGI(TAG, "    Rank: %u", (msg->priority_and_rank >> 4) & 0x01);
+  ESP_LOGI(TAG, "    Accumulated Latency: %u", ntohl(msg->accumulated_latency));
+  ESP_LOGI(TAG, "    Failure Code: %u", ntohs(msg->failure_code));
+}
+
+void handle_msrp_talker_advertise(const struct avtp_state_s* state, void* buf)
+{
+  struct talker_advertise_s
+  {
+    u16 leave_all_event_and_number_of_values;
+    u64 stream_id;
+    u8 stream_da[6];
+    u16 stream_vlan_id;
+    u16 max_frame_size;
+    u16 max_frame_interval;
+    u8 priority_and_rank;
+    u32 accumulated_latency;
+    u8 attribute_event;
+  } __attribute__((packed));
+
+  // print leave all and number of values
+
+  struct talker_advertise_s* talker_adv = (struct talker_advertise_s*)buf;
+  u16 leave_all = (ntohs(talker_adv->leave_all_event_and_number_of_values) >> 13) & 0x07;
+  u16 number_of_values = ntohs(talker_adv->leave_all_event_and_number_of_values) & 0x1FFF;
+  u8 event = three_packed_event(talker_adv->attribute_event);
+
+  ESP_LOGI(TAG, "    Leave All: %u", leave_all);
+  ESP_LOGI(TAG, "    Number of Values: %u", number_of_values);
+  ESP_LOGI(TAG, "    Stream ID: 0x%016llX", ntohll(talker_adv->stream_id));
+  ESP_LOGI(TAG, "    Stream DA: %02X:%02X:%02X:%02X:%02X:%02X",
+           talker_adv->stream_da[0], talker_adv->stream_da[1], talker_adv->stream_da[2],
+           talker_adv->stream_da[3], talker_adv->stream_da[4], talker_adv->stream_da[5]);
+  ESP_LOGI(TAG, "    Stream VLAN ID: %u", ntohs(talker_adv->stream_vlan_id));
+  ESP_LOGI(TAG, "    Max Frame Size: %u", ntohs(talker_adv->max_frame_size));
+  ESP_LOGI(TAG, "    Max Frame Interval: %u", ntohs(talker_adv->max_frame_interval));
+  ESP_LOGI(TAG, "    Priority: %u", (talker_adv->priority_and_rank >> 5) & 0x07);
+  ESP_LOGI(TAG, "    Rank: %u", (talker_adv->priority_and_rank >> 4) & 0x01);
+  ESP_LOGI(TAG, "    Accumulated Latency: %u", ntohl(talker_adv->accumulated_latency));
+  ESP_LOGI(TAG, "    Attribute Event: %s", msrp_attribute_event_string(event));
 }
 
 void read_msrp_net(const struct avtp_state_s* state)
@@ -151,6 +253,12 @@ void read_msrp_net(const struct avtp_state_s* state)
       {
       case MSRP_ATTRIBUTE_TYPE_TALKER_ADVERTISE:
         ESP_LOGI(TAG, "  -> MSRP Talker Advertise");
+        if (attribute_length != 25)
+        {
+          ESP_LOGW(TAG, "    Unexpected Talker Advertise attribute length: %u", attribute_length);
+          return;
+        }
+        handle_msrp_talker_advertise(state, &buf.raw[offset + 4]);
         break;
       case MSRP_ATTRIBUTE_TYPE_TALKER_FAILED:
         ESP_LOGI(TAG, "  -> MSRP Talker Failed");
@@ -160,15 +268,8 @@ void read_msrp_net(const struct avtp_state_s* state)
           ESP_LOGW(TAG, "    Unexpected Talker Failed attribute length: %u", attribute_length);
           return;
         }
-        u8 leave_all_event = (buf.raw[offset + 4] >> 5) & 0x07;
-        if (leave_all_event > 0)
-        {
-          ESP_LOGI(TAG, "    Leave All Event: %u", leave_all_event);
-          break;
-        }
 
-        struct msrpdu_talker_fail* talker_fail =
-          (struct msrpdu_talker_fail*)&buf.raw[offset + 4];
+        handle_msrp_talker_failed(state, &buf.raw[offset + 4]);
 
         break;
       case MSRP_ATTRIBUTE_TYPE_LISTENER:
