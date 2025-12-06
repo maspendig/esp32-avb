@@ -8,6 +8,7 @@
 
 #include <aecp.h>
 #include <acmp.h>
+#include <msrp.h>
 
 #define ETH_TYPE_AVTP 0x22F0
 #define MAX_ADP_ENTITIES 32
@@ -123,12 +124,14 @@ struct talker_stream_info_s
   u16 stream_vlan_id;
 };
 
+
 struct avtp_state_s
 {
   bool stop;
   int socket;
   int msrp_socket;
   int mvrp_socket;
+
   uint16_t acmp_sequence_id;
   uint8_t intf_hw_addr[6];
   uint64_t entity_id;
@@ -142,6 +145,9 @@ struct avtp_state_s
   struct listener_stream_info_s listener_stream_infos[MAX_LISTENER_STREAMS];
   /* Talker stream information for ACMP connections (supporting one stream) */
   struct talker_stream_info_s talker_stream_info;
+
+  /* MSRP state for stream reservation */
+  msrp_state_t msrp;
 };
 
 int start_avtp_listener(const char* interface);

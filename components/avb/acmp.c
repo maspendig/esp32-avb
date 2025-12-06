@@ -150,7 +150,8 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_
     listenerInfo->talker_unique_id = ntohs(msg->talker_unique_id);
     listenerInfo->talker_entity_id = ntohll(msg->talker_entity_id);
 
-    msrp_send_listener_join_request(state, listenerInfo->stream_id);
+    /* Join the MSRP stream reservation as a listener */
+    msrp_listener_join(state, listenerInfo->stream_id);
 
     ESP_LOGI(TAG, "Updated listener stream info [%u]: pending_connection=false (connection established)",
              listener_unique_id);

@@ -70,6 +70,9 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   state->msrp_socket = msrp_init(interface);
   state->mvrp_socket = mvrp_init(interface);
 
+  /* Initialize MSRP state machine */
+  msrp_state_init(&state->msrp);
+
   // get HW address
   esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, &state->intf_hw_addr);
 
@@ -238,8 +241,11 @@ static void avtp_listener_task(void* arg)
     // Check if MSRP socket has data
     if (FD_ISSET(state->msrp_socket, &readfds))
     {
-      read_msrp_net(state);
+      msrp_net_rx(state);
     }
+
+    /* Process MSRP periodic tasks (timers, pending transmissions) */
+    msrp_periodic(state);
 
     /* we use the MOTU as AVB controller to establish the input / output streams */
     /* Check connection status and attempt to connect to available talkers */
