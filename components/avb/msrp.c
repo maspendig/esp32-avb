@@ -603,6 +603,20 @@ static void handle_msrp_talker_advertise(struct avtp_state_s* state, void* buf, 
     /* If we have an active listener for this stream, process applicant state */
     if (msrp->listener.active && msrp->listener.stream_id == stream_id)
     {
+      /* Add MAC filter for the stream destination address so we can receive packets */
+      esp_eth_handle_t eth_handle;
+      if (ioctl(state->socket, L2TAP_G_DEVICE_DRV_HNDL, &eth_handle) == 0)
+      {
+        esp_err_t err = esp_eth_ioctl(eth_handle, ETH_CMD_ADD_MAC_FILTER, talker->dest_addr);
+        if (err == ESP_OK)
+        {
+          ESP_LOGI(TAG, "Added MAC filter for stream dest: %02X:%02X:%02X:%02X:%02X:%02X",
+                   talker->dest_addr[0], talker->dest_addr[1],
+                   talker->dest_addr[2], talker->dest_addr[3],
+                   talker->dest_addr[4], talker->dest_addr[5]);
+        }
+      }
+
       /* Upgrade from ASKING_FAILED to READY now that talker is available */
       if (msrp->listener.declaration_type == MSRP_LISTENER_ASKING_FAILED &&
         talker->registrar_state == MRP_REGISTRAR_IN)
@@ -1091,6 +1105,29 @@ int msrp_listener_join(struct avtp_state_s* state, u64 stream_id)
 
   msrp->listener.active = true;
   msrp->listener.stream_id = stream_id;
+
+  /* If we know the talker's stream destination MAC, add it to the MAC filter
+   * so we can receive the multicast stream packets */
+  if (msrp->talker.valid && msrp->talker.stream_id == stream_id)
+  {
+    /* Get ethernet handle to add MAC filter */
+    esp_eth_handle_t eth_handle;
+    if (ioctl(state->socket, L2TAP_G_DEVICE_DRV_HNDL, &eth_handle) == 0)
+    {
+      esp_err_t err = esp_eth_ioctl(eth_handle, ETH_CMD_ADD_MAC_FILTER, msrp->talker.dest_addr);
+      if (err == ESP_OK)
+      {
+        ESP_LOGI(TAG, "Added MAC filter for stream dest: %02X:%02X:%02X:%02X:%02X:%02X",
+                 msrp->talker.dest_addr[0], msrp->talker.dest_addr[1],
+                 msrp->talker.dest_addr[2], msrp->talker.dest_addr[3],
+                 msrp->talker.dest_addr[4], msrp->talker.dest_addr[5]);
+      }
+      else
+      {
+        ESP_LOGW(TAG, "Failed to add MAC filter for stream: %s", esp_err_to_name(err));
+      }
+    }
+  }
 
   /* Determine declaration type based on talker state */
   if (msrp->talker.valid && msrp->talker.stream_id == stream_id)

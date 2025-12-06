@@ -49,14 +49,39 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
     return ESP_FAIL;
   }
 
-  // Set the Ethertype filter (frames with this type will be available through the state->tx_socket)
-  uint16_t eth_type_filter = ETH_TYPE_AVTP; // Example Ethertype
+  // Set the Ethertype filter for untagged AVTP frames
+  uint16_t eth_type_filter = ETH_TYPE_AVTP;
   if (ioctl(state->socket, L2TAP_S_RCV_FILTER, &eth_type_filter) < 0)
   {
     ESP_LOGE(TAG, "failed to set Ethertype filter: %d\n", errno);
     return ESP_FAIL;
   }
 
+  /* Create VLAN socket for receiving VLAN-tagged AVTP streams (802.1Q) */
+  state->vlan_socket = open("/dev/net/tap", 0);
+  if (state->vlan_socket < 0)
+  {
+    ESP_LOGE(TAG, "Failed to create VLAN socket");
+    return ESP_FAIL;
+  }
+
+  ioctl_err = ioctl(state->vlan_socket, L2TAP_S_INTF_DEVICE, interface);
+  if (ioctl_err < 0)
+  {
+    ESP_LOGE(TAG, "failed to set network interface %s at VLAN socket: %d\n", interface, ioctl_err);
+    close(state->vlan_socket);
+    return ESP_FAIL;
+  }
+
+  /* Filter for 802.1Q VLAN-tagged frames */
+  eth_type_filter = ETH_TYPE_8021Q;
+  if (ioctl(state->vlan_socket, L2TAP_S_RCV_FILTER, &eth_type_filter) < 0)
+  {
+    ESP_LOGE(TAG, "failed to set VLAN Ethertype filter: %d\n", errno);
+    close(state->vlan_socket);
+    return ESP_FAIL;
+  }
+  ESP_LOGI(TAG, "VLAN socket initialized for 802.1Q tagged frames");
 
   // Get the ethernet handle to configure multicast reception
   esp_eth_handle_t eth_handle;
@@ -92,13 +117,53 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
            state->intf_hw_addr[0], state->intf_hw_addr[1], state->intf_hw_addr[2],
            state->intf_hw_addr[3], state->intf_hw_addr[4], state->intf_hw_addr[5]);
 
-  // Enable reception of all multicast packets
-  bool enable_multicast = true;
-  esp_err_t err = esp_eth_ioctl(eth_handle, ETH_CMD_S_ALL_MULTICAST, &enable_multicast);
+  /* Enable promiscuous mode to receive all packets including VLAN-tagged multicast */
+  bool promiscuous = true;
+  esp_err_t err = esp_eth_ioctl(eth_handle, ETH_CMD_S_PROMISCUOUS, &promiscuous);
   if (err != ESP_OK)
   {
-    ESP_LOGE(TAG, "failed to enable multicast reception: %s", esp_err_to_name(err));
-    return ESP_FAIL;
+    ESP_LOGW(TAG, "failed to enable promiscuous mode: %s (continuing anyway)", esp_err_to_name(err));
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Promiscuous mode enabled for AVB stream reception");
+  }
+
+  /* Also enable all multicast reception as fallback */
+  bool enable_multicast = true;
+  err = esp_eth_ioctl(eth_handle, ETH_CMD_S_ALL_MULTICAST, &enable_multicast);
+  if (err != ESP_OK)
+  {
+    ESP_LOGW(TAG, "failed to enable all multicast reception: %s", esp_err_to_name(err));
+  }
+  else
+  {
+    ESP_LOGI(TAG, "All multicast reception enabled");
+  }
+
+  /* Add specific multicast MAC filters for AVB:
+   * - MAAP dynamic allocation range: 91:E0:F0:00:00:00 - 91:E0:F0:00:FD:FF
+   * - AVDECC/ATDECC: 91:E0:F0:01:00:00
+   */
+  uint8_t maap_base_mac[6] = {0x91, 0xE0, 0xF0, 0x00, 0xFE, 0x00}; /* Common MAAP address */
+  err = esp_eth_ioctl(eth_handle, ETH_CMD_ADD_MAC_FILTER, maap_base_mac);
+  if (err != ESP_OK)
+  {
+    ESP_LOGW(TAG, "failed to add MAAP MAC filter: %s", esp_err_to_name(err));
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Added MAC filter for MAAP address %02X:%02X:%02X:%02X:%02X:%02X",
+             maap_base_mac[0], maap_base_mac[1], maap_base_mac[2],
+             maap_base_mac[3], maap_base_mac[4], maap_base_mac[5]);
+  }
+
+  /* Add AVDECC multicast address */
+  uint8_t avdecc_mac[6] = {0x91, 0xE0, 0xF0, 0x01, 0x00, 0x00};
+  err = esp_eth_ioctl(eth_handle, ETH_CMD_ADD_MAC_FILTER, avdecc_mac);
+  if (err != ESP_OK)
+  {
+    ESP_LOGW(TAG, "failed to add AVDECC MAC filter: %s", esp_err_to_name(err));
   }
 
   s_state = state;
@@ -152,13 +217,14 @@ static bool has_available_talker(struct avtp_state_s* state)
 static void avtp_listener_task(void* arg)
 {
   const char* interface = "ETH_0";
+  /* Buffer large enough for AVTP stream packets (AAF can be up to ~1500 bytes) */
   union
   {
     struct avtp_discovery_msg_s adp;
     struct aecp_data_unit_s aecp;
     struct acmp_du_s acmp;
     struct avtp_header_s header;
-    u8 raw[100];
+    u8 raw[1518]; /* Max Ethernet frame size */
   } buf;
 
   struct avtp_state_s* state = calloc(1, sizeof(struct avtp_state_s));
@@ -185,10 +251,12 @@ static void avtp_listener_task(void* arg)
     fd_set readfds;
     FD_ZERO(&readfds);
     FD_SET(state->socket, &readfds);
+    FD_SET(state->vlan_socket, &readfds);
     FD_SET(state->msrp_socket, &readfds);
     FD_SET(state->mvrp_socket, &readfds);
 
     int max_fd = state->socket;
+    if (state->vlan_socket > max_fd) max_fd = state->vlan_socket;
     if (state->msrp_socket > max_fd) max_fd = state->msrp_socket;
     if (state->mvrp_socket > max_fd) max_fd = state->mvrp_socket;
 
@@ -211,24 +279,114 @@ static void avtp_listener_task(void* arg)
       const ssize_t len = read(state->socket, &buf, sizeof(buf));
       if (len > 0)
       {
-        // TODO implement discovery state machine like in IEEE 1722-2022 p. 60
-        switch (buf.header.subtype)
+        u8 subtype = buf.header.subtype;
+        /* Check if this is a stream packet (subtypes 0x00-0x7F) or control (0x80+) */
+        if (subtype < 0x80)
         {
-        case AVTP_SUBTYPE_ADP:
-          adp_net_rx(state, &buf.adp, len);
-          break;
-        case AVTP_SUBTYPE_AECP:
-          aecp_net_rx(state, &buf.aecp, len);
-          break;
-        case AVTP_SUBTYPE_ACMP:
-          acmp_net_rx(state, &buf.acmp, len);
-          break;
-        case AVTP_SUBTYPE_MAAP:
-          ESP_LOGI(TAG, "MAAP Announce received");
-          break;
-        default:
-          ESP_LOGW(TAG, "Unknown AVTP subtype received: 0x%02X", buf.header.subtype);
-          break;
+          /* Stream data packet */
+          switch (subtype)
+          {
+          case AVTP_SUBTYPE_AAF:
+            ESP_LOGI(TAG, "AAF stream packet received (%d bytes)", (int)len);
+            /* TODO: Process AAF audio data */
+            break;
+          case AVTP_SUBTYPE_61883_IIDC:
+            ESP_LOGI(TAG, "IEC 61883/IIDC stream packet received (%d bytes)", (int)len);
+            break;
+          case AVTP_SUBTYPE_CVF:
+            ESP_LOGI(TAG, "CVF video stream packet received (%d bytes)", (int)len);
+            break;
+          case AVTP_SUBTYPE_CRF:
+            ESP_LOGD(TAG, "CRF clock reference packet received (%d bytes)", (int)len);
+            break;
+          default:
+            ESP_LOGD(TAG, "Unknown stream subtype 0x%02X received (%d bytes)", subtype, (int)len);
+            break;
+          }
+        }
+        else
+        {
+          /* Control packet */
+          switch (subtype)
+          {
+          case AVTP_SUBTYPE_ADP:
+            adp_net_rx(state, &buf.adp, len);
+            break;
+          case AVTP_SUBTYPE_AECP:
+            aecp_net_rx(state, &buf.aecp, len);
+            break;
+          case AVTP_SUBTYPE_ACMP:
+            acmp_net_rx(state, &buf.acmp, len);
+            break;
+          case AVTP_SUBTYPE_MAAP:
+            ESP_LOGI(TAG, "MAAP Announce received");
+            break;
+          default:
+            ESP_LOGW(TAG, "Unknown AVTP control subtype received: 0x%02X", subtype);
+            break;
+          }
+        }
+      }
+    }
+
+    /* Check if VLAN socket has VLAN-tagged frames (AVB streams) */
+    if (FD_ISSET(state->vlan_socket, &readfds))
+    {
+      const ssize_t len = read(state->vlan_socket, &buf, sizeof(buf));
+      if (len > 0)
+      {
+        /* Parse 802.1Q VLAN header:
+         * Offset 12-13: TPID (0x8100) - already filtered by socket
+         * Offset 14-15: TCI (PCP:3, DEI:1, VID:12)
+         * Offset 16-17: Inner Ethertype
+         * Offset 18+: Payload
+         */
+        u16 tci = (buf.raw[14] << 8) | buf.raw[15];
+        u16 vlan_id = tci & 0x0FFF;
+        u8 pcp = (tci >> 13) & 0x07;
+        u16 inner_ethertype = (buf.raw[16] << 8) | buf.raw[17];
+
+        ESP_LOGD(TAG, "VLAN frame: VID=%u PCP=%u InnerType=0x%04X len=%d",
+                 vlan_id, pcp, inner_ethertype, (int)len);
+
+        /* Check if inner Ethertype is AVTP */
+        if (inner_ethertype == ETH_TYPE_AVTP)
+        {
+          /* AVTP subtype is at offset 18 (after VLAN header) */
+          u8 subtype = buf.raw[18];
+
+          if (subtype < 0x80)
+          {
+            /* Stream data packet */
+            switch (subtype)
+            {
+            case AVTP_SUBTYPE_AAF:
+              ESP_LOGI(TAG, "AAF stream received: VID=%u PCP=%u len=%d", vlan_id, pcp, (int)len);
+              /* TODO: Process AAF audio data from offset 18 */
+              break;
+            case AVTP_SUBTYPE_61883_IIDC:
+              ESP_LOGI(TAG, "IEC 61883/IIDC stream received: VID=%u len=%d", vlan_id, (int)len);
+              break;
+            case AVTP_SUBTYPE_CVF:
+              ESP_LOGI(TAG, "CVF video stream received: VID=%u len=%d", vlan_id, (int)len);
+              break;
+            case AVTP_SUBTYPE_CRF:
+              ESP_LOGD(TAG, "CRF clock reference received: VID=%u len=%d", vlan_id, (int)len);
+              break;
+            default:
+              ESP_LOGD(TAG, "Unknown VLAN stream subtype 0x%02X: VID=%u len=%d", subtype, vlan_id, (int)len);
+              break;
+            }
+          }
+          else
+          {
+            /* Control packet in VLAN - unusual but handle it */
+            ESP_LOGD(TAG, "AVTP control in VLAN: subtype=0x%02X VID=%u", subtype, vlan_id);
+          }
+        }
+        else
+        {
+          ESP_LOGD(TAG, "Non-AVTP VLAN frame: InnerType=0x%04X VID=%u", inner_ethertype, vlan_id);
         }
       }
     }

@@ -11,11 +11,21 @@
 #include <msrp.h>
 
 #define ETH_TYPE_AVTP 0x22F0
+#define ETH_TYPE_8021Q 0x8100  /* 802.1Q VLAN tag */
 #define MAX_ADP_ENTITIES 32
 
+/* AVTP Stream subtypes (IEEE 1722-2016) */
+#define AVTP_SUBTYPE_61883_IIDC  0x00
+#define AVTP_SUBTYPE_AAF         0x02  /* AVTP Audio Format */
+#define AVTP_SUBTYPE_CVF         0x03  /* Compressed Video Format */
+#define AVTP_SUBTYPE_CRF         0x04  /* Clock Reference Format */
+#define AVTP_SUBTYPE_TSCF        0x05  /* Time-Synchronous Control Format */
+#define AVTP_SUBTYPE_NTSCF       0x82  /* Non-Time-Synchronous Control Format */
 
+/* AVTP Control subtypes (IEEE 1722-2016) */
 #define AVTP_SUBTYPE_ADP  0xFA
 #define AVTP_SUBTYPE_AECP 0xFB
+#define AVTP_SUBTYPE_ACMP 0xFC
 #define AVTP_SUBTYPE_MAAP 0xFE
 
 /* Masks for avtp_ctl byte */
@@ -128,7 +138,8 @@ struct talker_stream_info_s
 struct avtp_state_s
 {
   bool stop;
-  int socket;
+  int socket; /* Untagged AVTP frames (0x22F0) */
+  int vlan_socket; /* VLAN-tagged frames (0x8100) for AVB streams */
   int msrp_socket;
   int mvrp_socket;
 
