@@ -603,20 +603,6 @@ static void handle_msrp_talker_advertise(struct avtp_state_s* state, void* buf, 
     /* If we have an active listener for this stream, process applicant state */
     if (msrp->listener.active && msrp->listener.stream_id == stream_id)
     {
-      /* Add MAC filter for the stream destination address so we can receive packets */
-      esp_eth_handle_t eth_handle;
-      if (ioctl(state->socket, L2TAP_G_DEVICE_DRV_HNDL, &eth_handle) == 0)
-      {
-        esp_err_t err = esp_eth_ioctl(eth_handle, ETH_CMD_ADD_MAC_FILTER, talker->dest_addr);
-        if (err == ESP_OK)
-        {
-          ESP_LOGI(TAG, "Added MAC filter for stream dest: %02X:%02X:%02X:%02X:%02X:%02X",
-                   talker->dest_addr[0], talker->dest_addr[1],
-                   talker->dest_addr[2], talker->dest_addr[3],
-                   talker->dest_addr[4], talker->dest_addr[5]);
-        }
-      }
-
       /* Upgrade from ASKING_FAILED to READY now that talker is available */
       if (msrp->listener.declaration_type == MSRP_LISTENER_ASKING_FAILED &&
         talker->registrar_state == MRP_REGISTRAR_IN)
