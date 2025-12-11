@@ -9,6 +9,7 @@
 #include <aecp.h>
 #include <acmp.h>
 #include <msrp.h>
+#include <mvrp.h>
 
 #define ETH_TYPE_AVTP 0x22F0
 #define ETH_TYPE_8021Q 0x8100  /* 802.1Q VLAN tag */
@@ -159,6 +160,9 @@ struct avtp_state_s
 
   /* MSRP state for stream reservation */
   msrp_state_t msrp;
+
+  /* MVRP state for VLAN registration */
+  mvrp_state_t mvrp;
 };
 
 int start_avtp_listener(const char* interface);

@@ -98,6 +98,9 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   /* Initialize MSRP state machine */
   msrp_state_init(&state->msrp);
 
+  /* Initialize MVRP state machine */
+  mvrp_state_init(&state->mvrp);
+
   // get HW address
   esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, &state->intf_hw_addr);
 
@@ -232,7 +235,7 @@ static void avtp_listener_task(void* arg)
   ESP_LOGI(TAG, "AVTP listener started on interface: %s", interface);
 
   msrp_send_domain_request(state);
-  mvrp_send_vlan_join(state, 2);
+  mvrp_vlan_join(state, 2);
   // msrp_send_talker_advertise(state);
   while (!state->stop)
   {
@@ -381,7 +384,7 @@ static void avtp_listener_task(void* arg)
 
     if (FD_ISSET(state->mvrp_socket, &readfds))
     {
-      read_mvrp_net(state);
+      mvrp_net_rx(state);
     }
 
     // Check if MSRP socket has data
@@ -392,6 +395,9 @@ static void avtp_listener_task(void* arg)
 
     /* Process MSRP periodic tasks (timers, pending transmissions) */
     msrp_periodic(state);
+
+    /* Process MVRP periodic tasks (timers, pending transmissions) */
+    mvrp_periodic(state);
 
     /* we use the MOTU as AVB controller to establish the input / output streams */
     /* Check connection status and attempt to connect to available talkers */
