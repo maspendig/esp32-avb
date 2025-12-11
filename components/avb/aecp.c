@@ -806,9 +806,9 @@ void handle_aem_read_desc_avb_interface(struct avtp_state_s* s_state, struct aec
   resp.avb_interface_desc.descriptor_type = htons(AEM_DESC_TYPE_AVB_INTERFACE);
   resp.avb_interface_desc.descriptor_index = 0;
   memset(resp.avb_interface_desc.object_name, 0, sizeof(resp.avb_interface_desc.object_name));
-  resp.avb_interface_desc.localized_description = htons(0);
+  resp.avb_interface_desc.localized_description = htons(0xFF);
   resp.avb_interface_desc.mac_address = htonll(s_state->entity_id);
-  resp.avb_interface_desc.interface_flags = htons(0);
+  resp.avb_interface_desc.interface_flags = htons(7);
   resp.avb_interface_desc.clock_identity = htonll(s_state->entity_id);
   resp.avb_interface_desc.priority1 = 248;
   resp.avb_interface_desc.clock_class = 248;

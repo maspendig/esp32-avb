@@ -117,21 +117,9 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
            state->intf_hw_addr[0], state->intf_hw_addr[1], state->intf_hw_addr[2],
            state->intf_hw_addr[3], state->intf_hw_addr[4], state->intf_hw_addr[5]);
 
-  /* Enable promiscuous mode to receive all packets including VLAN-tagged multicast */
-  bool promiscuous = true;
-  esp_err_t err = esp_eth_ioctl(eth_handle, ETH_CMD_S_PROMISCUOUS, &promiscuous);
-  if (err != ESP_OK)
-  {
-    ESP_LOGW(TAG, "failed to enable promiscuous mode: %s (continuing anyway)", esp_err_to_name(err));
-  }
-  else
-  {
-    ESP_LOGI(TAG, "Promiscuous mode enabled for AVB stream reception");
-  }
-
   /* Also enable all multicast reception as fallback */
   bool enable_multicast = true;
-  err = esp_eth_ioctl(eth_handle, ETH_CMD_S_ALL_MULTICAST, &enable_multicast);
+  int err = esp_eth_ioctl(eth_handle, ETH_CMD_S_ALL_MULTICAST, &enable_multicast);
   if (err != ESP_OK)
   {
     ESP_LOGW(TAG, "failed to enable all multicast reception: %s", esp_err_to_name(err));
