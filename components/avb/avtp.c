@@ -245,7 +245,7 @@ static void avtp_listener_task(void* arg)
 
   msrp_send_domain_request(state);
   mvrp_send_vlan_join(state, 2);
-  msrp_send_talker_advertise(state);
+  // msrp_send_talker_advertise(state);
   while (!state->stop)
   {
     fd_set readfds;
