@@ -134,6 +134,14 @@ struct aecp_audio_unit_s
   u16 base_splitter;
   u16 number_of_combiners;
   u16 base_combiner;
+  u16 number_of_demultiplexers;
+  u16 base_demultiplexer;
+  u16 number_of_multiplexers;
+  u16 base_multiplexer;
+  u16 number_of_tanscoders;
+  u16 base_transcoder;
+  u16 number_of_control_blocks;
+  u16 base_control_block;
   u32 current_sampling_rate;
   u16 sampling_rates_offset;
   u16 sampling_rates_count;
