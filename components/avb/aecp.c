@@ -603,7 +603,7 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   resp.aecp_header.h = 0;
 
   u8 status = 0; // Success
-  u16 cdl = 160;
+  u16 cdl = 164;
   (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
   resp.aecp_header.target_entity_id = msg->target_entity_id;
   resp.aecp_header.controller_entity_id = msg->controller_entity_id;
@@ -623,10 +623,9 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   resp.audio_unit_desc.number_of_external_input_ports = htons(CONFIG_LISTENER_STREAM_SINKS);
   resp.audio_unit_desc.number_of_external_output_ports = htons(CONFIG_TALKER_STREAM_SOURCES);
   resp.audio_unit_desc.current_sampling_rate = htonl(CONFIG_SAMPLING_RATE);
-  resp.audio_unit_desc.sampling_rates_count = htons(2);
+  resp.audio_unit_desc.sampling_rates_count = htons(1);
   resp.audio_unit_desc.sampling_rates_offset = htons(144);
-  resp.audio_unit_desc.sampling_rates[0] = htonl(CONFIG_SAMPLING_RATE);
-  resp.audio_unit_desc.sampling_rates[1] = htonl(44100);
+  resp.audio_unit_desc.sampling_rates[0] = htonl(48000);
 
   ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
 

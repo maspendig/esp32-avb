@@ -146,7 +146,7 @@ struct aecp_audio_unit_s
   u16 sampling_rates_offset;
   u16 sampling_rates_count;
   // FIXME make this a flexible array member
-  u32 sampling_rates[2];
+  u32 sampling_rates[1];
 } __attribute__((packed));
 
 struct acm_desc_stream_s
