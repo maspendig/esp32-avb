@@ -81,7 +81,14 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
     close(state->vlan_socket);
     return ESP_FAIL;
   }
-  ESP_LOGI(TAG, "VLAN socket initialized for 802.1Q tagged frames");
+
+  /* Set VLAN socket to non-blocking mode for efficient draining of stream packets */
+  int flags = fcntl(state->vlan_socket, F_GETFL, 0);
+  if (flags >= 0)
+  {
+    fcntl(state->vlan_socket, F_SETFL, flags | O_NONBLOCK);
+  }
+  ESP_LOGI(TAG, "VLAN socket initialized for 802.1Q tagged frames (non-blocking)");
 
   // Get the ethernet handle to configure multicast reception
   esp_eth_handle_t eth_handle;
@@ -236,6 +243,7 @@ static void avtp_listener_task(void* arg)
 
   msrp_send_domain_request(state);
   mvrp_vlan_join(state, 2);
+  u8 seq_number = 0;
   // msrp_send_talker_advertise(state);
   while (!state->stop)
   {
@@ -272,60 +280,40 @@ static void avtp_listener_task(void* arg)
       {
         u8 subtype = buf.header.subtype;
         /* Check if this is a stream packet (subtypes 0x00-0x7F) or control (0x80+) */
-        if (subtype < 0x80)
+        /* Control packet */
+        switch (subtype)
         {
-          /* Stream data packet */
-          switch (subtype)
-          {
-          case AVTP_SUBTYPE_AAF:
-            ESP_LOGI(TAG, "AAF stream packet received (%d bytes)", (int)len);
-            /* TODO: Process AAF audio data */
-            break;
-          case AVTP_SUBTYPE_61883_IIDC:
-            ESP_LOGI(TAG, "IEC 61883/IIDC stream packet received (%d bytes)", (int)len);
-            break;
-          case AVTP_SUBTYPE_CVF:
-            ESP_LOGI(TAG, "CVF video stream packet received (%d bytes)", (int)len);
-            break;
-          case AVTP_SUBTYPE_CRF:
-            ESP_LOGD(TAG, "CRF clock reference packet received (%d bytes)", (int)len);
-            break;
-          default:
-            ESP_LOGD(TAG, "Unknown stream subtype 0x%02X received (%d bytes)", subtype, (int)len);
-            break;
-          }
-        }
-        else
-        {
-          /* Control packet */
-          switch (subtype)
-          {
-          case AVTP_SUBTYPE_ADP:
-            adp_net_rx(state, &buf.adp, len);
-            break;
-          case AVTP_SUBTYPE_AECP:
-            aecp_net_rx(state, &buf.aecp, len);
-            break;
-          case AVTP_SUBTYPE_ACMP:
-            acmp_net_rx(state, &buf.acmp, len);
-            break;
-          case AVTP_SUBTYPE_MAAP:
-            ESP_LOGI(TAG, "MAAP Announce received");
-            break;
-          default:
-            ESP_LOGW(TAG, "Unknown AVTP control subtype received: 0x%02X", subtype);
-            break;
-          }
+        case AVTP_SUBTYPE_ADP:
+          adp_net_rx(state, &buf.adp, len);
+          break;
+        case AVTP_SUBTYPE_AECP:
+          aecp_net_rx(state, &buf.aecp, len);
+          break;
+        case AVTP_SUBTYPE_ACMP:
+          acmp_net_rx(state, &buf.acmp, len);
+          break;
+        case AVTP_SUBTYPE_MAAP:
+          ESP_LOGI(TAG, "MAAP Announce received");
+          break;
+        default:
+          ESP_LOGW(TAG, "Unknown AVTP control subtype received: 0x%02X", subtype);
+          break;
         }
       }
     }
 
     /* Check if VLAN socket has VLAN-tagged frames (AVB streams) */
+    /* Drain all available packets to prevent queue overflow */
     if (FD_ISSET(state->vlan_socket, &readfds))
     {
-      const ssize_t len = read(state->vlan_socket, &buf, sizeof(buf));
-      if (len > 0)
+      ssize_t len;
+      int packets_processed = 0;
+
+      /* Read all available packets (socket is non-blocking) */
+      while ((len = read(state->vlan_socket, &buf, sizeof(buf))) > 0)
       {
+        packets_processed++;
+
         /* Parse 802.1Q VLAN header:
          * Offset 12-13: TPID (0x8100) - already filtered by socket
          * Offset 14-15: TCI (PCP:3, DEI:1, VID:12)
@@ -336,9 +324,6 @@ static void avtp_listener_task(void* arg)
         u16 vlan_id = tci & 0x0FFF;
         u8 pcp = (tci >> 13) & 0x07;
         u16 inner_ethertype = (buf.raw[16] << 8) | buf.raw[17];
-
-        ESP_LOGD(TAG, "VLAN frame: VID=%u PCP=%u InnerType=0x%04X len=%d",
-                 vlan_id, pcp, inner_ethertype, (int)len);
 
         /* Check if inner Ethertype is AVTP */
         if (inner_ethertype == ETH_TYPE_AVTP)
@@ -352,33 +337,33 @@ static void avtp_listener_task(void* arg)
             switch (subtype)
             {
             case AVTP_SUBTYPE_AAF:
-              ESP_LOGI(TAG, "AAF stream received: VID=%u PCP=%u len=%d", vlan_id, pcp, (int)len);
               /* TODO: Process AAF audio data from offset 18 */
               break;
             case AVTP_SUBTYPE_61883_IIDC:
-              ESP_LOGI(TAG, "IEC 61883/IIDC stream received: VID=%u len=%d", vlan_id, (int)len);
+              if (buf.raw[20] != seq_number)
+              {
+                ESP_LOGW(TAG, "sequence number mismatch: expected=%u received=%u", seq_number, buf.raw[20]);
+                seq_number = buf.raw[20];
+              }
+
+              seq_number++;
               break;
             case AVTP_SUBTYPE_CVF:
-              ESP_LOGI(TAG, "CVF video stream received: VID=%u len=%d", vlan_id, (int)len);
+              /* TODO: Process CVF video stream */
               break;
             case AVTP_SUBTYPE_CRF:
-              ESP_LOGD(TAG, "CRF clock reference received: VID=%u len=%d", vlan_id, (int)len);
+              /* TODO: Process CRF clock reference */
               break;
             default:
-              ESP_LOGD(TAG, "Unknown VLAN stream subtype 0x%02X: VID=%u len=%d", subtype, vlan_id, (int)len);
               break;
             }
           }
-          else
-          {
-            /* Control packet in VLAN - unusual but handle it */
-            ESP_LOGD(TAG, "AVTP control in VLAN: subtype=0x%02X VID=%u", subtype, vlan_id);
-          }
         }
-        else
-        {
-          ESP_LOGD(TAG, "Non-AVTP VLAN frame: InnerType=0x%04X VID=%u", inner_ethertype, vlan_id);
-        }
+      }
+
+      if (packets_processed > 0)
+      {
+        ESP_LOGD(TAG, "Processed %d VLAN packets in batch", packets_processed);
       }
     }
 
@@ -438,8 +423,9 @@ int start_avtp_listener(const char* interface)
 {
   if (s_state == NULL)
   {
-    xTaskCreate(avtp_listener_task, "AVTP", 4096,
-                (void*)interface, tskIDLE_PRIORITY + 1, NULL);
+    /* Use higher priority for real-time packet processing */
+    xTaskCreate(avtp_listener_task, "AVTP", 8192,
+                (void*)interface, 10, NULL);
     return ESP_OK;
   }
   ESP_LOGE(TAG, "Other instance of AVTP is already running");
