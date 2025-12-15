@@ -151,6 +151,7 @@ struct aecp_audio_unit_s
   u32 sampling_rates[1];
 } __attribute__((packed));
 
+
 struct acm_desc_stream_s
 {
   u16 descriptor_type;
@@ -286,6 +287,15 @@ struct atdecc_entity_descriptor_s
   uint8_t serial_number[64]; // UTF-8 serial number string
   uint16_t configurations_count; // Number of configuration descriptors
   uint16_t current_configuration; // Index of current configuration
+} __attribute__((packed));
+
+struct aecp_read_desc_request_s
+{
+  struct aecp_data_unit_s aecp_header;
+  u16 configuration_index;
+  u16 reserved;
+  u16 descriptor_type;
+  u16 descriptor_index;
 } __attribute__((packed));
 
 /* AECP READ_DESCRIPTOR Response structure */

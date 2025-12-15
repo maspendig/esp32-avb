@@ -644,7 +644,8 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   }
 }
 
-void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg)
+
+void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aecp_read_desc_request_s* msg)
 {
   ESP_LOGI(TAG, "Received ACM Read AUDIO CLUSTER Descriptor Request");
 
@@ -659,36 +660,24 @@ void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aec
   } __attribute__((packed));
 
   struct aecp_audio_cluster_response_s resp = {0};
+  memcpy(&resp, msg, sizeof(struct aecp_read_desc_request_s));
   /* Copy Ethernet header from request and swap MAC addresses */
-  memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
-  memcpy(resp.aecp_header.header.src_mac, msg->header.dst_mac, ETH_ADDR_LEN);
-  /* Ethernet type (big-endian) */
-  resp.aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
-  resp.aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
-  /* AECP header fields */
-  resp.aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  memcpy(resp.aecp_header.header.dst_mac, msg->aecp_header.header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, msg->aecp_header.header.dst_mac, ETH_ADDR_LEN);
+
   resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
-  resp.aecp_header.version = 0;
-  resp.aecp_header.h = 0;
 
   u8 status = 0; // Success
   u16 cdl = sizeof(struct aecp_audio_cluster_s) + 4;
   (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
-  resp.aecp_header.target_entity_id = msg->target_entity_id;
-  resp.aecp_header.controller_entity_id = msg->controller_entity_id;
 
-  resp.aecp_header.sequence_id = msg->sequence_id;
-  resp.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
-  /* Response payload fields */
-  resp.configuration_index = 0;
-  resp.reserved = 0;
   /* Fill AUDIO_CLUSTER descriptor */
   resp.audio_cluster_desc.descriptor_type = htons(AEM_DESC_TYPE_AUDIO_CLUSTER);
   resp.audio_cluster_desc.descriptor_index = read_desc_cmd->descriptor_index;
   memset(resp.audio_cluster_desc.object_name, 0, sizeof(resp.audio_cluster_desc.object_name));
-  resp.audio_cluster_desc.localized_description = htons(0);
-  resp.audio_cluster_desc.signal_type = htons(-1);
-  resp.audio_cluster_desc.signal_index = htons(0);
+  resp.audio_cluster_desc.localized_description = htons(0xFFFF);
+  resp.audio_cluster_desc.signal_type = htons(0x0010);
+  resp.audio_cluster_desc.signal_index = htons(msg->descriptor_index%8);
   resp.audio_cluster_desc.signal_output = htons(0);
   resp.audio_cluster_desc.path_latency = htonl(0);
   resp.audio_cluster_desc.block_latency = htonl(0);
@@ -1119,16 +1108,7 @@ void handle_aem_read_desc_strings(struct avtp_state_s* state, struct aecp_data_u
   }
 }
 
-struct external_port_request_s
-{
-  struct aecp_data_unit_s aecp_header;
-  u16 configuration_index;
-  u16 reserved;
-  u16 descriptor_type;
-  u16 descriptor_index;
-} __attribute__((packed));
-
-void handle_aem_read_desc_external_port(struct avtp_state_s* state, struct external_port_request_s* msg, u8 desc_type)
+void handle_aem_read_desc_external_port(struct avtp_state_s* state, struct aecp_read_desc_request_s* msg, u8 desc_type)
 {
   struct external_port_response_s
   {
@@ -1152,7 +1132,8 @@ void handle_aem_read_desc_external_port(struct avtp_state_s* state, struct exter
            (desc_type == AEM_DESC_TYPE_EXTERNAL_PORT_INPUT) ? "INPUT" : "OUTPUT");
 
   struct external_port_response_s resp = {0};
-  memcpy(&resp, msg, sizeof(struct external_port_request_s));
+  // Copy request to response as base
+  memcpy(&resp, msg, sizeof(struct aecp_read_desc_request_s));
   /* Copy Ethernet header from request and swap MAC addresses */
   memcpy(resp.aecp_header.header.dst_mac, msg->aecp_header.header.src_mac, ETH_ADDR_LEN);
   memcpy(resp.aecp_header.header.src_mac, msg->aecp_header.header.dst_mac, ETH_ADDR_LEN);
@@ -1198,7 +1179,7 @@ void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_dat
     handle_aem_read_desc_stream_port_output(s_state, msg);
     break;
   case AEM_DESC_TYPE_AUDIO_CLUSTER:
-    handle_aem_read_desc_audio_cluster(s_state, msg);
+    handle_aem_read_desc_audio_cluster(s_state, (struct aecp_read_desc_request_s*)msg);
     break;
   case AEM_DESC_TYPE_AUDIO_MAP:
     handle_aem_read_desc_audio_map(s_state, msg);
@@ -1226,7 +1207,7 @@ void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_dat
     break;
   case AEM_DESC_TYPE_EXTERNAL_PORT_INPUT:
   case AEM_DESC_TYPE_EXTERNAL_PORT_OUTPUT:
-    handle_aem_read_desc_external_port(s_state, (struct external_port_request_s*)msg, desc_type);
+    handle_aem_read_desc_external_port(s_state, (struct aecp_read_desc_request_s*)msg, desc_type);
     break;
   default:
     ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", desc_type);
@@ -1237,8 +1218,15 @@ void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_dat
 void handle_aecp_acm_register_unsol_notification(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg,
                                                  ssize_t len)
 {
+  char* desc_type_str = msg->command_type == htons(ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION)
+                          ? "REGISTER UNSOL NOTIFICATION"
+                          : "UNREGISTER UNSOL NOTIFICATION";
+  ESP_LOGI(TAG, "Received ACM %s command", desc_type_str);
   struct aecp_data_unit_s response = {0};
   memcpy(&response, msg, sizeof(struct aecp_data_unit_s));
+
+  memcpy(response.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(response.header.src_mac, s_state->intf_hw_addr, ETH_ADDR_LEN);
 
   response.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
 
@@ -1246,11 +1234,11 @@ void handle_aecp_acm_register_unsol_notification(struct avtp_state_s* s_state, s
   ssize_t written = write(s_state->socket, &response, sizeof(response));
   if (written < 0)
   {
-    ESP_LOGE(TAG, "Failed to send ENTITY descriptor response: %d", errno);
+    ESP_LOGE(TAG, "Failed to send %s response", desc_type_str);
   }
   else
   {
-    ESP_LOGI(TAG, "Sent AECP Entity Descriptor Response");
+    ESP_LOGI(TAG, "Sent %s response", desc_type_str);
   }
 }
 
@@ -1397,11 +1385,8 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
     handle_aecp_aem_read_desc_cmd(s_state, msg, len);
     break;
   case ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION:
-    ESP_LOGI(TAG, "Received AECP ACM register Unsolicited Notification Command");
-    handle_aecp_acm_register_unsol_notification(s_state, msg, len);
-    break;
   case ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION:
-    ESP_LOGI(TAG, "Received AECP ACM unregister Unsolicited Notification Command");
+    handle_aecp_acm_register_unsol_notification(s_state, msg, len);
     break;
   case ACM_COMMAND_TYPE_GET_SAMPLING_RATE:
     ESP_LOGI(TAG, "Received AECP ACM GET_SAMPLING_RATE Command");
