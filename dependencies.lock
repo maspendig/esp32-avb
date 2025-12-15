@@ -23,6 +23,12 @@ dependencies:
       path: /home/max/Projects/fh/thesis/esp32-avb/managed_components/espressif__enc28j60
       type: local
     version: 1.0.1
+  espressif/esp_codec_dev:
+    dependencies: []
+    source:
+      path: /home/max/Projects/fh/thesis/esp32-avb/managed_components/espressif__esp_codec_dev
+      type: local
+    version: 1.5.4
   espressif/ethernet_init:
     dependencies: []
     source:
@@ -87,12 +93,13 @@ direct_dependencies:
 - esp_eth_time
 - espressif/ch390
 - espressif/enc28j60
+- espressif/esp_codec_dev
 - espressif/ethernet_init
 - espressif/lan865x
 - espressif/lan867x
 - espressif/lan86xx_common
 - idf
 - ptpd
-manifest_hash: e91e5e44bdee3137b6083911c1fde2aafebf540d13ff5b0c93cec4f4be597fa1
+manifest_hash: 01912dca93989ab94f3eda94fe5872e9df892c7ff63ea6057776c02a43adc52b
 target: esp32p4
 version: 2.0.0

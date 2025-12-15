@@ -411,6 +411,7 @@ void handle_acmp_disconnect_rx_command(struct avtp_state_s* state, struct acmp_d
   }
 
   ESP_LOGI(TAG, "Received ACMP Disconnect RX Command");
+
   state->listener_stream_infos[msg->listener_unique_id] = (struct listener_stream_info_s){0};
   struct acmp_du_s resp = {0};
   memcpy(&resp, msg, sizeof(struct acmp_du_s));

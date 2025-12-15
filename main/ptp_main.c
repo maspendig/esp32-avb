@@ -14,6 +14,7 @@
 #include "driver/gpio.h"
 #include "ptpd.h"
 #include "avtp.h"
+#include "audio_output.h"
 
 #include "esp_eth_time.h"
 
@@ -91,6 +92,21 @@ void app_main(void)
 
   int pid = ptpd_start("ETH_0");
   int avtp_pid = start_avtp_listener("ETH_0");
+
+  /* Initialize and start audio output system */
+  ESP_LOGI(TAG, "Initializing audio output");
+  if (audio_output_init() == ESP_OK)
+  {
+    ESP_LOGI(TAG, "Audio output initialized, starting playback");
+    if (audio_output_start() != ESP_OK)
+    {
+      ESP_LOGE(TAG, "Failed to start audio output");
+    }
+  }
+  else
+  {
+    ESP_LOGE(TAG, "Failed to initialize audio output");
+  }
 
   struct timespec cur_time;
   // wait for the clock to be available
