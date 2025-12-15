@@ -649,8 +649,6 @@ void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aec
 {
   ESP_LOGI(TAG, "Received ACM Read AUDIO CLUSTER Descriptor Request");
 
-  struct aecp_aem_read_desc_cmd* read_desc_cmd = (struct aecp_aem_read_desc_cmd*)(msg + 1);
-
   struct aecp_audio_cluster_response_s
   {
     struct aecp_data_unit_s aecp_header;
@@ -673,7 +671,7 @@ void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aec
 
   /* Fill AUDIO_CLUSTER descriptor */
   resp.audio_cluster_desc.descriptor_type = htons(AEM_DESC_TYPE_AUDIO_CLUSTER);
-  resp.audio_cluster_desc.descriptor_index = read_desc_cmd->descriptor_index;
+  resp.audio_cluster_desc.descriptor_index = msg->descriptor_index;
   memset(resp.audio_cluster_desc.object_name, 0, sizeof(resp.audio_cluster_desc.object_name));
   resp.audio_cluster_desc.localized_description = htons(0xFFFF);
   resp.audio_cluster_desc.signal_type = htons(0x0010);
