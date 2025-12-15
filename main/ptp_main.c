@@ -93,15 +93,12 @@ void app_main(void)
   int pid = ptpd_start("ETH_0");
   int avtp_pid = start_avtp_listener("ETH_0");
 
-  /* Initialize and start audio output system */
-  ESP_LOGI(TAG, "Initializing audio output");
+  /* Initialize audio output system for AVB stream playback */
+  ESP_LOGI(TAG, "Initializing audio output for AVB stream");
   if (audio_output_init() == ESP_OK)
   {
-    ESP_LOGI(TAG, "Audio output initialized, starting playback");
-    if (audio_output_start() != ESP_OK)
-    {
-      ESP_LOGE(TAG, "Failed to start audio output");
-    }
+    ESP_LOGI(TAG, "Audio output initialized - ready for AVB stream playback");
+    /* Note: Not starting the sinewave task - audio will come from AVB 61883-IIDC stream */
   }
   else
   {

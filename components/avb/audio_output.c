@@ -344,3 +344,21 @@ esp_err_t audio_output_start(void)
   return ESP_OK;
 }
 
+esp_err_t audio_output_write(const void* data, size_t size)
+{
+  if (!tx_handle || !data || size == 0)
+  {
+    return ESP_FAIL;
+  }
+
+  size_t bytes_written = 0;
+  esp_err_t ret = i2s_channel_write(tx_handle, data, size, &bytes_written, 0);
+ if (ret != ESP_OK && ret != ESP_ERR_TIMEOUT)
+  {
+    ESP_LOGE(TAG, "I2S write failed: %s", esp_err_to_name(ret));
+    return ESP_FAIL;
+  }
+
+  return ESP_OK;
+}
+
