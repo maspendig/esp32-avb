@@ -514,7 +514,6 @@ static int mvrp_send_vid_declaration(struct avtp_state_s* state, u16 vlan_id, u8
   msg.end_mark = 0;
 
   ESP_LOGI(TAG, "Sending MVRP VID %u with event %s", vlan_id, event_string(event));
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, (u8*)&msg, sizeof(msg), ESP_LOG_DEBUG);
 
   ssize_t written = write(state->mvrp_socket, &msg, sizeof(msg));
   if (written < 0)
@@ -711,7 +710,6 @@ void mvrp_net_rx(struct avtp_state_s* state)
   }
 
   ESP_LOGD(TAG, "MVRP received %d bytes", (int)len);
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, buf, len, ESP_LOG_DEBUG);
 
   /* Minimum MVRP message: header(14) + version(1) + type(1) + length(1) + vector(5) + endmarks(4) = 26 */
   if (len < 26)

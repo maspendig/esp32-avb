@@ -88,7 +88,6 @@ static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aec
   response.descriptor.configurations_count = htons(1);
   response.descriptor.current_configuration = htons(0);
 
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)&response, sizeof(response), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &response, sizeof(response));
@@ -189,7 +188,6 @@ void handle_aem_read_configuration(struct avtp_state_s* s_state, struct aecp_dat
   resp->config_desc.descriptor_counts[7].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
   resp->config_desc.descriptor_counts[7].count = htons(1);
 
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)resp, response_size, ESP_LOG_INFO);
   // Send configuration descriptor response
   ssize_t written = write(s_state->socket, resp, response_size);
   if (written < 0)
@@ -268,7 +266,6 @@ void handle_aem_read_desc_audio_map(struct avtp_state_s* s_state, struct aecp_da
     resp->audio_map_desc.mappings[i].mapping_cluster_channel = htons(0);
   }
 
-  // ESP_LOG_BUFFER_HEX_LEVEL(TAG, resp, response_size, ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, resp, response_size);
@@ -332,7 +329,6 @@ void handle_aem_read_desc_stream_port_input(struct avtp_state_s* s_state, struct
   resp.stream_port_desc.number_of_maps = htons(1);
   resp.stream_port_desc.base_map = htons(0);
 
-  // ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &resp, sizeof(resp));
@@ -630,7 +626,6 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   resp.audio_unit_desc.sampling_rates_offset = htons(144);
   resp.audio_unit_desc.sampling_rates[0] = htonl(48000);
 
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &resp, sizeof(resp));
@@ -675,7 +670,7 @@ void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aec
   memset(resp.audio_cluster_desc.object_name, 0, sizeof(resp.audio_cluster_desc.object_name));
   resp.audio_cluster_desc.localized_description = htons(0xFFFF);
   resp.audio_cluster_desc.signal_type = htons(0x0010);
-  resp.audio_cluster_desc.signal_index = htons(msg->descriptor_index%8);
+  resp.audio_cluster_desc.signal_index = htons(msg->descriptor_index % 8);
   resp.audio_cluster_desc.signal_output = htons(0);
   resp.audio_cluster_desc.path_latency = htonl(0);
   resp.audio_cluster_desc.block_latency = htonl(0);
@@ -743,7 +738,6 @@ void handle_aem_read_desc_clock_source(struct avtp_state_s* state, struct aecp_d
   resp.clock_source_location_type = htons(0x0002);
   resp.clock_source_location_id = htons(0);
 
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
   //send
   ssize_t written = write(state->socket, &resp, sizeof(resp));
   if (written < 0)
@@ -811,7 +805,6 @@ void handle_aem_read_desc_avb_interface(struct avtp_state_s* s_state, struct aec
   resp.avb_interface_desc.log_pdelay_interval = 0;
   resp.avb_interface_desc.port_number = htons(0);
 
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &resp, sizeof(resp));
@@ -1275,7 +1268,6 @@ void handle_acm_get_sampling_rate(struct avtp_state_s* s_state, struct aecp_data
   // Padding is already filled with 0x00 due to struct initialization with {0}
   memset(response.padding, 0x00, sizeof(response.padding));
 
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, (uint8_t*)&response, sizeof(response), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &response, sizeof(response));
@@ -1340,7 +1332,6 @@ void handle_acm_get_stream_format(struct avtp_state_s* s_state, struct aecp_get_
   resp.descriptor_index = msg->descriptor_index;
   resp.stream_format = htonll(0x00a0020804000800); // 61883-6 48kHz 2ch 24bit
 
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, &resp, sizeof(resp), ESP_LOG_INFO);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &resp, sizeof(resp));
