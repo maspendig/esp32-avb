@@ -554,6 +554,9 @@ void handle_aem_read_desc_stream_input(struct avtp_state_s* s_state, struct aecp
   resp->stream_input_desc.backedup_talker_entity_id = htonll(0);
   resp->stream_input_desc.backedup_talker_unique_id = htons(0);
   resp->stream_input_desc.avb_interface_index = htons(0);
+  // FIXME The length in nanoseconds of the MAC’s ingress buffer as defined in IEEE Std 17222016 Figure 5.
+  // For a STREAM_INPUT this is the MAC’s ingress buffer size
+  // This is the length of the buffer between the IEEE Std 17222016 reference plane and the MAC.
   resp->stream_input_desc.buffer_length = htonl(8);
 
   for (size_t i = 0; i < num_formats; ++i)
@@ -1116,6 +1119,61 @@ void handle_aem_read_desc_strings(struct avtp_state_s* state, struct aecp_data_u
   }
 }
 
+struct external_port_request_s
+{
+  struct aecp_data_unit_s aecp_header;
+  u16 configuration_index;
+  u16 reserved;
+  u16 descriptor_type;
+  u16 descriptor_index;
+} __attribute__((packed));
+
+void handle_aem_read_desc_external_port(struct avtp_state_s* state, struct external_port_request_s* msg, u8 desc_type)
+{
+  struct external_port_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    u16 configuration_index;
+    u16 reserved;
+    u16 descriptor_type;
+    u16 descriptor_index;
+    u16 clock_domain_id;
+    u16 port_flags;
+    u16 number_of_controls;
+    u16 base_control;
+    u16 signal_type;
+    u16 signal_index;
+    u16 signal_output;
+    u32 block_latency;
+    u16 jack_id;
+  } __attribute__((packed));
+
+  ESP_LOGI(TAG, "Received ACM Read EXTERNAL PORT %s Descriptor Request",
+           (desc_type == AEM_DESC_TYPE_EXTERNAL_PORT_INPUT) ? "INPUT" : "OUTPUT");
+
+  struct external_port_response_s resp = {0};
+  memcpy(&resp, msg, sizeof(struct external_port_request_s));
+  /* Copy Ethernet header from request and swap MAC addresses */
+  memcpy(resp.aecp_header.header.dst_mac, msg->aecp_header.header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, msg->aecp_header.header.dst_mac, ETH_ADDR_LEN);
+  resp.aecp_header.control_data_len_status = htons(40);
+  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  resp.signal_type = htons(AEM_DESC_TYPE_AUDIO_CLUSTER); // Audio Cluster
+  resp.signal_index = msg->descriptor_index;
+  resp.descriptor_index = msg->descriptor_index;
+
+  /* Send the response */
+  ssize_t written = write(state->socket, &resp, sizeof(resp));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send EXTERNAL PORT descriptor response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP EXTERNAL PORT Descriptor Response");
+  }
+}
+
 void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
 {
   // TODO create a combined struct to pass down the handler
@@ -1165,6 +1223,10 @@ void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_dat
     break;
   case AEM_DESC_TYPE_STRINGS:
     handle_aem_read_desc_strings(s_state, msg);
+    break;
+  case AEM_DESC_TYPE_EXTERNAL_PORT_INPUT:
+  case AEM_DESC_TYPE_EXTERNAL_PORT_OUTPUT:
+    handle_aem_read_desc_external_port(s_state, (struct external_port_request_s*)msg, desc_type);
     break;
   default:
     ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", desc_type);

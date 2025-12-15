@@ -16,12 +16,9 @@
 // TODO replace with MAAP handled MAC
 #define MAAP_MAC_ADDRESS (u8[6]){0x91, 0xE0, 0xF0, 0x00, 0xFE, 0x00}
 
-static uint64_t stream_formats[] = {
-  0x00a0010860000800,
+static u64 stream_formats[] = {
   0x00a0020860000800,
-  0x00a0030860000800,
   0x00a0040860000800,
-  0x00a0050860000800,
   0x00a0060860000800,
 };
 // current stream format differs from above formats by having 0840 instead of 0860 - why?

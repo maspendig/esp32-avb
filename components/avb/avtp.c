@@ -180,38 +180,6 @@ static int64_t timespec_to_ms(const struct timespec* ts)
   return ts->tv_sec * 1000 + (ts->tv_nsec / 1000000ll);
 }
 
-static bool has_available_talker(struct avtp_state_s* state)
-{
-  if (!state) return false;
-
-  time_t now = time(NULL);
-  for (int i = 0; i < MAX_ADP_ENTITIES; ++i)
-  {
-    if (state->adp_entities[i].in_use)
-    {
-      /* Check if entity is still valid */
-      if (state->adp_entities[i].valid_until < now)
-      {
-        /* Entity expired, mark as not in use */
-        state->adp_entities[i].in_use = false;
-        ESP_LOGW(TAG, "ADP entity 0x%016llX expired",
-                 (unsigned long long)state->adp_entities[i].entity_id);
-        continue;
-      }
-
-      /* Check if entity has talker capabilities */
-      if (state->adp_entities[i].talker_stream_sources > 0)
-      {
-        ESP_LOGI(TAG, "Found available talker: 0x%016llX with %u stream sources",
-                 (unsigned long long)state->adp_entities[i].entity_id,
-                 state->adp_entities[i].talker_stream_sources);
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 static void avtp_listener_task(void* arg)
 {
   const char* interface = "ETH_0";
@@ -244,7 +212,7 @@ static void avtp_listener_task(void* arg)
   msrp_send_domain_request(state);
   mvrp_vlan_join(state, 2);
   u8 seq_number = 0;
-  // msrp_send_talker_advertise(state);
+
   while (!state->stop)
   {
     fd_set readfds;
@@ -337,7 +305,8 @@ static void avtp_listener_task(void* arg)
             switch (subtype)
             {
             case AVTP_SUBTYPE_AAF:
-              /* TODO: Process AAF audio data from offset 18 */
+              ESP_LOGI(TAG, "Received AAF stream packet: VLAN ID=%u, PCP=%u, Length=%zd bytes",
+                       vlan_id, pcp, len);
               break;
             case AVTP_SUBTYPE_61883_IIDC:
               if (buf.raw[20] != seq_number)
@@ -346,13 +315,12 @@ static void avtp_listener_task(void* arg)
                 seq_number = buf.raw[20];
               }
 
+              if (seq_number == 0)
+              {
+                ESP_LOGI(TAG, "Received 61883-IIDC stream packet: VLAN ID=%u, PCP=%u, Length=%zd bytes",
+                         vlan_id, pcp, len);
+              }
               seq_number++;
-              break;
-            case AVTP_SUBTYPE_CVF:
-              /* TODO: Process CVF video stream */
-              break;
-            case AVTP_SUBTYPE_CRF:
-              /* TODO: Process CRF clock reference */
               break;
             default:
               break;
