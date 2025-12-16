@@ -29,7 +29,7 @@
 // TODO replace with MAAP handled MAC
 #define MAAP_MAC_ADDRESS (u8[6]){0x91, 0xE0, 0xF0, 0x00, 0xFE, 0x00}
 
-static u64 stream_formats[] = {
+static const u64 stream_formats[] = {
   0x00a0020860000800,
   0x00a0040860000800,
   0x00a0060860000800,

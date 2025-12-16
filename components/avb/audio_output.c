@@ -27,10 +27,6 @@
 #endif
 
 static const char* TAG = "audio_output";
-static const char err_reason[][30] = {
-  "input param is invalid",
-  "operation timeout"
-};
 
 static i2s_chan_handle_t tx_handle = NULL;
 static i2s_chan_handle_t rx_handle = NULL;
@@ -65,24 +61,6 @@ static i2s_chan_handle_t rx_handle = NULL;
 
 /* Musical scale frequencies (using equal temperament, 440Hz as A)
  * C, D, E, F, G, A, B, C then back down */
-static const float scale_frequencies[] = {
-  /* Ascending C4 to C5 */
-  261.6256f, /* C4 */
-  293.6648f, /* D4 */
-  329.6276f, /* E4 */
-  349.2282f, /* F4 */
-  392.0000f, /* G4 */
-  440.0000f, /* A4 */
-  493.8833f, /* B4 */
-  523.2511f, /* C5 */
-  /* Descending back to C4 */
-  493.8833f, /* B4 */
-  440.0000f, /* A4 */
-  392.0000f, /* G4 */
-  349.2282f, /* F4 */
-  329.6276f, /* E4 */
-  293.6648f, /* D4 */
-};
 #define SCALE_LENGTH (sizeof(scale_frequencies) / sizeof(scale_frequencies[0]))
 
 static esp_err_t es8311_codec_init(void)
@@ -226,82 +204,6 @@ static esp_err_t i2s_driver_init(void)
   return ESP_OK;
 }
 
-static void i2s_sinewave_task(void* args)
-{
-  esp_err_t ret = ESP_OK;
-  size_t bytes_write = 0;
-
-  // Allocate buffer for stereo 16-bit samples
-  int16_t* audio_buffer = (int16_t*)malloc(BUFFER_SIZE * 2 * sizeof(int16_t));
-  if (!audio_buffer)
-  {
-    ESP_LOGE(TAG, "[sinewave] No memory for audio buffer");
-    vTaskDelete(NULL);
-    return;
-  }
-
-  float phase = 0.0f;
-  uint32_t current_note_index = 0;
-  float current_freq = scale_frequencies[0];
-  float phase_increment = 2.0f * M_PI * current_freq / AUDIO_SAMPLE_RATE;
-
-  // Calculate how many samples needed for the note duration
-  const uint32_t samples_per_note = (AUDIO_SAMPLE_RATE * NOTE_DURATION_MS) / 1000;
-  uint32_t samples_played = 0;
-
-  ESP_LOGI(TAG, "[sinewave] Starting musical scale playback");
-  ESP_LOGI(TAG, "[sinewave] Base frequency: %.2f Hz (A note)", BASE_FREQ_HZ);
-  ESP_LOGI(TAG, "[sinewave] Note duration: %d ms", NOTE_DURATION_MS);
-  ESP_LOGI(TAG, "[sinewave] Scale length: %d notes", SCALE_LENGTH);
-  ESP_LOGI(TAG, "[sinewave] Sample rate: %d Hz", AUDIO_SAMPLE_RATE);
-
-  while (1)
-  {
-    // Generate sine wave samples
-    for (int i = 0; i < BUFFER_SIZE; i++)
-    {
-      // Check if we need to switch to the next note
-      if (samples_played >= samples_per_note)
-      {
-        samples_played = 0;
-        current_note_index = (current_note_index + 1) % SCALE_LENGTH;
-        current_freq = scale_frequencies[current_note_index];
-        phase_increment = 2.0f * M_PI * current_freq / AUDIO_SAMPLE_RATE;
-
-        ESP_LOGI(TAG, "[sinewave] Playing note %d: %.2f Hz",
-                 current_note_index, current_freq);
-      }
-
-      float sample_value = sinf(phase) * SINE_AMPLITUDE;
-      int16_t sample = (int16_t)sample_value;
-
-      // Stereo output: same sample for both left and right channels
-      audio_buffer[i * 2] = sample; // Left channel
-      audio_buffer[i * 2 + 1] = sample; // Right channel
-
-      // Increment phase and wrap to avoid floating point drift
-      phase += phase_increment;
-      if (phase >= 2.0f * M_PI)
-      {
-        phase -= 2.0f * M_PI;
-      }
-
-      samples_played++;
-    }
-
-    // Write sine wave to I2S
-    ret = i2s_channel_write(tx_handle, audio_buffer, BUFFER_SIZE * 2 * sizeof(int16_t),
-                            &bytes_write, portMAX_DELAY);
-    if (ret != ESP_OK)
-    {
-      ESP_LOGE(TAG, "[sinewave] i2s write failed, %s", err_reason[ret == ESP_ERR_TIMEOUT]);
-    }
-  }
-
-  free(audio_buffer);
-  vTaskDelete(NULL);
-}
-
 esp_err_t audio_output_init(void)
 {
   ESP_LOGI(TAG, "Initializing audio output system");
@@ -326,24 +228,6 @@ esp_err_t audio_output_init(void)
   return ESP_OK;
 }
 
-esp_err_t audio_output_start(void)
-{
-  ESP_LOGI(TAG, "Starting audio output task");
-  ESP_LOGI(TAG, "Playing musical scale: A-B-C-D-E-F-G-A-G-F-E-D-C-B-A");
-  ESP_LOGI(TAG, "Note duration: %d ms", NOTE_DURATION_MS);
-
-  /* Create task to generate and play musical scale */
-  BaseType_t ret = xTaskCreate(i2s_sinewave_task, "audio_output", 8192, NULL, 10, NULL);
-  if (ret != pdPASS)
-  {
-    ESP_LOGE(TAG, "Failed to create audio output task");
-    return ESP_FAIL;
-  }
-
-  ESP_LOGI(TAG, "Audio output task started successfully");
-  return ESP_OK;
-}
-
 esp_err_t audio_output_write(const void* data, size_t size)
 {
   if (!tx_handle || !data || size == 0)
@@ -353,7 +237,7 @@ esp_err_t audio_output_write(const void* data, size_t size)
 
   size_t bytes_written = 0;
   esp_err_t ret = i2s_channel_write(tx_handle, data, size, &bytes_written, 0);
- if (ret != ESP_OK && ret != ESP_ERR_TIMEOUT)
+  if (ret != ESP_OK && ret != ESP_ERR_TIMEOUT)
   {
     ESP_LOGE(TAG, "I2S write failed: %s", esp_err_to_name(ret));
     return ESP_FAIL;
