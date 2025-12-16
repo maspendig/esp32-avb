@@ -382,13 +382,13 @@ void handle_aem_read_desc_stream_port_output(struct avtp_state_s* s_state, struc
   resp.stream_port_desc.descriptor_type = htons(AEM_DESC_TYPE_STREAM_PORT_OUTPUT);
   resp.stream_port_desc.descriptor_index = 0;
   resp.stream_port_desc.clock_domain_index = htons(0);
-  resp.stream_port_desc.port_flags = htons(0);
+  resp.stream_port_desc.port_flags = htons(1);
   resp.stream_port_desc.number_of_controls = htons(0);
   resp.stream_port_desc.base_control = htons(0);
   resp.stream_port_desc.number_of_clusters = htons(8);
   resp.stream_port_desc.base_cluster = htons(0);
   resp.stream_port_desc.number_of_maps = htons(1);
-  resp.stream_port_desc.base_map = htons(0);
+  resp.stream_port_desc.base_map = htons(1);
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &resp, sizeof(resp));
@@ -453,7 +453,7 @@ void handle_aem_read_desc_stream_output(struct avtp_state_s* s_state, struct aec
   strncpy((char*)resp->stream_output_desc.object_name, "Stream 1", sizeof(resp->stream_output_desc.object_name));
   resp->stream_output_desc.localized_description = htons(0);
   resp->stream_output_desc.clock_domain_index = htons(0);
-  resp->stream_output_desc.stream_flags = htons(0x0001); // clock_sync_source
+  resp->stream_output_desc.stream_flags = htons(0x0002); // clock_sync_source
   resp->stream_output_desc.current_format = htonll(0x00a0020840000800);
   resp->stream_output_desc.formats_offset = htons(0);
   resp->stream_output_desc.number_of_formats = htons(1);
@@ -537,7 +537,7 @@ void handle_aem_read_desc_stream_input(struct avtp_state_s* s_state, struct aecp
   strncpy((char*)resp->stream_input_desc.object_name, "Stream 1", sizeof(resp->stream_input_desc.object_name));
   resp->stream_input_desc.localized_description = htons(0);
   resp->stream_input_desc.clock_domain_index = htons(0);
-  resp->stream_input_desc.stream_flags = htons(0x0001); // clock_sync_source
+  resp->stream_input_desc.stream_flags = htons(0x0003); // clock_sync_source | clock a flag
   resp->stream_input_desc.current_format = htonll(0x00a0020840000800);
   resp->stream_input_desc.formats_offset = htons(offsetof(struct acm_desc_stream_s, formats));
   resp->stream_input_desc.number_of_formats = htons(num_formats);
@@ -669,7 +669,7 @@ void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aec
   resp.audio_cluster_desc.descriptor_index = msg->descriptor_index;
   memset(resp.audio_cluster_desc.object_name, 0, sizeof(resp.audio_cluster_desc.object_name));
   resp.audio_cluster_desc.localized_description = htons(0xFFFF);
-  resp.audio_cluster_desc.signal_type = htons(0x0010);
+  resp.audio_cluster_desc.signal_type = htons(0xFFFF);
   resp.audio_cluster_desc.signal_index = htons(msg->descriptor_index % 8);
   resp.audio_cluster_desc.signal_output = htons(0);
   resp.audio_cluster_desc.path_latency = htonl(0);
@@ -789,18 +789,18 @@ void handle_aem_read_desc_avb_interface(struct avtp_state_s* s_state, struct aec
   /* Fill AVB_INTERFACE descriptor */
   resp.avb_interface_desc.descriptor_type = htons(AEM_DESC_TYPE_AVB_INTERFACE);
   resp.avb_interface_desc.descriptor_index = 0;
-  memset(resp.avb_interface_desc.object_name, 0, sizeof(resp.avb_interface_desc.object_name));
-  resp.avb_interface_desc.localized_description = htons(0xFF);
-  resp.avb_interface_desc.mac_address = htonll(s_state->entity_id);
+
+  resp.avb_interface_desc.localized_description = htons(0xFFFF);
+  memcpy(&resp.avb_interface_desc.mac_address, s_state->intf_hw_addr, ETH_ADDR_LEN);
   resp.avb_interface_desc.interface_flags = htons(7);
   resp.avb_interface_desc.clock_identity = htonll(s_state->entity_id);
   resp.avb_interface_desc.priority1 = 248;
   resp.avb_interface_desc.clock_class = 248;
-  resp.avb_interface_desc.offset_scaled_log_variance = htons(0);
-  resp.avb_interface_desc.clock_accuracy = 254;
-  resp.avb_interface_desc.priority2 = 248;
+  resp.avb_interface_desc.offset_scaled_log_variance = htons(17258);
+  resp.avb_interface_desc.clock_accuracy = 248;
+  resp.avb_interface_desc.priority2 = 238;
   resp.avb_interface_desc.domain_number = 0;
-  resp.avb_interface_desc.log_sync_interval = 0;
+  resp.avb_interface_desc.log_sync_interval = -3;
   resp.avb_interface_desc.log_announce_interval = 0;
   resp.avb_interface_desc.log_pdelay_interval = 0;
   resp.avb_interface_desc.port_number = htons(0);

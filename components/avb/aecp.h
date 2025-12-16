@@ -47,7 +47,7 @@ struct aecp_avb_interface_s
   u16 descriptor_index;
   u8 object_name[64];
   u16 localized_description;
-  u64 mac_address;
+  u8 mac_address[6];
   u16 interface_flags;
   u64 clock_identity;
   u8 priority1;
