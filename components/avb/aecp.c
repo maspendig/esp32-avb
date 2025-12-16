@@ -63,22 +63,14 @@ static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aec
   response.descriptor.available_index = htonl(s_state->adp_available_index);
   response.descriptor.association_id = htonll(0);
 
-  /* Set entity name */
-  const char* entity_name = "ESP32-P4";
-  strncpy((char*)response.descriptor.entity_name, entity_name, sizeof(response.descriptor.entity_name));
+  strncpy((char*)response.descriptor.entity_name, CONFIG_ENTITY_NAME, sizeof(response.descriptor.entity_name));
 
   response.descriptor.vendor_name_string = htons(0);
   response.descriptor.model_name_string = htons(1);
 
-  /* Set firmware version */
-  const char* fw_version = "0.0.1";
-  strncpy((char*)response.descriptor.firmware_version, fw_version, sizeof(response.descriptor.firmware_version));
+  strncpy((char*)response.descriptor.firmware_version, CONFIG_FW_VERSION, sizeof(response.descriptor.firmware_version));
 
-  /* Set group name */
-  const char* group_name = "ESP32-AVB";
-  strncpy((char*)response.descriptor.group_name, group_name, sizeof(response.descriptor.group_name));
-
-  /* Set serial number */
+  // TODO generate a unique serial number, refer to std
   char serial[65];
   snprintf(serial, sizeof(serial), "%02X%02X%02X%02X%02X%02X",
            s_state->intf_hw_addr[0], s_state->intf_hw_addr[1], s_state->intf_hw_addr[2],
@@ -881,8 +873,8 @@ void hande_aem_read_desc_locale(struct avtp_state_s* state, struct aecp_data_uni
   response.descriptor.descriptor_type = htons(AEM_DESC_TYPE_LOCALE);
   response.descriptor.descriptor_index = htons(0x0000);
   // Set locale identifier to "en-US" (null-terminated, rest filled with zeros)
-  const char* locale = "en-US";
-  strncpy((char*)response.descriptor.locale_identifier, locale, sizeof(response.descriptor.locale_identifier));
+  strncpy((char*)response.descriptor.locale_identifier, CONFIG_LOCALE_IDENTIFIER,
+          sizeof(response.descriptor.locale_identifier));
 
   // Number of STRINGS descriptors (3 as requested)
   response.descriptor.number_of_strings = htons(3);
@@ -968,11 +960,9 @@ void handle_aem_read_desc_clock_domain(struct avtp_state_s* state, struct aecp_d
   resp.descriptor.descriptor_index = htons(0x0000);
 
   // Set object name
-  const char* name = "Internal Clock Domain";
-  strncpy((char*)resp.descriptor.object_name, name, sizeof(resp.descriptor.object_name));
+  strncpy((char*)resp.descriptor.object_name, CONFIG_CLOCK_DOMAIN_NAME, sizeof(resp.descriptor.object_name));
 
-  // Localized description (0xFFFF = no localized description)
-  resp.descriptor.localized_description = htons(0xFFFF);
+  resp.descriptor.localized_description = htons(0x2);
 
   // Current clock source index (0 = internal clock source)
   resp.descriptor.clock_source_index = htons(0);
@@ -1021,9 +1011,9 @@ void handle_aem_read_desc_strings(struct avtp_state_s* state, struct aecp_data_u
   {
     u16 descriptor_type; // 0x000D (AEM_DESC_TYPE_STRINGS)
     u16 descriptor_index; // Index of this descriptor
-    u8 string_0[64]; // First string (HAW Kiel)
-    u8 string_1[64]; // Second string (ESP32-P4)
-    u8 string_2[64]; // Third string (Internal)
+    u8 string_0[64]; // First string (vendor name from CONFIG_VENDOR_NAME)
+    u8 string_1[64]; // Second string (model name from CONFIG_MODEL_NAME)
+    u8 string_2[64]; // Third string (clock source name from CONFIG_CLOCK_SOURCE_NAME)
     u8 string_3[64]; // Fourth string (empty)
     u8 string_4[64]; // Fifth string (empty)
     u8 string_5[64]; // Sixth string (empty)
@@ -1072,20 +1062,18 @@ void handle_aem_read_desc_strings(struct avtp_state_s* state, struct aecp_data_u
   resp.descriptor.descriptor_type = htons(AEM_DESC_TYPE_STRINGS);
   resp.descriptor.descriptor_index = read_desc_cmd->descriptor_index; // Echo the requested index
 
-  // Set string_0 to "HAW Kiel"
-  const char* string_0 = "HAW Kiel";
-  strncpy((char*)resp.descriptor.string_0, string_0, sizeof(resp.descriptor.string_0));
+  // Set string_0 to vendor name
+  strncpy((char*)resp.descriptor.string_0, CONFIG_VENDOR_NAME, sizeof(resp.descriptor.string_0));
 
-  // Set string_1 to "ESP32-P4"
-  const char* string_1 = "ESP32-P4";
-  strncpy((char*)resp.descriptor.string_1, string_1, sizeof(resp.descriptor.string_1));
+  // Set string_1 to model name
+  strncpy((char*)resp.descriptor.string_1, CONFIG_MODEL_NAME, sizeof(resp.descriptor.string_1));
 
-  const char* string_2 = "Internal";
-  strncpy((char*)resp.descriptor.string_2, string_2, sizeof(resp.descriptor.string_2));
+  // Set string_2 to clock source name
+  strncpy((char*)resp.descriptor.string_2, CONFIG_CLOCK_SOURCE_NAME, sizeof(resp.descriptor.string_2));
   // string_3 through string_6 remain zero-filled (empty strings)
 
   ESP_LOGI(TAG, "Sending STRINGS descriptor [%d]: string_0='%s', string_1='%s'",
-           ntohs(read_desc_cmd->descriptor_index), string_0, string_1);
+           ntohs(read_desc_cmd->descriptor_index), CONFIG_VENDOR_NAME, CONFIG_MODEL_NAME);
 
   /* Send the response */
   ssize_t written = write(state->socket, &resp, sizeof(resp));
