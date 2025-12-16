@@ -1333,6 +1333,151 @@ void handle_acm_get_stream_format(struct avtp_state_s* s_state, struct aecp_get_
   }
 }
 
+void handle_acm_acquire_entity(struct avtp_state_s* state, struct aecp_data_unit_s* msg, ssize_t len)
+{
+  ESP_LOGI(TAG, "Received AECP ACQUIRE_ENTITY Command");
+
+  if (state == NULL || state->socket < 0)
+  {
+    ESP_LOGE(TAG, "Socket not ready to send AECP response");
+    return;
+  }
+
+  /* Parse the ACQUIRE_ENTITY command payload */
+  struct aecp_acquire_entity_s* cmd = (struct aecp_acquire_entity_s*)(msg + 1);
+  u32 flags = ntohl(cmd->flags);
+  u16 descriptor_type = ntohs(cmd->descriptor_type);
+  u16 descriptor_index = ntohs(cmd->descriptor_index);
+  u64 controller_id = ntohll(msg->controller_entity_id);
+
+  ESP_LOGI(TAG, "ACQUIRE_ENTITY: flags=0x%08lX, desc_type=0x%04X, desc_index=%d, controller=0x%016llX",
+           (unsigned long)flags, descriptor_type, descriptor_index, (unsigned long long)controller_id);
+
+  /* Response structure */
+  struct aecp_acquire_entity_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    struct aecp_acquire_entity_s payload;
+  } __attribute__((packed));
+
+  struct aecp_acquire_entity_response_s resp = {0};
+
+  /* Copy and swap Ethernet header */
+  memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
+  resp.aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
+  resp.aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+
+  /* AECP header fields */
+  resp.aecp_header.subtype = AVTP_SUBTYPE_AECP;
+  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+  resp.aecp_header.version = 0;
+  resp.aecp_header.h = 0;
+
+  resp.aecp_header.target_entity_id = msg->target_entity_id;
+  resp.aecp_header.controller_entity_id = msg->controller_entity_id;
+  resp.aecp_header.sequence_id = msg->sequence_id;
+  resp.aecp_header.command_type = htons(ACM_COMMAND_TYPE_ACQUIRE_ENTITY);
+
+  /* Response payload - echo back the descriptor type and index */
+  resp.payload.descriptor_type = cmd->descriptor_type;
+  resp.payload.descriptor_index = cmd->descriptor_index;
+
+  u8 status = AECP_AEM_STATUS_SUCCESS;
+
+  /* Only support acquiring the ENTITY descriptor (type 0x0000, index 0x0000) */
+  if (descriptor_type != AEM_DESC_TYPE_ENTITY || descriptor_index != 0)
+  {
+    ESP_LOGW(TAG, "ACQUIRE_ENTITY: Unsupported descriptor type/index");
+    status = AECP_AEM_STATUS_NOT_SUPPORTED;
+    resp.payload.flags = cmd->flags;
+    resp.payload.owner_entity_id = htonll(state->acquired_by_controller_id);
+  }
+  else if (flags & AECP_ACQUIRE_FLAG_RELEASE)
+  {
+    /* Release request */
+    if (state->acquired_by_controller_id == 0)
+    {
+      /* Not currently acquired - success (nothing to release) */
+      ESP_LOGI(TAG, "ACQUIRE_ENTITY: Release requested but entity not acquired");
+      status = AECP_AEM_STATUS_SUCCESS;
+      resp.payload.flags = 0;
+      resp.payload.owner_entity_id = 0;
+    }
+    else if (state->acquired_by_controller_id == controller_id)
+    {
+      /* Releasing controller is the owner - release it */
+      ESP_LOGI(TAG, "ACQUIRE_ENTITY: Releasing entity from controller 0x%016llX",
+               (unsigned long long)controller_id);
+      state->acquired_by_controller_id = 0;
+      state->acquire_persistent = false;
+      status = AECP_AEM_STATUS_SUCCESS;
+      resp.payload.flags = 0;
+      resp.payload.owner_entity_id = 0;
+    }
+    else
+    {
+      /* Different controller trying to release - not authorized */
+      ESP_LOGW(TAG, "ACQUIRE_ENTITY: Release denied - owned by different controller 0x%016llX",
+               (unsigned long long)state->acquired_by_controller_id);
+      status = AECP_AEM_STATUS_ENTITY_ACQUIRED;
+      resp.payload.flags = state->acquire_persistent ? htonl(AECP_ACQUIRE_FLAG_PERSISTENT) : 0;
+      resp.payload.owner_entity_id = htonll(state->acquired_by_controller_id);
+    }
+  }
+  else
+  {
+    /* Acquire request */
+    if (state->acquired_by_controller_id == 0)
+    {
+      /* Not currently acquired - acquire it */
+      ESP_LOGI(TAG, "ACQUIRE_ENTITY: Acquired by controller 0x%016llX",
+               (unsigned long long)controller_id);
+      state->acquired_by_controller_id = controller_id;
+      state->acquire_persistent = (flags & AECP_ACQUIRE_FLAG_PERSISTENT) != 0;
+      status = AECP_AEM_STATUS_SUCCESS;
+      resp.payload.flags = cmd->flags;
+      resp.payload.owner_entity_id = htonll(controller_id);
+    }
+    else if (state->acquired_by_controller_id == controller_id)
+    {
+      /* Same controller re-acquiring - success, update persistent flag */
+      ESP_LOGI(TAG, "ACQUIRE_ENTITY: Re-acquired by same controller 0x%016llX",
+               (unsigned long long)controller_id);
+      state->acquire_persistent = (flags & AECP_ACQUIRE_FLAG_PERSISTENT) != 0;
+      status = AECP_AEM_STATUS_SUCCESS;
+      resp.payload.flags = cmd->flags;
+      resp.payload.owner_entity_id = htonll(controller_id);
+    }
+    else
+    {
+      /* Different controller already owns it */
+      ESP_LOGW(TAG, "ACQUIRE_ENTITY: Already acquired by controller 0x%016llX",
+               (unsigned long long)state->acquired_by_controller_id);
+      status = AECP_AEM_STATUS_ENTITY_ACQUIRED;
+      resp.payload.flags = state->acquire_persistent ? htonl(AECP_ACQUIRE_FLAG_PERSISTENT) : 0;
+      resp.payload.owner_entity_id = htonll(state->acquired_by_controller_id);
+    }
+  }
+
+  /* Set control_data_length and status */
+  u16 cdl = sizeof(struct aecp_acquire_entity_s) + 12;
+  /* payload + target_entity_id(8) + controller_entity_id(8) - already in header calc */
+  AECP_SET_CTRL_DATA_STATUS((&resp.aecp_header), status, cdl);
+
+  /* Send the response */
+  ssize_t written = write(state->socket, &resp, sizeof(resp));
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send ACQUIRE_ENTITY response: %d", errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent AECP ACQUIRE_ENTITY Response (status=%d, owner=0x%016llX)",
+             status, (unsigned long long)ntohll(resp.payload.owner_entity_id));
+  }
+}
+
 int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
 {
   if (msg == NULL || len < sizeof(struct aecp_data_unit_s))
@@ -1356,7 +1501,7 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
   switch (command_type)
   {
   case ACM_COMMAND_TYPE_ACQUIRE_ENTITY:
-    ESP_LOGI(TAG, "Received AECP ACM Acquire Entity Command");
+    handle_acm_acquire_entity(s_state, msg, len);
     break;
   case ACM_COMMAND_TYPE_READ_DESCRIPTOR:
     handle_aecp_aem_read_desc_cmd(s_state, msg, len);

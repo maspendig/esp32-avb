@@ -163,6 +163,10 @@ struct avtp_state_s
 
   /* MVRP state for VLAN registration */
   mvrp_state_t mvrp;
+
+  /* AECP entity acquisition state (IEEE 1722.1-2021, 7.4.1) */
+  uint64_t acquired_by_controller_id; /* Entity ID of controller that acquired us (0 = not acquired) */
+  bool acquire_persistent; /* Whether the acquisition is persistent */
 };
 
 int start_avtp_listener(const char* interface);

@@ -16,7 +16,27 @@
 #define AECP_MSG_TYPE_VENDOR_UNIQUE_COMMAND 0x6
 
 #define ACM_COMMAND_TYPE_ACQUIRE_ENTITY 0x0000
+#define ACM_COMMAND_TYPE_LOCK_ENTITY 0x0001
 #define ACM_COMMAND_TYPE_READ_DESCRIPTOR 0x0004
+
+/* AECP AEM Status codes (IEEE 1722.1-2021, Table 7.126) */
+#define AECP_AEM_STATUS_SUCCESS                     0x00
+#define AECP_AEM_STATUS_NOT_IMPLEMENTED             0x01
+#define AECP_AEM_STATUS_NO_SUCH_DESCRIPTOR          0x02
+#define AECP_AEM_STATUS_ENTITY_LOCKED               0x03
+#define AECP_AEM_STATUS_ENTITY_ACQUIRED             0x04
+#define AECP_AEM_STATUS_NOT_AUTHENTICATED           0x05
+#define AECP_AEM_STATUS_AUTHENTICATION_DISABLED     0x06
+#define AECP_AEM_STATUS_BAD_ARGUMENTS               0x07
+#define AECP_AEM_STATUS_NO_RESOURCES                0x08
+#define AECP_AEM_STATUS_IN_PROGRESS                 0x09
+#define AECP_AEM_STATUS_ENTITY_MISBEHAVING          0x0A
+#define AECP_AEM_STATUS_NOT_SUPPORTED               0x0B
+#define AECP_AEM_STATUS_STREAM_IS_RUNNING           0x0C
+
+/* ACQUIRE_ENTITY command flags (IEEE 1722.1-2021, 7.4.1) */
+#define AECP_ACQUIRE_FLAG_PERSISTENT                0x00000001
+#define AECP_ACQUIRE_FLAG_RELEASE                   0x80000000
 #define ACM_COMMAND_TYPE_GET_STREAM_FORMAT 0x0009
 #define ACM_COMMAND_TYPE_GET_SAMPLING_RATE 0x0015
 #define ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION 0x0024
@@ -239,6 +259,15 @@ struct aecp_aem_read_desc_cmd
   u16 reserved;
   u16 descriptor_type;
   u16 descriptor_index;
+} __attribute__((packed));
+
+/* ACQUIRE_ENTITY command/response payload (IEEE 1722.1-2021, 7.4.1) */
+struct aecp_acquire_entity_s
+{
+  u32 flags; /* AECP_ACQUIRE_FLAG_* */
+  u64 owner_entity_id; /* Entity ID of current owner (0 if not acquired) */
+  u16 descriptor_type; /* Descriptor type to acquire (typically 0x0000 for ENTITY) */
+  u16 descriptor_index; /* Descriptor index to acquire (typically 0x0000) */
 } __attribute__((packed));
 
 struct aecp_data_unit_s
