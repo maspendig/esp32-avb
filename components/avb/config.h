@@ -18,24 +18,59 @@
 #define CONFIG_LOCALE_IDENTIFIER "en-US"
 
 #define CONFIG_SAMPLING_RATE 48000
+
+// Entity capabilities
 #define CONFIG_ENTITY_CAPABILITIES 0x0000C508
-#define CONFIG_TALKER_STREAM_SOURCES 8
-#define CONFIG_TALKER_CAPABILITIES 0x4001
-#define CONFIG_LISTENER_STREAM_SINKS 8
+
+// ----- Audio Configuration -----
+// Number of audio channels (stereo = 2)
+#define CONFIG_AUDIO_CHANNELS 2
+
+// Listener configuration (stream sink - receives audio)
+// This device has 1 stereo stream input
+#define CONFIG_NUM_STREAM_INPUTS 1
+#define CONFIG_LISTENER_STREAM_SINKS 1
 #define CONFIG_LISTENER_CAPABILITIES 0x4001
+
+// Talker configuration (stream source - sends audio)
+// This device has 1 stereo stream output (if acting as talker)
+#define CONFIG_NUM_STREAM_OUTPUTS 1
+#define CONFIG_TALKER_STREAM_SOURCES 1
+#define CONFIG_TALKER_CAPABILITIES 0x4001
+
+// Stream port configuration
+// Each stream port has clusters that map audio channels
+// For stereo: 1 cluster with 2 channels OR 2 clusters with 1 channel each
+// Using 1 cluster with 2 channels (simpler)
+#define CONFIG_NUM_AUDIO_CLUSTERS 1
+#define CONFIG_CHANNELS_PER_CLUSTER CONFIG_AUDIO_CHANNELS
+
+// External ports represent physical I/O (e.g., speaker outputs, mic inputs)
+// For a listener device outputting stereo audio: 2 external output ports
+#define CONFIG_NUM_EXTERNAL_INPUT_PORTS 0
+#define CONFIG_NUM_EXTERNAL_OUTPUT_PORTS CONFIG_AUDIO_CHANNELS
+
+// Audio maps define channel routing between streams and clusters
+// For stereo: 2 mappings (one per channel)
+#define CONFIG_NUM_AUDIO_MAPS 1
+#define CONFIG_NUM_AUDIO_MAPPINGS CONFIG_AUDIO_CHANNELS
 
 #define CONFIG_CONTROLLER_CAPABILITIES 0x0000
 
 // TODO replace with MAAP handled MAC
 #define MAAP_MAC_ADDRESS (u8[6]){0x91, 0xE0, 0xF0, 0x00, 0xFE, 0x00}
 
+// Supported stream formats (AAF format)
+// Format: 0x00a0CCSSFNNNNNNN where CC=channels, SS=sample size, F=format, N=sample rate
+// 0x00a0020860000800 = 2ch, 24-bit, 48kHz
 static const u64 stream_formats[] = {
-  0x00a0020860000800,
-  0x00a0040860000800,
-  0x00a0060860000800,
+  0x00a0020860000800, // 2 channels, 24-bit, 48kHz (primary format for stereo)
 };
-// current stream format differs from above formats by having 0840 instead of 0860 - why?
-// 0x00a0020840000800,
+
+#define CONFIG_NUM_STREAM_FORMATS (sizeof(stream_formats) / sizeof(stream_formats[0]))
+
+// Current stream format (should match one of the supported formats)
+#define CONFIG_CURRENT_STREAM_FORMAT 0x00a0020840000800
 
 #endif //ETHERNET_PTP_CONFIG_H
 

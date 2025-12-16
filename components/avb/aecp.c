@@ -199,7 +199,7 @@ void handle_aem_read_desc_audio_map(struct avtp_state_s* s_state, struct aecp_da
 {
   ESP_LOGI(TAG, "Received ACM Read AUDIO_MAP Descriptor Request");
 
-  const size_t num_mappings = 8;
+  const size_t num_mappings = CONFIG_NUM_AUDIO_MAPPINGS;
 
   struct aecp_audio_map_response_s
   {
@@ -250,12 +250,14 @@ void handle_aem_read_desc_audio_map(struct avtp_state_s* s_state, struct aecp_da
   resp->audio_map_desc.mappings_offset = htons(8);
   resp->audio_map_desc.number_of_mappings = htons(num_mappings);
 
+  /* Map each stream channel to the cluster
+   * For stereo: channel 0 -> cluster 0 channel 0, channel 1 -> cluster 0 channel 1 */
   for (size_t i = 0; i < num_mappings; i++)
   {
-    resp->audio_map_desc.mappings[i].mapping_stream_index = htons(0);
-    resp->audio_map_desc.mappings[i].mapping_stream_channel = htons(i);
-    resp->audio_map_desc.mappings[i].mapping_cluster_offset = htons(i);
-    resp->audio_map_desc.mappings[i].mapping_cluster_channel = htons(0);
+    resp->audio_map_desc.mappings[i].mapping_stream_index = htons(0); // Stream index 0
+    resp->audio_map_desc.mappings[i].mapping_stream_channel = htons(i); // Stream channel i
+    resp->audio_map_desc.mappings[i].mapping_cluster_offset = htons(0); // Cluster 0 (single cluster)
+    resp->audio_map_desc.mappings[i].mapping_cluster_channel = htons(i); // Cluster channel i
   }
 
 
@@ -316,9 +318,9 @@ void handle_aem_read_desc_stream_port_input(struct avtp_state_s* s_state, struct
   resp.stream_port_desc.port_flags = htons(0);
   resp.stream_port_desc.number_of_controls = htons(0);
   resp.stream_port_desc.base_control = htons(0);
-  resp.stream_port_desc.number_of_clusters = htons(8);
+  resp.stream_port_desc.number_of_clusters = htons(CONFIG_NUM_AUDIO_CLUSTERS);
   resp.stream_port_desc.base_cluster = htons(0);
-  resp.stream_port_desc.number_of_maps = htons(1);
+  resp.stream_port_desc.number_of_maps = htons(CONFIG_NUM_AUDIO_MAPS);
   resp.stream_port_desc.base_map = htons(0);
 
 
@@ -377,10 +379,10 @@ void handle_aem_read_desc_stream_port_output(struct avtp_state_s* s_state, struc
   resp.stream_port_desc.port_flags = htons(1);
   resp.stream_port_desc.number_of_controls = htons(0);
   resp.stream_port_desc.base_control = htons(0);
-  resp.stream_port_desc.number_of_clusters = htons(8);
+  resp.stream_port_desc.number_of_clusters = htons(CONFIG_NUM_AUDIO_CLUSTERS);
   resp.stream_port_desc.base_cluster = htons(0);
-  resp.stream_port_desc.number_of_maps = htons(1);
-  resp.stream_port_desc.base_map = htons(1);
+  resp.stream_port_desc.number_of_maps = htons(CONFIG_NUM_AUDIO_MAPS);
+  resp.stream_port_desc.base_map = htons(CONFIG_NUM_AUDIO_MAPS); // Output map starts after input map
 
   /* Send the response */
   ssize_t written = write(s_state->socket, &resp, sizeof(resp));
@@ -398,8 +400,7 @@ void handle_aem_read_desc_stream_output(struct avtp_state_s* s_state, struct aec
 {
   ESP_LOGI(TAG, "Received ACM Read STREAM_OUTPUT Descriptor Request");
 
-
-  const size_t num_formats = sizeof(stream_formats) / sizeof(stream_formats[0]);
+  const size_t num_formats = CONFIG_NUM_STREAM_FORMATS;
 
   struct aecp_stream_input_response_s
   {
@@ -446,9 +447,9 @@ void handle_aem_read_desc_stream_output(struct avtp_state_s* s_state, struct aec
   resp->stream_output_desc.localized_description = htons(0);
   resp->stream_output_desc.clock_domain_index = htons(0);
   resp->stream_output_desc.stream_flags = htons(0x0002); // clock_sync_source
-  resp->stream_output_desc.current_format = htonll(0x00a0020840000800);
-  resp->stream_output_desc.formats_offset = htons(0);
-  resp->stream_output_desc.number_of_formats = htons(1);
+  resp->stream_output_desc.current_format = htonll(CONFIG_CURRENT_STREAM_FORMAT);
+  resp->stream_output_desc.formats_offset = htons(offsetof(struct acm_desc_stream_s, formats));
+  resp->stream_output_desc.number_of_formats = htons(num_formats);
   resp->stream_output_desc.backup_talker_entity_id_0 = htonll(0);
   resp->stream_output_desc.backup_talker_unique_id_0 = htons(0);
   resp->stream_output_desc.backup_talker_entity_id_1 = htonll(0);
@@ -481,7 +482,7 @@ void handle_aem_read_desc_stream_input(struct avtp_state_s* s_state, struct aecp
 {
   ESP_LOGI(TAG, "Received ACM Read STREAM_INPUT Descriptor Request");
 
-  const size_t num_formats = sizeof(stream_formats) / sizeof(stream_formats[0]);
+  const size_t num_formats = CONFIG_NUM_STREAM_FORMATS;
 
   struct aecp_stream_input_response_s
   {
@@ -529,8 +530,8 @@ void handle_aem_read_desc_stream_input(struct avtp_state_s* s_state, struct aecp
   strncpy((char*)resp->stream_input_desc.object_name, "Stream 1", sizeof(resp->stream_input_desc.object_name));
   resp->stream_input_desc.localized_description = htons(0);
   resp->stream_input_desc.clock_domain_index = htons(0);
-  resp->stream_input_desc.stream_flags = htons(0x0003); // clock_sync_source | clock a flag
-  resp->stream_input_desc.current_format = htonll(0x00a0020840000800);
+  resp->stream_input_desc.stream_flags = htons(0x0003); // clock_sync_source | class_a
+  resp->stream_input_desc.current_format = htonll(CONFIG_CURRENT_STREAM_FORMAT);
   resp->stream_input_desc.formats_offset = htons(offsetof(struct acm_desc_stream_s, formats));
   resp->stream_input_desc.number_of_formats = htons(num_formats);
   resp->stream_input_desc.backup_talker_entity_id_0 = htonll(0);
@@ -609,10 +610,10 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   resp.audio_unit_desc.descriptor_index = 0;
   memset(resp.audio_unit_desc.object_name, 0, sizeof(resp.audio_unit_desc.object_name));
   resp.audio_unit_desc.localized_description = htons(0xFFFF);
-  resp.audio_unit_desc.number_of_stream_input_ports = htons(1);
-  resp.audio_unit_desc.number_of_stream_output_ports = htons(1);
-  resp.audio_unit_desc.number_of_external_input_ports = htons(CONFIG_LISTENER_STREAM_SINKS);
-  resp.audio_unit_desc.number_of_external_output_ports = htons(CONFIG_TALKER_STREAM_SOURCES);
+  resp.audio_unit_desc.number_of_stream_input_ports = htons(CONFIG_NUM_STREAM_INPUTS);
+  resp.audio_unit_desc.number_of_stream_output_ports = htons(CONFIG_NUM_STREAM_OUTPUTS);
+  resp.audio_unit_desc.number_of_external_input_ports = htons(CONFIG_NUM_EXTERNAL_INPUT_PORTS);
+  resp.audio_unit_desc.number_of_external_output_ports = htons(CONFIG_NUM_EXTERNAL_OUTPUT_PORTS);
   resp.audio_unit_desc.current_sampling_rate = htonl(CONFIG_SAMPLING_RATE);
   resp.audio_unit_desc.sampling_rates_count = htons(1);
   resp.audio_unit_desc.sampling_rates_offset = htons(144);
@@ -662,11 +663,11 @@ void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aec
   memset(resp.audio_cluster_desc.object_name, 0, sizeof(resp.audio_cluster_desc.object_name));
   resp.audio_cluster_desc.localized_description = htons(0xFFFF);
   resp.audio_cluster_desc.signal_type = htons(0xFFFF);
-  resp.audio_cluster_desc.signal_index = htons(msg->descriptor_index % 8);
+  resp.audio_cluster_desc.signal_index = htons(0);
   resp.audio_cluster_desc.signal_output = htons(0);
   resp.audio_cluster_desc.path_latency = htonl(0);
   resp.audio_cluster_desc.block_latency = htonl(0);
-  resp.audio_cluster_desc.channel_count = htons(1);
+  resp.audio_cluster_desc.channel_count = htons(CONFIG_CHANNELS_PER_CLUSTER);
   resp.audio_cluster_desc.format = 0x40; // MBLA IEEE1722.1 p.86
 
   /* Send the response */
@@ -1318,7 +1319,7 @@ void handle_acm_get_stream_format(struct avtp_state_s* s_state, struct aecp_get_
   /* Fill GET_STREAM_FORMAT descriptor */
   resp.descriptor_type = msg->descriptor_type;
   resp.descriptor_index = msg->descriptor_index;
-  resp.stream_format = htonll(0x00a0020804000800); // 61883-6 48kHz 2ch 24bit
+  resp.stream_format = htonll(CONFIG_CURRENT_STREAM_FORMAT);
 
 
   /* Send the response */
