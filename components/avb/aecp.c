@@ -110,7 +110,7 @@ void handle_aem_read_configuration(struct avtp_state_s* s_state, struct aecp_dat
   } __attribute__((packed));
 
   // Define the number of descriptor types
-  const size_t num_desc_types = 8;
+  const size_t num_desc_types = 6;
 
   // Calculate total response size
   const size_t response_size = sizeof(struct aecp_data_unit_s) +
@@ -167,18 +167,16 @@ void handle_aem_read_configuration(struct avtp_state_s* s_state, struct aecp_dat
   resp->config_desc.descriptor_counts[0].count = htons(1);
   resp->config_desc.descriptor_counts[1].descriptor_type = htons(AEM_DESC_TYPE_STREAM_INPUT);
   resp->config_desc.descriptor_counts[1].count = htons(1);
-  resp->config_desc.descriptor_counts[2].descriptor_type = htons(AEM_DESC_TYPE_STREAM_OUTPUT);
+  //  resp->config_desc.descriptor_counts[2].descriptor_type = htons(AEM_DESC_TYPE_STREAM_OUTPUT);
+  //  resp->config_desc.descriptor_counts[2].count = htons(1);
+  resp->config_desc.descriptor_counts[2].descriptor_type = htons(AEM_DESC_TYPE_AVB_INTERFACE);
   resp->config_desc.descriptor_counts[2].count = htons(1);
-  resp->config_desc.descriptor_counts[3].descriptor_type = htons(AEM_DESC_TYPE_AVB_INTERFACE);
+  resp->config_desc.descriptor_counts[3].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_SOURCE);
   resp->config_desc.descriptor_counts[3].count = htons(1);
-  resp->config_desc.descriptor_counts[4].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_SOURCE);
+  resp->config_desc.descriptor_counts[4].descriptor_type = htons(AEM_DESC_TYPE_LOCALE);
   resp->config_desc.descriptor_counts[4].count = htons(1);
-  resp->config_desc.descriptor_counts[5].descriptor_type = htons(AEM_DESC_TYPE_LOCALE);
+  resp->config_desc.descriptor_counts[5].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
   resp->config_desc.descriptor_counts[5].count = htons(1);
-  resp->config_desc.descriptor_counts[6].descriptor_type = htons(AEM_DESC_TYPE_STRINGS);
-  resp->config_desc.descriptor_counts[6].count = htons(1);
-  resp->config_desc.descriptor_counts[7].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
-  resp->config_desc.descriptor_counts[7].count = htons(1);
 
   // Send configuration descriptor response
   ssize_t written = write(s_state->socket, resp, response_size);
@@ -546,7 +544,7 @@ void handle_aem_read_desc_stream_input(struct avtp_state_s* s_state, struct aecp
   // FIXME The length in nanoseconds of the MAC’s ingress buffer as defined in IEEE Std 17222016 Figure 5.
   // For a STREAM_INPUT this is the MAC’s ingress buffer size
   // This is the length of the buffer between the IEEE Std 17222016 reference plane and the MAC.
-  resp->stream_input_desc.buffer_length = htonl(8);
+  resp->stream_input_desc.buffer_length = htonl(2048);
 
   for (size_t i = 0; i < num_formats; ++i)
   {
@@ -662,7 +660,7 @@ void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aec
   resp.audio_cluster_desc.descriptor_index = msg->descriptor_index;
   memset(resp.audio_cluster_desc.object_name, 0, sizeof(resp.audio_cluster_desc.object_name));
   resp.audio_cluster_desc.localized_description = htons(0xFFFF);
-  resp.audio_cluster_desc.signal_type = htons(0xFFFF);
+  resp.audio_cluster_desc.signal_type = htons(AEM_DESC_TYPE_AUDIO_UNIT);
   resp.audio_cluster_desc.signal_index = htons(0);
   resp.audio_cluster_desc.signal_output = htons(0);
   resp.audio_cluster_desc.path_latency = htonl(0);
@@ -877,8 +875,8 @@ void hande_aem_read_desc_locale(struct avtp_state_s* state, struct aecp_data_uni
   strncpy((char*)response.descriptor.locale_identifier, CONFIG_LOCALE_IDENTIFIER,
           sizeof(response.descriptor.locale_identifier));
 
-  // Number of STRINGS descriptors (3 as requested)
-  response.descriptor.number_of_strings = htons(3);
+  // Misleading: not the number of locale_strings, but descriptors of type STRINGS (currently only 1 with 3 strings in it)
+  response.descriptor.number_of_strings = htons(1);
 
   // Base STRINGS descriptor index (typically 0)
   response.descriptor.base_strings = htons(0);

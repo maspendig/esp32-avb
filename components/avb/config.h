@@ -35,8 +35,12 @@
 // Talker configuration (stream source - sends audio)
 // This device has 1 stereo stream output (if acting as talker)
 #define CONFIG_NUM_STREAM_OUTPUTS 1
-#define CONFIG_TALKER_STREAM_SOURCES 1
-#define CONFIG_TALKER_CAPABILITIES 0x4001
+
+// #define CONFIG_TALKER_STREAM_SOURCES 1
+// #define CONFIG_TALKER_CAPABILITIES 0x4001
+
+#define CONFIG_TALKER_STREAM_SOURCES 0
+#define CONFIG_TALKER_CAPABILITIES 0x0000
 
 // Stream port configuration
 // Each stream port has clusters that map audio channels
