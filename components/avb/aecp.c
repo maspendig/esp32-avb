@@ -21,7 +21,7 @@ void send_aecp_msg(const struct avtp_state_s* state, void* buf, const ssize_t le
   {
     type = "Response";
   }
-  const char* desc_type_str = aem_desc_type_to_string(msg->descriptor_type);
+  const char* desc_type_str = aem_desc_type_to_string(ntohs(msg->descriptor_type));
   if (written < 0)
   {
     ESP_LOGE(TAG, "Failed to send %s Descriptor %s: %d", desc_type_str, type, errno);
@@ -109,7 +109,7 @@ void handle_aem_read_configuration(struct avtp_state_s* s_state, struct aecp_dat
   const size_t num_desc_types = 6;
 
   // Calculate total response size
-  const size_t response_size = sizeof(struct aecp_data_unit_s) +
+  const ssize_t response_size = sizeof(struct aecp_data_unit_s) +
     sizeof(uint16_t) * 2 + // configuration_index + reserved
     sizeof(struct config_desc_s) +
     num_desc_types * sizeof(struct desc_count_s);
@@ -175,16 +175,7 @@ void handle_aem_read_configuration(struct avtp_state_s* s_state, struct aecp_dat
   resp->config_desc.descriptor_counts[5].count = htons(1);
 
   // Send configuration descriptor response
-  ssize_t written = write(s_state->socket, resp, response_size);
-  if (written < 0)
-  {
-    ESP_LOGE(TAG, "Failed to send CONFIGURATION descriptor response: %d", errno);
-  }
-  else
-  {
-    ESP_LOGI(TAG, "Sent AECP Configuration Descriptor Response (%zd bytes)", written);
-  }
-
+  send_aecp_msg(s_state, resp, response_size);
   // Free allocated memory
   free(resp);
 }

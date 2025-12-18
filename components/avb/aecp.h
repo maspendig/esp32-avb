@@ -100,7 +100,7 @@ static const char* aem_desc_type_to_string(u16 desc_type)
   case AEM_DESC_TYPE_CLOCK_DOMAIN:
     return "CLOCK_DOMAIN";
   default:
-    return "UNKNOWN_DESCRIPTOR";
+    return "UNKNOWN";
   }
 }
 
