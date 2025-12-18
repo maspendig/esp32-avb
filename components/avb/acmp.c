@@ -25,7 +25,7 @@ void eui48_from_uint64(uint8_t* mac[6], uint64_t other)
   *mac[5] = (uint8_t)((other >> (0 * 8)) & 0xff);
 }
 
-void acmp_set_common_header(struct avtp_state_s* state, struct acmp_du_s* msg, uint8_t msg_type, uint16_t length,
+void acmp_set_common_header(struct avtp_state_s* state, struct acmp_common_s* msg, uint8_t msg_type, uint16_t length,
                             uint8_t status)
 {
   /* Set Ethernet header */
@@ -43,7 +43,7 @@ void acmp_set_common_header(struct avtp_state_s* state, struct acmp_du_s* msg, u
   ACMP_SET_CTRL_DATA_STATUS(msg, status, length);
 }
 
-void acmp_set_common_du(struct avtp_state_s* state, struct acmp_du_s* msg)
+void acmp_set_common_du(struct avtp_state_s* state, struct acmp_common_s* msg)
 {
   msg->controller_entity_id = htonll(state->entity_id);
   msg->talker_unique_id = htons(0);
@@ -74,7 +74,7 @@ int send_acmp_connect_tx_command(struct avtp_state_s* state, uint8_t msg_type)
            state->adp_entities[0].mac[2], state->adp_entities[0].mac[3],
            state->adp_entities[0].mac[4], state->adp_entities[0].mac[5],
            (unsigned long long)state->adp_entities[0].entity_id);
-  struct acmp_du_s msg = {0};
+  struct acmp_common_s msg = {0};
 
   acmp_set_common_header(state, &msg, msg_type, 44, 0);
   acmp_set_common_du(state, &msg);
@@ -94,7 +94,7 @@ int send_acmp_connect_tx_command(struct avtp_state_s* state, uint8_t msg_type)
 // TODO msrp send talker advertise after connect rx command sent
 int send_acmp_connect_rx_command(struct avtp_state_s* state, uint8_t msg_type)
 {
-  struct acmp_du_s msg = {0};
+  struct acmp_common_s msg = {0};
 
   acmp_set_common_header(state, &msg, msg_type, 44, 0);
   acmp_set_common_du(state, &msg);
@@ -121,7 +121,7 @@ int send_acmp_connect_rx_command(struct avtp_state_s* state, uint8_t msg_type)
  * contains information about streamId and destination MAC
  * initiates the SRP listener registration
  */
-void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
+void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_common_s* msg)
 {
   if (state->entity_id != htonll(msg->listener_entity_id))
   {
@@ -130,6 +130,9 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_
              state->entity_id);
     return;
   }
+
+  struct acmp_common_s resp = {0};
+  acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_RX_RESPONSE, 44, ACMP_STATUS_SUCCESS);
 
   const int status = ACMP_GET_STATUS(msg);
   /* Check status */
@@ -147,6 +150,7 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_
 
   if (listener_unique_id < MAX_LISTENER_STREAMS)
   {
+    // TODO check need! most of the fields are already been set on connect_rx_command...
     struct listener_stream_info_s* listenerInfo = &state->listener_stream_infos[listener_unique_id];
     listenerInfo->pending_connection = false;
     listenerInfo->connected = true;
@@ -154,9 +158,12 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_
     memcpy(listenerInfo->stream_dest_mac, msg->stream_dest_mac, sizeof(listenerInfo->stream_dest_mac));
     listenerInfo->controller_entity_id = ntohll(msg->controller_entity_id);
     listenerInfo->flags = ntohs(msg->flags);
-    listenerInfo->stream_vlan_id = ntohs(msg->stream_vlan_id);
+    // Apple always sends VLAN ID 0 in the Connect TX Response, but we use VLAN 2 always - like motu
+    listenerInfo->stream_vlan_id = ntohs(2);
     listenerInfo->talker_unique_id = ntohs(msg->talker_unique_id);
     listenerInfo->talker_entity_id = ntohll(msg->talker_entity_id);
+
+    resp.sequence_id = htons(listenerInfo->sequence_id);
 
     /* Join the MSRP stream reservation as a listener */
     msrp_listener_join(state, listenerInfo->stream_id);
@@ -170,10 +177,7 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_
              listener_unique_id, MAX_LISTENER_STREAMS);
   }
 
-  // Send CONNECT_RX_RESPONSE message
-  struct acmp_du_s resp = {0};
 
-  acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_RX_RESPONSE, 44, ACMP_STATUS_SUCCESS);
   // Copy relevant fields from the TX response
   resp.stream_id = msg->stream_id;
   resp.controller_entity_id = msg->controller_entity_id;
@@ -183,7 +187,6 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_
   resp.listener_unique_id = msg->listener_unique_id;
   memcpy(resp.stream_dest_mac, msg->stream_dest_mac, sizeof(resp.stream_dest_mac));
   resp.connection_count = msg->connection_count;
-  resp.sequence_id = msg->sequence_id;
   resp.flags = msg->flags;
   resp.stream_vlan_id = msg->stream_vlan_id;
 
@@ -199,9 +202,9 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_
   }
 }
 
-int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s* msg)
+int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_common_s* msg)
 {
-  struct acmp_du_s resp = {0};
+  struct acmp_common_s resp = {0};
 
   if (state->entity_id != htonll(msg->talker_entity_id))
   {
@@ -273,7 +276,7 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s*
   return ESP_OK;
 }
 
-int handle_acmp_connect_rx_command(struct avtp_state_s* state, struct acmp_du_s* msg)
+int handle_acmp_connect_rx_command(struct avtp_state_s* state, struct acmp_common_s* msg)
 {
   if (state->entity_id != htonll(msg->listener_entity_id))
   {
@@ -285,7 +288,7 @@ int handle_acmp_connect_rx_command(struct avtp_state_s* state, struct acmp_du_s*
 
   ESP_LOGI(TAG, "Received ACMP Connect RX Command");
 
-  struct acmp_du_s resp = {0};
+  struct acmp_common_s resp = {0};
 
   acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_TX_COMMAND, 44, 0);
 
@@ -298,8 +301,8 @@ int handle_acmp_connect_rx_command(struct avtp_state_s* state, struct acmp_du_s*
   resp.listener_unique_id = msg->listener_unique_id;
   memcpy(resp.stream_dest_mac, msg->stream_dest_mac, sizeof(resp.stream_dest_mac));
   resp.connection_count = msg->connection_count;
-  const u64 seq = state->acmp_sequence_id++;
-  resp.sequence_id = htonll(seq);
+  const u16 seq = state->acmp_sequence_id++;
+  resp.sequence_id = htons(seq);
   resp.flags = msg->flags;
   resp.stream_vlan_id = htons(0x0002);
 
@@ -315,6 +318,7 @@ int handle_acmp_connect_rx_command(struct avtp_state_s* state, struct acmp_du_s*
       listenerInfo->talker_entity_id = ntohll(resp.talker_entity_id);
       listenerInfo->talker_unique_id = ntohs(resp.talker_unique_id);
       listenerInfo->pending_connection = true;
+      listenerInfo->sequence_id = ntohs(msg->sequence_id);
 
       ESP_LOGI(TAG, "Saved listener stream info [%u]: talker_entity_id=0x%016llX, talker_unique_id=%u, pending=true",
                listener_unique_id,
@@ -331,7 +335,7 @@ int handle_acmp_connect_rx_command(struct avtp_state_s* state, struct acmp_du_s*
   return result;
 }
 
-int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
+int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_common_s* msg)
 {
   if (state->entity_id != htonll(msg->talker_entity_id))
   {
@@ -360,7 +364,7 @@ int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_du_s
 }
 
 /* We as a listener are asked by the talker about the listening state */
-void handle_acmp_get_rx_state_command(struct avtp_state_s* state, struct acmp_du_s* msg)
+void handle_acmp_get_rx_state_command(struct avtp_state_s* state, struct acmp_common_s* msg)
 {
   // check if we are the intended listener
   if (state->entity_id != htonll(msg->listener_entity_id))
@@ -373,7 +377,7 @@ void handle_acmp_get_rx_state_command(struct avtp_state_s* state, struct acmp_du
 
   ESP_LOGI(TAG, "Received ACMP Get RX State Command");
 
-  struct acmp_du_s resp = {0};
+  struct acmp_common_s resp = {0};
 
   acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_GET_RX_STATE_RESPONSE, 44, ACMP_STATUS_SUCCESS);
   acmp_set_common_du(state, &resp);
@@ -382,10 +386,11 @@ void handle_acmp_get_rx_state_command(struct avtp_state_s* state, struct acmp_du
   if (listener_unique_id < MAX_LISTENER_STREAMS)
   {
     struct listener_stream_info_s* info = &state->listener_stream_infos[listener_unique_id];
-    /* If an entry exists and is not pending, connection_count = 1, otherwise 0 */
-    resp.connection_count = htons(info->connected ? 0 : 1);
+
+    resp.connection_count = htons(info->connected ? 1 : 0);
     resp.stream_id = ntohll(info->stream_id);
-    resp.stream_vlan_id = ntohs(resp.stream_vlan_id);
+    // we always use VLAN ID 2, as the motu does
+    resp.stream_vlan_id = ntohs(2);
     memcpy(resp.stream_dest_mac, info->stream_dest_mac, sizeof(resp.stream_dest_mac));
 
     resp.talker_entity_id = ntohll(info->talker_entity_id);
@@ -415,7 +420,7 @@ void handle_acmp_get_rx_state_command(struct avtp_state_s* state, struct acmp_du
   }
 }
 
-void handle_acmp_disconnect_rx_command(struct avtp_state_s* state, struct acmp_du_s* msg)
+void handle_acmp_disconnect_rx_command(struct avtp_state_s* state, struct acmp_common_s* msg)
 {
   // remove listener stream info. if found and ok, return DISCONNECT_TX_COMMAND
   if (state->entity_id != htonll(msg->listener_entity_id))
@@ -428,13 +433,9 @@ void handle_acmp_disconnect_rx_command(struct avtp_state_s* state, struct acmp_d
 
   ESP_LOGI(TAG, "Received ACMP Disconnect RX Command");
 
-  state->listener_stream_infos[msg->listener_unique_id] = (struct listener_stream_info_s){0};
-  struct acmp_du_s resp = {0};
-  memcpy(&resp, msg, sizeof(struct acmp_du_s));
-  resp.message_type = ACMP_MSG_TYPE_DISCONNECT_TX_COMMAND;
-
-  memcpy(resp.header.dst_mac, msg->header.src_mac, sizeof(resp.stream_dest_mac));
-  memcpy(resp.header.src_mac, msg->header.dst_mac, sizeof(resp.stream_dest_mac));
+  struct acmp_common_s resp = {0};
+  acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_DISCONNECT_TX_COMMAND, 44, ACMP_STATUS_SUCCESS);
+  acmp_set_common_du(state, &resp);
 
   //send
   int result = send_msg(state->socket, &resp, sizeof(resp));
@@ -448,7 +449,7 @@ void handle_acmp_disconnect_rx_command(struct avtp_state_s* state, struct acmp_d
   }
 }
 
-void handle_acmp_disconnect_tx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
+void handle_acmp_disconnect_tx_response(struct avtp_state_s* state, struct acmp_common_s* msg)
 {
   // remove listener stream info. if found and ok, return DISCONNECT_TX_COMMAND
   if (state->entity_id != htonll(msg->listener_entity_id))
@@ -460,12 +461,16 @@ void handle_acmp_disconnect_tx_response(struct avtp_state_s* state, struct acmp_
   }
 
   ESP_LOGI(TAG, "Received ACMP Disconnect TX RESPONSE");
-  struct acmp_du_s resp = {0};
-  memcpy(&resp, msg, sizeof(struct acmp_du_s));
-  resp.message_type = ACMP_MSG_TYPE_DISCONNECT_RX_RESPONSE;
 
-  memcpy(resp.header.dst_mac, msg->header.src_mac, sizeof(resp.stream_dest_mac));
-  memcpy(resp.header.src_mac, msg->header.dst_mac, sizeof(resp.stream_dest_mac));
+  struct acmp_common_s resp = {0};
+  memcpy(&resp, msg, sizeof(struct acmp_common_s));
+
+  acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_DISCONNECT_RX_RESPONSE, 44, ACMP_STATUS_SUCCESS);
+  acmp_set_common_du(state, &resp);
+
+  // Clear listener stream info
+  state->listener_stream_infos[msg->listener_unique_id] = (struct listener_stream_info_s){0};
+  msrp_listener_leave(state, ntohll(msg->stream_id));
 
   //send
   int result = send_msg(state->socket, &resp, sizeof(resp));
@@ -479,7 +484,7 @@ void handle_acmp_disconnect_tx_response(struct avtp_state_s* state, struct acmp_
   }
 }
 
-void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)
+void acmp_net_rx(struct avtp_state_s* state, struct acmp_common_s* msg, ssize_t len)
 {
   switch (msg->message_type)
   {
@@ -489,6 +494,9 @@ void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)
   case ACMP_MSG_TYPE_CONNECT_TX_RESPONSE:
     handle_acmp_connect_tx_response(state, msg);
     break;
+  case ACMP_MSG_TYPE_CONNECT_RX_COMMAND:
+    handle_acmp_connect_rx_command(state, msg);
+    break;
   case ACMP_MSG_TYPE_CONNECT_RX_RESPONSE:
     handle_acmp_connect_rx_response(state, msg);
     break;
@@ -497,9 +505,6 @@ void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len)
     break;
   case ACMP_MSG_TYPE_GET_TX_STATE_RESPONSE:
     ESP_LOGW(TAG, "Received ACMP Get TX State Response - NOT IMPLEMENTED");
-    break;
-  case ACMP_MSG_TYPE_CONNECT_RX_COMMAND:
-    handle_acmp_connect_rx_command(state, msg);
     break;
   case ACMP_MSG_TYPE_DISCONNECT_RX_COMMAND:
     handle_acmp_disconnect_rx_command(state, msg);

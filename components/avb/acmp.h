@@ -33,6 +33,34 @@
 
 #define ACMP_MULTICAST_MAC (uint8_t[6]){0x91, 0xE0, 0xF0, 0x01, 0x00, 0x00} // for all messages in case of gPTP
 
+struct acmp_common_s
+{
+  struct header_s header;
+  u8 subtype;
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  u8 message_type : 4; // 4 bits
+  u8 version : 3; // 3 bits
+  u8 h : 1; // 1 bit (header specific)
+#else
+  u8 h : 1; // 1 bit (header specific)
+  u8 version : 3; // 3 bits
+  u8 message_type : 4; // 4 bits
+#endif
+  u16 control_data_len_status;
+  u64 stream_id;
+  u64 controller_entity_id;
+  u64 talker_entity_id;
+  u64 listener_entity_id;
+  u16 talker_unique_id;
+  u16 listener_unique_id;
+  u8 stream_dest_mac[6];
+  u16 connection_count;
+  u16 sequence_id;
+  u16 flags;
+  u16 stream_vlan_id;
+  u16 reserved;
+} __attribute__((packed));
+
 /* ATDECC Connection Management Protocol Data Unit */
 struct acmp_du_s
 {
@@ -81,5 +109,5 @@ struct avtp_state_s;
 
 int send_acmp_connect_rx_command(struct avtp_state_s* state, u8 msg_type);
 int send_acmp_connect_tx_command(struct avtp_state_s* state, u8 msg_type);
-void acmp_net_rx(struct avtp_state_s* state, struct acmp_du_s* msg, ssize_t len);
+void acmp_net_rx(struct avtp_state_s* state, struct acmp_common_s* msg, ssize_t len);
 #endif //ETHERNET_PTP_ACMP_H

@@ -455,7 +455,7 @@ static void avtp_control_task(void* arg)
   {
     struct avtp_discovery_msg_s adp;
     struct aecp_data_unit_s aecp;
-    struct acmp_du_s acmp;
+    struct acmp_common_s acmp;
     struct avtp_header_s header;
     u8 raw[1518];
   } buf;

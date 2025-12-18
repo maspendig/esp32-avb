@@ -107,6 +107,7 @@ struct listener_stream_info_s
   u64 talker_unique_id;
   bool connected;
   u64 stream_id;
+  u16 sequence_id;
   u8 stream_dest_mac[6];
   u64 controller_entity_id;
   u16 flags;
