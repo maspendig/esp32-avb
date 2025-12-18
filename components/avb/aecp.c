@@ -1348,6 +1348,16 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
   case ACM_COMMAND_TYPE_GET_STREAM_FORMAT:
     handle_acm_get_stream_format(s_state, (void*)msg);
     break;
+  case ACM_COMMAND_TYPE_ENTITY_AVAILABLE:
+    ESP_LOGW(TAG, "Received unimplemented AECP ACM ENTITY_AVAILABLE Command");
+    break;
+  case ACM_COMMAND_TYPE_GET_STREAM_INFO:
+    ESP_LOGW(TAG, "Received unimplemented AECP ACM GET_STREAM_INFO Command");
+    break;
+  case ACM_COMMAND_TYPE_GET_COUNTERS:
+    ESP_LOGW(TAG, "Received unimplemented AECP ACM GET_COUNTERS Command");
+    break;
+
   default:
     ESP_LOGW(TAG, "Received unimplemented AECP ACM Command type: 0x%04X", command_type);
   }

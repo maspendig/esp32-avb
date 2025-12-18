@@ -123,6 +123,14 @@ int send_acmp_connect_rx_command(struct avtp_state_s* state, uint8_t msg_type)
  */
 void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
+  if (state->entity_id != htonll(msg->listener_entity_id))
+  {
+    ESP_LOGI(TAG, "Ignoring foreign ACMP Connect TX Resp (target: 0x%016llX, our: 0x%016llX).",
+             htonll(msg->listener_entity_id),
+             state->entity_id);
+    return;
+  }
+
   const int status = ACMP_GET_STATUS(msg);
   /* Check status */
   if (status != 0)
@@ -267,15 +275,15 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_du_s*
 
 int handle_acmp_connect_rx_command(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
-  ESP_LOGI(TAG, "Received ACMP Connect RX Command");
-
   if (state->entity_id != htonll(msg->listener_entity_id))
   {
-    ESP_LOGW(TAG, "Ignoring foreign ACMP Connect RX Command (target: 0x%016llX, our: 0x%016llX).",
+    ESP_LOGI(TAG, "Ignoring foreign ACMP Connect RX Command (target: 0x%016llX, our: 0x%016llX).",
              htonll(msg->listener_entity_id),
              state->entity_id);
     return ESP_OK;
   }
+
+  ESP_LOGI(TAG, "Received ACMP Connect RX Command");
 
   struct acmp_du_s resp = {0};
 
@@ -325,6 +333,14 @@ int handle_acmp_connect_rx_command(struct avtp_state_s* state, struct acmp_du_s*
 
 int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_du_s* msg)
 {
+  if (state->entity_id != htonll(msg->talker_entity_id))
+  {
+    ESP_LOGI(TAG, "Ignoring foreign ACMP Connect RX Response (target: 0x%016llX, our: 0x%016llX).",
+             htonll(msg->talker_entity_id),
+             state->entity_id);
+    return ESP_OK;
+  }
+
   u8 status = ACMP_GET_STATUS(msg);
   switch (status)
   {
