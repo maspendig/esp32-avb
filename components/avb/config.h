@@ -24,7 +24,7 @@
 
 // ----- Audio Configuration -----
 // Number of audio channels (stereo = 2)
-#define CONFIG_AUDIO_CHANNELS 2
+#define CONFIG_AUDIO_CHANNELS 8
 
 // Listener configuration (stream sink - receives audio)
 // This device has 1 stereo stream input
@@ -34,11 +34,13 @@
 
 // Talker configuration (stream source - sends audio)
 // This device has 1 stereo stream output (if acting as talker)
-#define CONFIG_NUM_STREAM_OUTPUTS 1
 
+// #define CONFIG_NUM_STREAM_OUTPUTS 0
 // #define CONFIG_TALKER_STREAM_SOURCES 1
 // #define CONFIG_TALKER_CAPABILITIES 0x4001
 
+// TODO should be always the same!?
+#define CONFIG_NUM_STREAM_OUTPUTS 0
 #define CONFIG_TALKER_STREAM_SOURCES 0
 #define CONFIG_TALKER_CAPABILITIES 0x0000
 
@@ -68,12 +70,14 @@
 // Format: 0x00a0CCSSFNNNNNNN where CC=channels, SS=sample size, F=format, N=sample rate
 // 0x00a0020860000800 = 2ch, 24-bit, 48kHz
 static const u64 stream_formats[] = {
-  0x00a0020860000800, // 2 channels, 24-bit, 48kHz (primary format for stereo)
+  0x00a0020840000800,
 };
+
 
 #define CONFIG_NUM_STREAM_FORMATS (sizeof(stream_formats) / sizeof(stream_formats[0]))
 
 // Current stream format (should match one of the supported formats)
+
 #define CONFIG_CURRENT_STREAM_FORMAT 0x00a0020840000800
 
 #endif //ETHERNET_PTP_CONFIG_H

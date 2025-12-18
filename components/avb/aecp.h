@@ -61,6 +61,49 @@
 #define AEM_DESC_TYPE_AUDIO_MAP 0x0017
 #define AEM_DESC_TYPE_CLOCK_DOMAIN 0x0024
 
+static const char* aem_desc_type_to_string(u16 desc_type)
+{
+  switch (desc_type)
+  {
+  case AEM_DESC_TYPE_ENTITY:
+    return "ENTITY";
+  case AEM_DESC_TYPE_CONFIGURATION:
+    return "CONFIGURATION";
+  case AEM_DESC_TYPE_AUDIO_UNIT:
+    return "AUDIO_UNIT";
+  case AEM_DESC_TYPE_STREAM_INPUT:
+    return "STREAM_INPUT";
+  case AEM_DESC_TYPE_STREAM_OUTPUT:
+    return "STREAM_OUTPUT";
+  case AEM_DESC_TYPE_AVB_INTERFACE:
+    return "AVB_INTERFACE";
+  case AEM_DESC_TYPE_CLOCK_SOURCE:
+    return "CLOCK_SOURCE";
+  case AEM_DESC_TYPE_LOCALE:
+    return "LOCALE";
+  case AEM_DESC_TYPE_STRINGS:
+    return "STRINGS";
+  case AEM_DESC_TYPE_STREAM_PORT_INPUT:
+    return "STREAM_PORT_INPUT";
+  case AEM_DESC_TYPE_STREAM_PORT_OUTPUT:
+    return "STREAM_PORT_OUTPUT";
+  case AEM_DESC_TYPE_EXTERNAL_PORT_INPUT:
+    return "EXTERNAL_PORT_INPUT";
+  case AEM_DESC_TYPE_EXTERNAL_PORT_OUTPUT:
+    return "EXTERNAL_PORT_OUTPUT";
+  case AEM_DESC_TYPE_CONTROL:
+    return "CONTROL";
+  case AEM_DESC_TYPE_AUDIO_CLUSTER:
+    return "AUDIO_CLUSTER";
+  case AEM_DESC_TYPE_AUDIO_MAP:
+    return "AUDIO_MAP";
+  case AEM_DESC_TYPE_CLOCK_DOMAIN:
+    return "CLOCK_DOMAIN";
+  default:
+    return "UNKNOWN_DESCRIPTOR";
+  }
+}
+
 struct aecp_avb_interface_s
 {
   u16 descriptor_type;
@@ -192,7 +235,11 @@ struct acm_desc_stream_s
   u64 backedup_talker_entity_id;
   u16 backedup_talker_unique_id;
   u16 avb_interface_index;
-  u32 buffer_length;
+  u16 buffer_length;
+  u16 reserved; // TODO doublecheck! Wireshark vs ieee1722.1-2021
+  u16 redundant_offset;
+  u16 number_of_redundant_streams;
+  u16 timing;
   u64 formats[];
 } __attribute__((packed));
 
@@ -223,6 +270,17 @@ struct aecp_audio_cluster_s
   u32 block_latency;
   u16 channel_count;
   u8 format;
+} __attribute__((packed));
+
+struct aecp_clock_source_s
+{
+  u8 object_name[64];
+  u16 localized_description;
+  u16 flags;
+  u16 type;
+  u64 id;
+  u16 location_type;
+  u16 location_id;
 } __attribute__((packed));
 
 struct aecp_audio_mapping_s

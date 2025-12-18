@@ -12,7 +12,27 @@
 
 #define TAG "aecp"
 
-static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aecp_data_unit_s* request_msg)
+void send_aecp_msg(const struct avtp_state_s* state, void* buf, const ssize_t len)
+{
+  struct aecp_read_desc_request_s* msg = (struct aecp_read_desc_request_s*)buf;
+  ssize_t written = write(state->socket, buf, len);
+  char* type = "Request";
+  if (msg->aecp_header.message_type == AECP_MSG_TYPE_AEM_RESPONSE)
+  {
+    type = "Response";
+  }
+  const char* desc_type_str = aem_desc_type_to_string(msg->descriptor_type);
+  if (written < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send %s Descriptor %s: %d", desc_type_str, type, errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Sent %s Descriptor %s", desc_type_str, type);
+  }
+}
+
+static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aecp_read_desc_request_s* msg)
 {
   ESP_LOGI(TAG, "Received ACM Read ENTITY Descriptor Request");
   if (s_state == NULL || s_state->socket < 0)
@@ -21,76 +41,52 @@ static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aec
     return;
   }
 
-  struct aecp_read_descriptor_response_s response = {0};
+  struct aecp_read_descriptor_response_s resp = {0};
 
+  // Copy request to response as base
+  memcpy(&resp, msg, sizeof(struct aecp_read_desc_request_s));
   /* Copy Ethernet header from request and swap MAC addresses */
-  memcpy(response.aecp_header.header.dst_mac, request_msg->header.src_mac, ETH_ADDR_LEN);
-  memcpy(response.aecp_header.header.src_mac, request_msg->header.dst_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.dst_mac, msg->aecp_header.header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, msg->aecp_header.header.dst_mac, ETH_ADDR_LEN);
 
-  /* Ethernet type (big-endian) */
-  response.aecp_header.header.eth_type[0] = (ETH_TYPE_AVTP >> 8) & 0xFF;
-  response.aecp_header.header.eth_type[1] = ETH_TYPE_AVTP & 0xFF;
+  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
 
-  /* AECP header fields */
-  response.aecp_header.subtype = AVTP_SUBTYPE_AECP;
-  response.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
-  response.aecp_header.version = 0;
-  response.aecp_header.h = 0;
-
-  ACMP_SET_CTRL_DATA_STATUS((&response.aecp_header), 0, 328);
-
-  /* Swap entity IDs - we become the target, controller becomes the controller */
-  response.aecp_header.target_entity_id = request_msg->target_entity_id;
-  response.aecp_header.controller_entity_id = request_msg->controller_entity_id;
-  response.aecp_header.sequence_id = request_msg->sequence_id; // Echo sequence ID
-  response.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
+  ACMP_SET_CTRL_DATA_STATUS((&resp.aecp_header), 0, 328);
 
   /* Response payload fields */
-  response.configuration_index = 0;
-  response.reserved = 0;
+  resp.configuration_index = 0;
+  resp.reserved = 0;
 
   /* Fill ENTITY descriptor */
-  response.descriptor.descriptor_type = htons(AEM_DESC_TYPE_ENTITY); // ENTITY
-  response.descriptor.descriptor_index = htons(0x0000);
-  response.descriptor.entity_id = htonll(s_state->entity_id);
-  response.descriptor.entity_model_id = htonll(s_state->entity_model_id);
-  response.descriptor.entity_capabilities = htonl(CONFIG_ENTITY_CAPABILITIES); // Example capabilities
-  response.descriptor.talker_stream_sources = htons(CONFIG_TALKER_STREAM_SOURCES);
-  response.descriptor.talker_capabilities = htons(CONFIG_TALKER_CAPABILITIES);
-  response.descriptor.listener_stream_sinks = htons(CONFIG_LISTENER_STREAM_SINKS);
-  response.descriptor.listener_capabilities = htons(CONFIG_LISTENER_CAPABILITIES);
-  response.descriptor.controller_capabilities = htonl(CONFIG_CONTROLLER_CAPABILITIES);
-  response.descriptor.available_index = htonl(s_state->adp_available_index);
-  response.descriptor.association_id = htonll(0);
+  resp.descriptor.entity_id = htonll(s_state->entity_id);
+  resp.descriptor.entity_model_id = htonll(s_state->entity_model_id);
+  resp.descriptor.entity_capabilities = htonl(CONFIG_ENTITY_CAPABILITIES); // Example capabilities
+  resp.descriptor.talker_stream_sources = htons(CONFIG_TALKER_STREAM_SOURCES);
+  resp.descriptor.talker_capabilities = htons(CONFIG_TALKER_CAPABILITIES);
+  resp.descriptor.listener_stream_sinks = htons(CONFIG_LISTENER_STREAM_SINKS);
+  resp.descriptor.listener_capabilities = htons(CONFIG_LISTENER_CAPABILITIES);
+  resp.descriptor.controller_capabilities = htonl(CONFIG_CONTROLLER_CAPABILITIES);
+  resp.descriptor.available_index = htonl(s_state->adp_available_index);
+  resp.descriptor.association_id = htonll(0);
 
-  strncpy((char*)response.descriptor.entity_name, CONFIG_ENTITY_NAME, sizeof(response.descriptor.entity_name));
+  strncpy((char*)resp.descriptor.entity_name, CONFIG_ENTITY_NAME, sizeof(resp.descriptor.entity_name));
 
-  response.descriptor.vendor_name_string = htons(0);
-  response.descriptor.model_name_string = htons(1);
+  resp.descriptor.vendor_name_string = htons(0);
+  resp.descriptor.model_name_string = htons(1);
 
-  strncpy((char*)response.descriptor.firmware_version, CONFIG_FW_VERSION, sizeof(response.descriptor.firmware_version));
+  strncpy((char*)resp.descriptor.firmware_version, CONFIG_FW_VERSION, sizeof(resp.descriptor.firmware_version));
 
-  // TODO generate a unique serial number, refer to std
   char serial[65];
   snprintf(serial, sizeof(serial), "%02X%02X%02X%02X%02X%02X",
            s_state->intf_hw_addr[0], s_state->intf_hw_addr[1], s_state->intf_hw_addr[2],
            s_state->intf_hw_addr[3], s_state->intf_hw_addr[4], s_state->intf_hw_addr[5]);
-  strncpy((char*)response.descriptor.serial_number, serial, sizeof(response.descriptor.serial_number));
+  strncpy((char*)resp.descriptor.serial_number, serial, sizeof(resp.descriptor.serial_number));
 
-  response.descriptor.configurations_count = htons(1);
-  response.descriptor.current_configuration = htons(0);
-
+  resp.descriptor.configurations_count = htons(1);
+  resp.descriptor.current_configuration = htons(0);
 
   /* Send the response */
-  ssize_t written = write(s_state->socket, &response, sizeof(response));
-  if (written < 0)
-  {
-    ESP_LOGE(TAG, "Failed to send ENTITY descriptor response: %d", errno);
-  }
-  else
-  {
-    ESP_LOGI(TAG, "Sent AECP Entity Descriptor Response");
-  }
+  send_aecp_msg(s_state, &resp, sizeof(resp));
 }
 
 void handle_aem_read_configuration(struct avtp_state_s* s_state, struct aecp_data_unit_s* request_msg)
@@ -141,7 +137,7 @@ void handle_aem_read_configuration(struct avtp_state_s* s_state, struct aecp_dat
   resp->aecp_header.version = request_msg->version;
   resp->aecp_header.h = request_msg->h;
   // Set control data length and status
-  resp->aecp_header.control_data_len_status = htons(0x007A);
+  resp->aecp_header.control_data_len_status = htons(114);
 
   // Copy entity IDs and sequence ID
   resp->aecp_header.target_entity_id = request_msg->target_entity_id;
@@ -172,7 +168,7 @@ void handle_aem_read_configuration(struct avtp_state_s* s_state, struct aecp_dat
   resp->config_desc.descriptor_counts[2].descriptor_type = htons(AEM_DESC_TYPE_AVB_INTERFACE);
   resp->config_desc.descriptor_counts[2].count = htons(1);
   resp->config_desc.descriptor_counts[3].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_SOURCE);
-  resp->config_desc.descriptor_counts[3].count = htons(1);
+  resp->config_desc.descriptor_counts[3].count = htons(2);
   resp->config_desc.descriptor_counts[4].descriptor_type = htons(AEM_DESC_TYPE_LOCALE);
   resp->config_desc.descriptor_counts[4].count = htons(1);
   resp->config_desc.descriptor_counts[5].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
@@ -232,7 +228,7 @@ void handle_aem_read_desc_audio_map(struct avtp_state_s* s_state, struct aecp_da
   resp->aecp_header.h = 0;
 
   u8 status = 0; // Success
-  const uint16_t desc_data_len = sizeof(struct aecp_audio_map_s) + num_mappings * sizeof(struct aecp_audio_mapping_s);
+  const uint16_t desc_data_len = response_size - 26;
   AECP_SET_CTRL_DATA_STATUS((&resp->aecp_header), status, desc_data_len);
   resp->aecp_header.target_entity_id = msg->target_entity_id;
   resp->aecp_header.controller_entity_id = msg->controller_entity_id;
@@ -283,6 +279,7 @@ void handle_aem_read_desc_stream_port_input(struct avtp_state_s* s_state, struct
     uint16_t configuration_index;
     uint16_t reserved;
     struct acm_desc_stream_port_s stream_port_desc;
+    u16 reserved2;
   } __attribute__((packed));
 
   struct aecp_stream_port_response_s resp = {0};
@@ -457,7 +454,7 @@ void handle_aem_read_desc_stream_output(struct avtp_state_s* s_state, struct aec
   resp->stream_output_desc.backedup_talker_entity_id = htonll(0);
   resp->stream_output_desc.backedup_talker_unique_id = htons(0);
   resp->stream_output_desc.avb_interface_index = htons(0);
-  resp->stream_output_desc.buffer_length = htonl(8);
+  resp->stream_output_desc.buffer_length = htons(8);
 
   for (size_t i = 0; i < num_formats; ++i)
   {
@@ -512,7 +509,7 @@ void handle_aem_read_desc_stream_input(struct avtp_state_s* s_state, struct aecp
   resp->aecp_header.h = 0;
 
   u8 status = 0; // Success
-  const uint16_t desc_data_len = sizeof(struct acm_desc_stream_s) + (num_formats * sizeof(uint64_t));
+  const uint16_t desc_data_len = 162;
   AECP_SET_CTRL_DATA_STATUS((&resp->aecp_header), status, desc_data_len);
   resp->aecp_header.target_entity_id = msg->target_entity_id;
   resp->aecp_header.controller_entity_id = msg->controller_entity_id;
@@ -530,7 +527,7 @@ void handle_aem_read_desc_stream_input(struct avtp_state_s* s_state, struct aecp
   resp->stream_input_desc.clock_domain_index = htons(0);
   resp->stream_input_desc.stream_flags = htons(0x0003); // clock_sync_source | class_a
   resp->stream_input_desc.current_format = htonll(CONFIG_CURRENT_STREAM_FORMAT);
-  resp->stream_input_desc.formats_offset = htons(offsetof(struct acm_desc_stream_s, formats));
+  resp->stream_input_desc.formats_offset = htons(138); // ieee1722.1-2021 7.2.6
   resp->stream_input_desc.number_of_formats = htons(num_formats);
   resp->stream_input_desc.backup_talker_entity_id_0 = htonll(0);
   resp->stream_input_desc.backup_talker_unique_id_0 = htons(0);
@@ -541,10 +538,13 @@ void handle_aem_read_desc_stream_input(struct avtp_state_s* s_state, struct aecp
   resp->stream_input_desc.backedup_talker_entity_id = htonll(0);
   resp->stream_input_desc.backedup_talker_unique_id = htons(0);
   resp->stream_input_desc.avb_interface_index = htons(0);
+  resp->stream_input_desc.redundant_offset = 0; // No redundancy
+  resp->stream_input_desc.number_of_redundant_streams = 0;
+  resp->stream_input_desc.timing = 0;
   // FIXME The length in nanoseconds of the MAC’s ingress buffer as defined in IEEE Std 17222016 Figure 5.
   // For a STREAM_INPUT this is the MAC’s ingress buffer size
   // This is the length of the buffer between the IEEE Std 17222016 reference plane and the MAC.
-  resp->stream_input_desc.buffer_length = htonl(2048);
+  resp->stream_input_desc.buffer_length = htons(2048);
 
   for (size_t i = 0; i < num_formats; ++i)
   {
@@ -607,11 +607,11 @@ void handle_aem_read_desc_audio_unit(struct avtp_state_s* s_state, struct aecp_d
   resp.audio_unit_desc.descriptor_type = htons(AEM_DESC_TYPE_AUDIO_UNIT);
   resp.audio_unit_desc.descriptor_index = 0;
   memset(resp.audio_unit_desc.object_name, 0, sizeof(resp.audio_unit_desc.object_name));
-  resp.audio_unit_desc.localized_description = htons(0xFFFF);
+  resp.audio_unit_desc.localized_description = htons(1);
   resp.audio_unit_desc.number_of_stream_input_ports = htons(CONFIG_NUM_STREAM_INPUTS);
   resp.audio_unit_desc.number_of_stream_output_ports = htons(CONFIG_NUM_STREAM_OUTPUTS);
-  resp.audio_unit_desc.number_of_external_input_ports = htons(CONFIG_NUM_EXTERNAL_INPUT_PORTS);
-  resp.audio_unit_desc.number_of_external_output_ports = htons(CONFIG_NUM_EXTERNAL_OUTPUT_PORTS);
+  resp.audio_unit_desc.number_of_external_input_ports = htons(0);
+  resp.audio_unit_desc.number_of_external_output_ports = htons(0);
   resp.audio_unit_desc.current_sampling_rate = htonl(CONFIG_SAMPLING_RATE);
   resp.audio_unit_desc.sampling_rates_count = htons(1);
   resp.audio_unit_desc.sampling_rates_offset = htons(144);
@@ -660,7 +660,7 @@ void handle_aem_read_desc_audio_cluster(struct avtp_state_s* s_state, struct aec
   resp.audio_cluster_desc.descriptor_index = msg->descriptor_index;
   memset(resp.audio_cluster_desc.object_name, 0, sizeof(resp.audio_cluster_desc.object_name));
   resp.audio_cluster_desc.localized_description = htons(0xFFFF);
-  resp.audio_cluster_desc.signal_type = htons(AEM_DESC_TYPE_AUDIO_UNIT);
+  resp.audio_cluster_desc.signal_type = htons(0xFFFF);
   resp.audio_cluster_desc.signal_index = htons(0);
   resp.audio_cluster_desc.signal_output = htons(0);
   resp.audio_cluster_desc.path_latency = htonl(0);
@@ -691,13 +691,7 @@ void handle_aem_read_desc_clock_source(struct avtp_state_s* state, struct aecp_d
     u16 reserved;
     u16 descriptor_type;
     u16 descriptor_index;
-    u8 object_name[64];
-    u16 localized_description;
-    u16 clock_source_flags;
-    u16 clock_source_type;
-    u64 clock_source_id;
-    u16 clock_source_location_type;
-    u16 clock_source_location_id;
+    struct aecp_clock_source_s clock_source;
   } __attribute__((packed));
 
   struct aecp_clock_source_response_s resp = {0};
@@ -713,7 +707,7 @@ void handle_aem_read_desc_clock_source(struct avtp_state_s* state, struct aecp_d
   resp.aecp_header.control_data_len_status = htons(102);
   resp.aecp_header.target_entity_id = msg->target_entity_id;
   resp.aecp_header.controller_entity_id = msg->controller_entity_id;
-  memset(&resp.object_name, 0, sizeof(resp.object_name));
+  memset(&resp.clock_source.object_name, 0, sizeof(resp.clock_source.object_name));
   resp.aecp_header.sequence_id = msg->sequence_id;
   resp.aecp_header.command_type = htons(ACM_COMMAND_TYPE_READ_DESCRIPTOR);
   /* Response payload fields */
@@ -722,12 +716,12 @@ void handle_aem_read_desc_clock_source(struct avtp_state_s* state, struct aecp_d
   /* Fill CLOCK SOURCE descriptor */
   resp.descriptor_type = htons(AEM_DESC_TYPE_CLOCK_SOURCE);
   resp.descriptor_index = 0;
-  resp.localized_description = htons(2);
-  resp.clock_source_flags = 0;
-  resp.clock_source_type = htons(0); // INTERNAL
-  resp.clock_source_id = htonll(state->entity_id);
-  resp.clock_source_location_type = htons(0x0002);
-  resp.clock_source_location_id = htons(0);
+  resp.clock_source.localized_description = htons(2);
+  resp.clock_source.flags = 0;
+  resp.clock_source.type = htons(0); // INTERNAL
+  resp.clock_source.id = htonll(state->entity_id);
+  resp.clock_source.location_type = htons(AEM_DESC_TYPE_ENTITY);
+  resp.clock_source.location_id = htons(0);
 
   //send
   ssize_t written = write(state->socket, &resp, sizeof(resp));
@@ -767,7 +761,7 @@ void handle_aem_read_desc_avb_interface(struct avtp_state_s* s_state, struct aec
   resp.aecp_header.h = 0;
 
   u8 status = 0; // Success
-  u16 cdl = sizeof(struct aecp_avb_interface_s) + 4;
+  u16 cdl = 114;
   (resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)));
   resp.aecp_header.target_entity_id = msg->target_entity_id;
   resp.aecp_header.controller_entity_id = msg->controller_entity_id;
@@ -942,8 +936,8 @@ void handle_aem_read_desc_clock_domain(struct avtp_state_s* state, struct aecp_d
 
   // Control data length: descriptor size (76 bytes) + config_index + reserved (4 bytes) = 80 bytes
   u8 status = 0; // Success
-  u16 cdl = sizeof(struct aem_desc_clock_domain_s) + 4;
-  resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF));
+  u16 cdl = 94;
+  resp.aecp_header.control_data_len_status = htons(cdl);
 
   resp.aecp_header.target_entity_id = msg->target_entity_id;
   resp.aecp_header.controller_entity_id = msg->controller_entity_id;
@@ -1086,7 +1080,7 @@ void handle_aem_read_desc_strings(struct avtp_state_s* state, struct aecp_data_u
   }
 }
 
-void handle_aem_read_desc_external_port(struct avtp_state_s* state, struct aecp_read_desc_request_s* msg, u8 desc_type)
+void handle_aem_read_desc_external_port(struct avtp_state_s* state, struct aecp_read_desc_request_s* msg)
 {
   struct external_port_response_s
   {
@@ -1107,7 +1101,7 @@ void handle_aem_read_desc_external_port(struct avtp_state_s* state, struct aecp_
   } __attribute__((packed));
 
   ESP_LOGI(TAG, "Received ACM Read EXTERNAL PORT %s Descriptor Request",
-           (desc_type == AEM_DESC_TYPE_EXTERNAL_PORT_INPUT) ? "INPUT" : "OUTPUT");
+           (msg->descriptor_type == AEM_DESC_TYPE_EXTERNAL_PORT_INPUT) ? "INPUT" : "OUTPUT");
 
   struct external_port_response_s resp = {0};
   // Copy request to response as base
@@ -1133,62 +1127,59 @@ void handle_aem_read_desc_external_port(struct avtp_state_s* state, struct aecp_
   }
 }
 
-void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
+void handle_aecp_aem_read_desc_cmd(struct avtp_state_s* s_state, struct aecp_read_desc_request_s* msg, ssize_t len)
 {
-  // TODO create a combined struct to pass down the handler
-  struct aecp_aem_read_desc_cmd* read_desc_cmd = (struct aecp_aem_read_desc_cmd*)(msg + 1);
-  u16 desc_type = ntohs(read_desc_cmd->descriptor_type);
-  switch (desc_type)
+  switch (ntohs(msg->descriptor_type))
   {
-  case AEM_DESC_TYPE_ENTITY: // ENTITY Descriptor
+  case AEM_DESC_TYPE_ENTITY:
     handle_aem_read_desc_entity(s_state, msg);
     break;
   case AEM_DESC_TYPE_CONFIGURATION:
     ESP_LOGI(TAG, "Received ACM Read CONFIGURATION Descriptor Request");
-    handle_aem_read_configuration(s_state, msg);
+    handle_aem_read_configuration(s_state, (struct aecp_data_unit_s*)msg);
     break;
   case AEM_DESC_TYPE_AUDIO_UNIT:
-    handle_aem_read_desc_audio_unit(s_state, msg);
+    handle_aem_read_desc_audio_unit(s_state, (struct aecp_data_unit_s*)msg);
     break;
   case AEM_DESC_TYPE_STREAM_PORT_INPUT:
-    handle_aem_read_desc_stream_port_input(s_state, msg);
+    handle_aem_read_desc_stream_port_input(s_state, (struct aecp_data_unit_s*)msg);
     break;
   case AEM_DESC_TYPE_STREAM_PORT_OUTPUT:
-    handle_aem_read_desc_stream_port_output(s_state, msg);
+    handle_aem_read_desc_stream_port_output(s_state, (struct aecp_data_unit_s*)msg);
     break;
   case AEM_DESC_TYPE_AUDIO_CLUSTER:
-    handle_aem_read_desc_audio_cluster(s_state, (struct aecp_read_desc_request_s*)msg);
+    handle_aem_read_desc_audio_cluster(s_state, msg);
     break;
   case AEM_DESC_TYPE_AUDIO_MAP:
-    handle_aem_read_desc_audio_map(s_state, msg);
+    handle_aem_read_desc_audio_map(s_state, (struct aecp_data_unit_s*)msg);
     break;
   case AEM_DESC_TYPE_STREAM_INPUT:
-    handle_aem_read_desc_stream_input(s_state, msg);
+    handle_aem_read_desc_stream_input(s_state, (struct aecp_data_unit_s*)msg);
     break;
   case AEM_DESC_TYPE_STREAM_OUTPUT:
-    handle_aem_read_desc_stream_output(s_state, msg);
+    handle_aem_read_desc_stream_output(s_state, (struct aecp_data_unit_s*)msg);
     break;
   case AEM_DESC_TYPE_AVB_INTERFACE:
-    handle_aem_read_desc_avb_interface(s_state, msg);
+    handle_aem_read_desc_avb_interface(s_state, (struct aecp_data_unit_s*)msg);
     break;
   case AEM_DESC_TYPE_CLOCK_SOURCE:
-    handle_aem_read_desc_clock_source(s_state, msg);
+    handle_aem_read_desc_clock_source(s_state, (struct aecp_data_unit_s*)msg);
     break;
   case AEM_DESC_TYPE_LOCALE:
-    hande_aem_read_desc_locale(s_state, msg);
+    hande_aem_read_desc_locale(s_state, (struct aecp_data_unit_s*)msg);
     break;
   case AEM_DESC_TYPE_CLOCK_DOMAIN:
-    handle_aem_read_desc_clock_domain(s_state, msg);
+    handle_aem_read_desc_clock_domain(s_state, (struct aecp_data_unit_s*)msg);
     break;
   case AEM_DESC_TYPE_STRINGS:
-    handle_aem_read_desc_strings(s_state, msg);
+    handle_aem_read_desc_strings(s_state, (struct aecp_data_unit_s*)msg);
     break;
   case AEM_DESC_TYPE_EXTERNAL_PORT_INPUT:
   case AEM_DESC_TYPE_EXTERNAL_PORT_OUTPUT:
-    handle_aem_read_desc_external_port(s_state, (struct aecp_read_desc_request_s*)msg, desc_type);
+    handle_aem_read_desc_external_port(s_state, msg);
     break;
   default:
-    ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", desc_type);
+    ESP_LOGW(TAG, "Unsupported ACM read descriptor type: 0x%04X", msg->descriptor_type);
     break;
   }
 }
@@ -1503,7 +1494,7 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
     handle_acm_acquire_entity(s_state, msg, len);
     break;
   case ACM_COMMAND_TYPE_READ_DESCRIPTOR:
-    handle_aecp_aem_read_desc_cmd(s_state, msg, len);
+    handle_aecp_aem_read_desc_cmd(s_state, (struct aecp_read_desc_request_s*)msg, len);
     break;
   case ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION:
   case ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION:
