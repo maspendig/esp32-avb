@@ -41,6 +41,7 @@
 #define ACM_COMMAND_TYPE_ENTITY_AVAILABLE 0x0002
 #define ACM_COMMAND_TYPE_GET_STREAM_FORMAT 0x0009
 #define ACM_COMMAND_TYPE_GET_SAMPLING_RATE 0x0015
+#define ACM_COMMAND_TYPE_SET_CLOCK_SOURCE 0x0016
 #define ACM_COMMAND_TYPE_GET_STREAM_INFO 0x000F
 #define ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION 0x0024
 #define ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION 0x0025
@@ -378,6 +379,16 @@ struct atdecc_entity_descriptor_s
   uint8_t serial_number[64]; // UTF-8 serial number string
   uint16_t configurations_count; // Number of configuration descriptors
   uint16_t current_configuration; // Index of current configuration
+} __attribute__((packed));
+
+
+struct aecp_set_clock_source_s
+{
+  struct aecp_data_unit_s aecp_header;
+  u16 descriptor_type;
+  u16 descriptor_index;
+  u16 clock_source_index;
+  u16 reserved;
 } __attribute__((packed));
 
 struct aecp_read_desc_request_s

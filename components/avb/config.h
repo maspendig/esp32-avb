@@ -4,7 +4,12 @@
 #ifndef ETHERNET_PTP_CONFIG_H
 #define ETHERNET_PTP_CONFIG_H
 
-#import "types.h"
+#include "types.h"
+
+// Forward declare AEM descriptor types needed for clock source config
+// These match the values in aecp.h
+#define AEM_DESC_TYPE_ENTITY_CFG 0x0000
+#define AEM_DESC_TYPE_STREAM_INPUT_CFG 0x0005
 
 #define CONFIG_ENTITY_NAME "ESP32-P4"
 #define CONFIG_FW_VERSION "0.0.1"
@@ -13,9 +18,29 @@
 // String descriptors
 #define CONFIG_VENDOR_NAME "HAW Kiel"
 #define CONFIG_MODEL_NAME "ESP32-P4"
-#define CONFIG_CLOCK_SOURCE_NAME "Internal"
-#define CONFIG_CLOCK_DOMAIN_NAME "Internal Clock Domain"
 #define CONFIG_LOCALE_IDENTIFIER "en-US"
+
+// ----- Clock Configuration -----
+// Clock source 0: Internal oscillator
+#define CONFIG_CLOCK_SOURCE_INTERNAL_NAME "Internal"
+#define CONFIG_CLOCK_SOURCE_INTERNAL_TYPE 0x0000  // INTERNAL
+#define CONFIG_CLOCK_SOURCE_INTERNAL_LOCATION_TYPE AEM_DESC_TYPE_ENTITY_CFG
+#define CONFIG_CLOCK_SOURCE_INTERNAL_LOCATION_ID 0
+
+// Clock source 1: Recovered from stream input
+#define CONFIG_CLOCK_SOURCE_STREAM_NAME "Stream Input"
+#define CONFIG_CLOCK_SOURCE_STREAM_TYPE 0x0002  // INPUT_STREAM
+#define CONFIG_CLOCK_SOURCE_STREAM_LOCATION_TYPE AEM_DESC_TYPE_STREAM_INPUT_CFG
+#define CONFIG_CLOCK_SOURCE_STREAM_LOCATION_ID 0
+
+// Total number of clock sources
+#define CONFIG_NUM_CLOCK_SOURCES 2
+
+// Default clock source index (0 = Internal)
+#define CONFIG_DEFAULT_CLOCK_SOURCE_INDEX 0
+
+// Clock domain name
+#define CONFIG_CLOCK_DOMAIN_NAME "Clock Domain"
 
 #define CONFIG_SAMPLING_RATE 48000
 

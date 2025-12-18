@@ -167,7 +167,7 @@ void handle_aem_read_configuration(struct avtp_state_s* state, struct aecp_data_
   resp->config_desc.descriptor_counts[2].descriptor_type = htons(AEM_DESC_TYPE_AVB_INTERFACE);
   resp->config_desc.descriptor_counts[2].count = htons(1);
   resp->config_desc.descriptor_counts[3].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_SOURCE);
-  resp->config_desc.descriptor_counts[3].count = htons(2);
+  resp->config_desc.descriptor_counts[3].count = htons(CONFIG_NUM_CLOCK_SOURCES);
   resp->config_desc.descriptor_counts[4].descriptor_type = htons(AEM_DESC_TYPE_LOCALE);
   resp->config_desc.descriptor_counts[4].count = htons(1);
   resp->config_desc.descriptor_counts[5].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
@@ -604,6 +604,10 @@ void handle_aem_read_desc_clock_source(struct avtp_state_s* state, struct aecp_d
     struct aecp_clock_source_s clock_source;
   } __attribute__((packed));
 
+  /* Extract descriptor index from request */
+  struct aecp_aem_read_desc_cmd* read_cmd = (struct aecp_aem_read_desc_cmd*)(msg + 1);
+  u16 descriptor_index = ntohs(read_cmd->descriptor_index);
+
   struct aecp_clock_source_response_s resp = {0};
   /* Copy Ethernet header from request and swap MAC addresses */
   memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
@@ -625,13 +629,38 @@ void handle_aem_read_desc_clock_source(struct avtp_state_s* state, struct aecp_d
   resp.reserved = 0;
   /* Fill CLOCK SOURCE descriptor */
   resp.descriptor_type = htons(AEM_DESC_TYPE_CLOCK_SOURCE);
-  resp.descriptor_index = 0;
-  resp.clock_source.localized_description = htons(2);
+  resp.descriptor_index = htons(descriptor_index);
   resp.clock_source.flags = 0;
-  resp.clock_source.type = htons(0); // INTERNAL
   resp.clock_source.id = htonll(state->entity_id);
-  resp.clock_source.location_type = htons(AEM_DESC_TYPE_ENTITY);
-  resp.clock_source.location_id = htons(0);
+
+  if (descriptor_index == 0)
+  {
+    /* Clock source 0: Internal oscillator */
+    strncpy((char*)resp.clock_source.object_name, CONFIG_CLOCK_SOURCE_INTERNAL_NAME,
+            sizeof(resp.clock_source.object_name));
+    resp.clock_source.localized_description = htons(2);
+    resp.clock_source.type = htons(CONFIG_CLOCK_SOURCE_INTERNAL_TYPE);
+    resp.clock_source.location_type = htons(CONFIG_CLOCK_SOURCE_INTERNAL_LOCATION_TYPE);
+    resp.clock_source.location_id = htons(CONFIG_CLOCK_SOURCE_INTERNAL_LOCATION_ID);
+  }
+  else if (descriptor_index == 1)
+  {
+    /* Clock source 1: Recovered from stream input */
+    strncpy((char*)resp.clock_source.object_name, CONFIG_CLOCK_SOURCE_STREAM_NAME,
+            sizeof(resp.clock_source.object_name));
+    resp.clock_source.localized_description = htons(0xFFFF);
+    resp.clock_source.type = htons(CONFIG_CLOCK_SOURCE_STREAM_TYPE);
+    resp.clock_source.location_type = htons(CONFIG_CLOCK_SOURCE_STREAM_LOCATION_TYPE);
+    resp.clock_source.location_id = htons(CONFIG_CLOCK_SOURCE_STREAM_LOCATION_ID);
+  }
+  else
+  {
+    ESP_LOGW(TAG, "Unsupported clock source descriptor index: %d", descriptor_index);
+    /* Return error - NO_SUCH_DESCRIPTOR */
+    u8 status = AECP_AEM_STATUS_NO_SUCH_DESCRIPTOR;
+    u16 cdl = 102;
+    resp.aecp_header.control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF));
+  }
 
   send_aecp_msg(state, &resp, sizeof(resp));
 }
@@ -774,6 +803,7 @@ void handle_aem_read_desc_clock_domain(struct avtp_state_s* state, struct aecp_d
   }
 
   // CLOCK_DOMAIN descriptor structure according to IEEE 1722.1
+  // With flexible array for clock sources
   struct aem_desc_clock_domain_s
   {
     u16 descriptor_type; // 0x0024 (AEM_DESC_TYPE_CLOCK_DOMAIN)
@@ -783,7 +813,7 @@ void handle_aem_read_desc_clock_domain(struct avtp_state_s* state, struct aecp_d
     u16 clock_source_index; // Current clock source index
     u16 clock_sources_offset; // Offset to clock_sources array
     u16 clock_sources_count; // Number of clock sources
-    u16 clock_sources[1]; // Array of clock source indices (1 element)
+    u16 clock_sources[CONFIG_NUM_CLOCK_SOURCES]; // Array of clock source indices
   } __attribute__((packed));
 
   struct aecp_clock_domain_response_s
@@ -810,9 +840,9 @@ void handle_aem_read_desc_clock_domain(struct avtp_state_s* state, struct aecp_d
   resp.aecp_header.version = 0;
   resp.aecp_header.h = 0;
 
-  // Control data length: descriptor size (76 bytes) + config_index + reserved (4 bytes) = 80 bytes
-  u8 status = 0; // Success
-  u16 cdl = 94;
+  // Control data length: descriptor size (76 bytes base + 2*clock_sources) + config_index + reserved (4 bytes)
+  // = 76 + 4 + 4 (for 2 clock sources) = 84 bytes payload + 12 header = 96
+  u16 cdl = 96;
   resp.aecp_header.control_data_len_status = htons(cdl);
 
   resp.aecp_header.target_entity_id = msg->target_entity_id;
@@ -831,21 +861,22 @@ void handle_aem_read_desc_clock_domain(struct avtp_state_s* state, struct aecp_d
   // Set object name
   strncpy((char*)resp.descriptor.object_name, CONFIG_CLOCK_DOMAIN_NAME, sizeof(resp.descriptor.object_name));
 
-  resp.descriptor.localized_description = htons(0x2);
+  resp.descriptor.localized_description = htons(0xFFFF);
 
-  // Current clock source index (0 = internal clock source)
-  resp.descriptor.clock_source_index = htons(0);
+  // Current clock source index (0 = internal clock source, default)
+  resp.descriptor.clock_source_index = htons(CONFIG_DEFAULT_CLOCK_SOURCE_INDEX);
 
   // Clock sources offset (offset from start of descriptor to clock_sources array)
   // descriptor_type(2) + descriptor_index(2) + object_name(64) + localized_description(2) +
   // clock_source_index(2) + clock_sources_offset(2) + clock_sources_count(2) = 76 bytes
   resp.descriptor.clock_sources_offset = htons(76);
 
-  // Number of available clock sources (1 = only internal)
-  resp.descriptor.clock_sources_count = htons(1);
+  // Number of available clock sources
+  resp.descriptor.clock_sources_count = htons(CONFIG_NUM_CLOCK_SOURCES);
 
-  // Clock sources array - contains index 0 (internal clock source)
-  resp.descriptor.clock_sources[0] = htons(0);
+  // Clock sources array - contains indices for both clock sources
+  resp.descriptor.clock_sources[0] = htons(0); // Internal clock source
+  resp.descriptor.clock_sources[1] = htons(1); // Stream Input clock source
 
   send_aecp_msg(state, &resp, sizeof(resp));
 }
@@ -869,7 +900,7 @@ void handle_aem_read_desc_strings(struct avtp_state_s* state, struct aecp_data_u
     u16 descriptor_index; // Index of this descriptor
     u8 string_0[64]; // First string (vendor name from CONFIG_VENDOR_NAME)
     u8 string_1[64]; // Second string (model name from CONFIG_MODEL_NAME)
-    u8 string_2[64]; // Third string (clock source name from CONFIG_CLOCK_SOURCE_NAME)
+    u8 string_2[64]; // Third string (clock source name from CONFIG_CLOCK_SOURCE_INTERNAL_NAME)
     u8 string_3[64]; // Fourth string (empty)
     u8 string_4[64]; // Fifth string (empty)
     u8 string_5[64]; // Sixth string (empty)
@@ -924,8 +955,8 @@ void handle_aem_read_desc_strings(struct avtp_state_s* state, struct aecp_data_u
   // Set string_1 to model name
   strncpy((char*)resp.descriptor.string_1, CONFIG_MODEL_NAME, sizeof(resp.descriptor.string_1));
 
-  // Set string_2 to clock source name
-  strncpy((char*)resp.descriptor.string_2, CONFIG_CLOCK_SOURCE_NAME, sizeof(resp.descriptor.string_2));
+  // Set string_2 to clock source name (Internal clock source)
+  strncpy((char*)resp.descriptor.string_2, CONFIG_CLOCK_SOURCE_INTERNAL_NAME, sizeof(resp.descriptor.string_2));
   // string_3 through string_6 remain zero-filled (empty strings)
 
   send_aecp_msg(state, &resp, sizeof(resp));
@@ -1309,6 +1340,23 @@ void handle_acm_acquire_entity(struct avtp_state_s* state, struct aecp_data_unit
   }
 }
 
+void handle_acm_set_clock_source(struct avtp_state_s* state, struct aecp_set_clock_source_s* msg)
+{
+  ESP_LOGI(TAG, "Received AECP ACM SET_CLOCK_SOURCE Command");
+  ESP_LOGI(TAG, "Requested clock source index: %d", ntohs(msg->clock_source_index));
+
+  struct aecp_set_clock_source_s resp = {0};
+  memcpy(&resp, msg, sizeof(struct aecp_set_clock_source_s));
+  /* Copy and swap Ethernet header */
+  memcpy(resp.aecp_header.header.dst_mac, msg->aecp_header.header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
+
+  // TODO actually change the clock source!
+  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+
+  send_aecp_msg(state, &resp, sizeof(resp));
+}
+
 int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
 {
   if (msg == NULL || len < sizeof(struct aecp_data_unit_s))
@@ -1350,6 +1398,9 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
     break;
   case ACM_COMMAND_TYPE_ENTITY_AVAILABLE:
     ESP_LOGW(TAG, "Received unimplemented AECP ACM ENTITY_AVAILABLE Command");
+    break;
+  case ACM_COMMAND_TYPE_SET_CLOCK_SOURCE:
+    handle_acm_set_clock_source(s_state, (struct aecp_set_clock_source_s*)msg);
     break;
   case ACM_COMMAND_TYPE_GET_STREAM_INFO:
     ESP_LOGW(TAG, "Received unimplemented AECP ACM GET_STREAM_INFO Command");
