@@ -14,6 +14,12 @@
 
 void send_aecp_msg(const struct avtp_state_s* state, void* buf, const ssize_t len)
 {
+  if (state == NULL || state->socket < 0)
+  {
+    ESP_LOGE(TAG, "Socket not ready to send AECP response");
+    return;
+  }
+
   struct aecp_read_desc_request_s* msg = (struct aecp_read_desc_request_s*)buf;
   ssize_t written = write(state->socket, buf, len);
   char* type = "Request";
@@ -34,12 +40,6 @@ void send_aecp_msg(const struct avtp_state_s* state, void* buf, const ssize_t le
 
 static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aecp_read_desc_request_s* msg)
 {
-  if (s_state == NULL || s_state->socket < 0)
-  {
-    ESP_LOGE(TAG, "Socket not ready to send AECP response");
-    return;
-  }
-
   struct aecp_read_descriptor_response_s resp = {0};
 
   // Copy request to response as base
@@ -90,12 +90,6 @@ static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aec
 
 void handle_aem_read_configuration(struct avtp_state_s* state, struct aecp_data_unit_s* msg)
 {
-  if (state == NULL || state->socket < 0)
-  {
-    ESP_LOGE(TAG, "Socket not ready to send AECP response");
-    return;
-  }
-
   struct config_response
   {
     struct aecp_data_unit_s aecp_header;
@@ -723,12 +717,6 @@ void handle_aem_read_desc_avb_interface(struct avtp_state_s* state, struct aecp_
 
 void hande_aem_read_desc_locale(struct avtp_state_s* state, struct aecp_data_unit_s* msg)
 {
-  if (state == NULL || state->socket < 0)
-  {
-    ESP_LOGE(TAG, "Socket not ready to send AECP response");
-    return;
-  }
-
   // LOCALE descriptor structure according to IEEE 1722.1
   struct aem_desc_locale_s
   {
@@ -796,12 +784,6 @@ void hande_aem_read_desc_locale(struct avtp_state_s* state, struct aecp_data_uni
 
 void handle_aem_read_desc_clock_domain(struct avtp_state_s* state, struct aecp_data_unit_s* msg)
 {
-  if (state == NULL || state->socket < 0)
-  {
-    ESP_LOGE(TAG, "Socket not ready to send AECP response");
-    return;
-  }
-
   // CLOCK_DOMAIN descriptor structure according to IEEE 1722.1
   // With flexible array for clock sources
   struct aem_desc_clock_domain_s
@@ -885,12 +867,6 @@ void handle_aem_read_desc_strings(struct avtp_state_s* state, struct aecp_data_u
 {
   // print descriptor Index
   struct aecp_aem_read_desc_cmd* read_desc_cmd = (struct aecp_aem_read_desc_cmd*)(msg + 1);
-
-  if (state == NULL || state->socket < 0)
-  {
-    ESP_LOGE(TAG, "Socket not ready to send AECP response");
-    return;
-  }
 
   // STRINGS descriptor structure according to IEEE 1722.1
   // Contains up to 7 strings (string_0 through string_6), each 64 bytes
@@ -1357,6 +1333,37 @@ void handle_acm_set_clock_source(struct avtp_state_s* state, struct aecp_set_clo
   send_aecp_msg(state, &resp, sizeof(resp));
 }
 
+/**
+ * Handle GET_CONFIGURATION command (IEEE 1722.1-2021, 7.4.5)
+ * Returns the current configuration index for the entity.
+ */
+void handle_acm_get_configuration(struct avtp_state_s* state, struct aecp_data_unit_s* msg)
+{
+  ESP_LOGI(TAG, "Received AECP ACM GET_CONFIGURATION Command");
+
+  /* GET_CONFIGURATION response structure (IEEE 1722.1-2021, 7.4.5.2) */
+  struct aecp_get_configuration_response_s
+  {
+    struct aecp_data_unit_s aecp_header;
+    u16 configuration_index;
+    u16 reserved;
+  } __attribute__((packed));
+
+  struct aecp_get_configuration_response_s resp = {0};
+  memcpy(&resp, msg, sizeof(struct aecp_get_configuration_response_s));
+
+  /* Copy and swap Ethernet header */
+  memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
+
+  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
+
+  /* Response payload - current configuration index (always 0 for single configuration) */
+  resp.configuration_index = htons(0);
+
+  send_aecp_msg(state, &resp, sizeof(resp));
+}
+
 int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
 {
   if (msg == NULL || len < sizeof(struct aecp_data_unit_s))
@@ -1382,6 +1389,12 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
   case ACM_COMMAND_TYPE_ACQUIRE_ENTITY:
     handle_acm_acquire_entity(s_state, msg, len);
     break;
+  case ACM_COMMAND_TYPE_ENTITY_AVAILABLE:
+    ESP_LOGW(TAG, "Received unimplemented AECP ACM ENTITY_AVAILABLE Command");
+    break;
+  case ACM_COMMAND_TYPE_GET_CONFIGURATION:
+    handle_acm_get_configuration(s_state, msg);
+    break;
   case ACM_COMMAND_TYPE_READ_DESCRIPTOR:
     handle_aecp_aem_read_desc_cmd(s_state, (struct aecp_read_desc_request_s*)msg, len);
     break;
@@ -1395,9 +1408,6 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
     break;
   case ACM_COMMAND_TYPE_GET_STREAM_FORMAT:
     handle_acm_get_stream_format(s_state, (void*)msg);
-    break;
-  case ACM_COMMAND_TYPE_ENTITY_AVAILABLE:
-    ESP_LOGW(TAG, "Received unimplemented AECP ACM ENTITY_AVAILABLE Command");
     break;
   case ACM_COMMAND_TYPE_SET_CLOCK_SOURCE:
     handle_acm_set_clock_source(s_state, (struct aecp_set_clock_source_s*)msg);
