@@ -469,7 +469,7 @@ static void registrar_rx_join(msrp_talker_info_t* talker)
   case MRP_REGISTRAR_MT:
   case MRP_REGISTRAR_LV:
     talker->registrar_state = MRP_REGISTRAR_IN;
-    ESP_LOGI(TAG, "Registrar: Stream 0x%016llX now IN (registered)",
+    ESP_LOGD(TAG, "Registrar: Stream 0x%016llX now IN (registered)",
              (unsigned long long)talker->stream_id);
     break;
   case MRP_REGISTRAR_IN:
@@ -519,7 +519,7 @@ static void registrar_leave_timer_expired(msrp_talker_info_t* talker)
   {
     talker->registrar_state = MRP_REGISTRAR_MT;
     talker->valid = false;
-    ESP_LOGI(TAG, "Registrar: Stream 0x%016llX leave timer expired, now MT",
+    ESP_LOGD(TAG, "Registrar: Stream 0x%016llX leave timer expired, now MT",
              (unsigned long long)talker->stream_id);
   }
 }
@@ -555,8 +555,16 @@ static void handle_msrp_talker_advertise(struct avtp_state_s* state, void* buf, 
 
   u64 stream_id = ntohll(talker_adv->stream_id);
 
-  ESP_LOGI(TAG, "  Talker Advertise: stream=0x%016llX event=%s",
+  ESP_LOGD(TAG, "  Talker Advertise: stream=0x%016llX event=%s",
            (unsigned long long)stream_id, msrp_attribute_event_string(event));
+
+  /* Sanity check - stream_id should not be 0 */
+  if (stream_id == 0)
+  {
+    ESP_LOGW(TAG, "Talker Advertise: Ignoring message with stream_id=0");
+    return;
+  }
+
   ESP_LOGD(TAG, "    Leave All: %u, Number of Values: %u", leave_all, number_of_values);
   ESP_LOGD(TAG, "    Stream DA: %02X:%02X:%02X:%02X:%02X:%02X",
            talker_adv->stream_da[0], talker_adv->stream_da[1], talker_adv->stream_da[2],
@@ -594,9 +602,21 @@ static void handle_msrp_talker_advertise(struct avtp_state_s* state, void* buf, 
       registrar_rx_leave(talker);
       break;
     case MSRP_ATTRIBUTE_EVENT_IN:
+      /* Per IEEE 802.1Q Table 10-4:
+       * rIn on LV state -> IN (cancels leave timer)
+       * rIn on MT state -> MT (no change, attribute not being declared)
+       * rIn on IN state -> IN (no change, refresh) */
+      if (talker->registrar_state == MRP_REGISTRAR_LV)
+      {
+        talker->registrar_state = MRP_REGISTRAR_IN;
+        ESP_LOGD(TAG, "Registrar: Stream 0x%016llX rIn cancelled leave",
+                 (unsigned long long)talker->stream_id);
+      }
+      break;
     case MSRP_ATTRIBUTE_EVENT_MT:
     default:
-      /* Just refresh, don't change state */
+      /* MT event doesn't refresh registration - per IEEE 802.1Q Table 10-4,
+       * rMt keeps MT/IN/LV in their current state */
       break;
     }
 
@@ -662,6 +682,10 @@ static void handle_msrp_talker_failed(struct avtp_state_s* state, void* buf, siz
 
   u64 stream_id = ntohll(msg->stream_id);
 
+  if (stream_id == 0)
+  {
+    return;
+  }
   ESP_LOGI(TAG, "  Talker Failed: stream=0x%016llX failure_code=%u",
            (unsigned long long)stream_id, msg->failure_code);
 
@@ -1065,6 +1089,18 @@ void msrp_periodic(struct avtp_state_s* state)
                                        tx_event);
         timer_reset(&msrp->listener.join_timer);
       }
+
+      /* Check if leave process is complete:
+       * Per IEEE 802.1Q, after LA state sends sL (Leave), it transitions to VO.
+       * When we're leaving and have reached VO, the leave process is complete. */
+      if (msrp->listener.leaving &&
+        msrp->listener.applicant_state == MRP_APPLICANT_VO)
+      {
+        ESP_LOGD(TAG, "Leave process complete for stream 0x%016llX",
+                 (unsigned long long)msrp->listener.stream_id);
+        msrp->listener.active = false;
+        msrp->listener.leaving = false;
+      }
     }
   }
 }
@@ -1078,14 +1114,29 @@ int msrp_listener_join(struct avtp_state_s* state, u64 stream_id)
 {
   msrp_state_t* msrp = &state->msrp;
 
-  /* For now, only support single stream */
-  if (msrp->listener.active && msrp->listener.stream_id != stream_id)
+  /* Check if already active for a different stream */
+  if (msrp->listener.active && !msrp->listener.leaving &&
+    msrp->listener.stream_id != stream_id)
   {
     ESP_LOGE(TAG, "Already listening to stream 0x%016llX, cannot join 0x%016llX",
              (unsigned long long)msrp->listener.stream_id,
              (unsigned long long)stream_id);
     return -1;
   }
+
+  /* If we're rejoining after leave completed (active=false),
+   * reset the applicant state machine to initial state.
+   * If we're still in the process of leaving (leaving=true, active=true),
+   * let applicant_join() handle the state transition (LA→AA per IEEE 802.1Q). */
+  if (!msrp->listener.active)
+  {
+    msrp->listener.applicant_state = MRP_APPLICANT_VO;
+    msrp->listener.tx_pending = false;
+    timer_reset(&msrp->listener.join_timer);
+  }
+
+  /* Clear leaving flag since we're now (re)joining */
+  msrp->listener.leaving = false;
 
   ESP_LOGI(TAG, "Joining stream 0x%016llX as listener", (unsigned long long)stream_id);
 
@@ -1116,26 +1167,46 @@ int msrp_listener_join(struct avtp_state_s* state, u64 stream_id)
   }
 
   /* Determine declaration type based on talker state */
-  if (msrp->talker.valid && msrp->talker.stream_id == stream_id)
+  /* Check if we have valid talker info for THIS specific stream */
+  bool talker_known = msrp->talker.valid && msrp->talker.stream_id == stream_id;
+
+  if (talker_known)
   {
     if (msrp->talker.failed)
     {
       msrp->listener.declaration_type = MSRP_LISTENER_READY_FAILED;
     }
-    else if (msrp->talker.registrar_state == MRP_REGISTRAR_IN)
+    else if (msrp->talker.registrar_state == MRP_REGISTRAR_IN ||
+      msrp->talker.registrar_state == MRP_REGISTRAR_LV)
     {
+      /* If talker is IN or LV (recently active, leave timer running),
+       * we can declare READY. In the LV case, the talker was recently
+       * active and is likely still there - our join will prompt it to
+       * resume advertising. Per IEEE 802.1Q, a new Join should cause
+       * the talker to come back if it's still available. */
+      if (msrp->talker.registrar_state == MRP_REGISTRAR_LV)
+      {
+        ESP_LOGD(TAG, "Talker in LV state, assuming still available");
+        /* Cancel the leave timer by transitioning back to IN */
+        msrp->talker.registrar_state = MRP_REGISTRAR_IN;
+      }
       msrp->listener.declaration_type = MSRP_LISTENER_READY;
     }
     else
     {
+      /* Talker registrar is MT (empty) - talker has left */
       msrp->listener.declaration_type = MSRP_LISTENER_ASKING_FAILED;
     }
   }
   else
   {
-    /* Talker not yet known, start with ASKING_FAILED */
+    /* Talker not known for this stream - could be stale info from different stream
+     * or no talker info at all. Start with ASKING_FAILED. */
     msrp->listener.declaration_type = MSRP_LISTENER_ASKING_FAILED;
   }
+
+  ESP_LOGD(TAG, "Declaration type: %s",
+           msrp_listener_decl_string(msrp->listener.declaration_type));
 
   /* Trigger Join! event on applicant state machine */
   applicant_join(&msrp->listener);
@@ -1158,13 +1229,13 @@ int msrp_listener_leave(struct avtp_state_s* state, u64 stream_id)
   /* Trigger Leave! event on applicant state machine */
   applicant_leave(&msrp->listener);
 
-  /* Send immediate Leave message */
-  msrp_send_listener_declaration(state, stream_id,
-                                 msrp->listener.declaration_type,
-                                 MSRP_ATTRIBUTE_EVENT_LV);
-
-  /* Mark as inactive after sending leave */
-  msrp->listener.active = false;
+  /* Mark as leaving - the periodic handler will complete the leave process
+   * and send the Leave message when the tx opportunity occurs.
+   * Per IEEE 802.1Q, we should not immediately deactivate; instead let the
+   * state machine transition LA -> VO via tx! which sends sL (Leave).
+   * The listener will be marked inactive after the state machine completes. */
+  msrp->listener.leaving = true;
+  msrp->listener.tx_pending = true;
 
   return 0;
 }

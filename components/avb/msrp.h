@@ -129,6 +129,7 @@ typedef struct
 typedef struct
 {
   bool active; /* Is this listener declaration active? */
+  bool leaving; /* Is this listener in the process of leaving? */
   u64 stream_id; /* Stream ID we want to listen to */
   u8 declaration_type; /* READY, READY_FAILED, ASKING_FAILED */
 
