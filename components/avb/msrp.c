@@ -555,15 +555,13 @@ static void handle_msrp_talker_advertise(struct avtp_state_s* state, void* buf, 
 
   u64 stream_id = ntohll(talker_adv->stream_id);
 
-  ESP_LOGD(TAG, "  Talker Advertise: stream=0x%016llX event=%s",
-           (unsigned long long)stream_id, msrp_attribute_event_string(event));
-
-  /* Sanity check - stream_id should not be 0 */
   if (stream_id == 0)
   {
-    ESP_LOGW(TAG, "Talker Advertise: Ignoring message with stream_id=0");
     return;
   }
+
+  ESP_LOGD(TAG, "  Talker Advertise: stream=0x%016llX event=%s",
+           (unsigned long long)stream_id, msrp_attribute_event_string(event));
 
   ESP_LOGD(TAG, "    Leave All: %u, Number of Values: %u", leave_all, number_of_values);
   ESP_LOGD(TAG, "    Stream DA: %02X:%02X:%02X:%02X:%02X:%02X",
