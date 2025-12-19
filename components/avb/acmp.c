@@ -434,8 +434,15 @@ void handle_acmp_disconnect_rx_command(struct avtp_state_s* state, struct acmp_c
   ESP_LOGI(TAG, "Received ACMP Disconnect RX Command");
 
   struct acmp_common_s resp = {0};
+  memcpy(&resp, msg, sizeof(struct acmp_common_s));
   acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_DISCONNECT_TX_COMMAND, 44, ACMP_STATUS_SUCCESS);
-  acmp_set_common_du(state, &resp);
+
+  struct listener_stream_info_s* listener_info = &state->listener_stream_infos[msg->listener_unique_id];
+  msrp_listener_leave(state, listener_info->stream_id);
+
+  *listener_info = (struct listener_stream_info_s){0};
+  listener_info->sequence_id = ntohs(msg->sequence_id);
+  resp.sequence_id = htons(state->acmp_sequence_id++);
 
   //send
   int result = send_msg(state->socket, &resp, sizeof(resp));
@@ -466,11 +473,7 @@ void handle_acmp_disconnect_tx_response(struct avtp_state_s* state, struct acmp_
   memcpy(&resp, msg, sizeof(struct acmp_common_s));
 
   acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_DISCONNECT_RX_RESPONSE, 44, ACMP_STATUS_SUCCESS);
-  acmp_set_common_du(state, &resp);
-
-  // Clear listener stream info
-  state->listener_stream_infos[msg->listener_unique_id] = (struct listener_stream_info_s){0};
-  msrp_listener_leave(state, ntohll(msg->stream_id));
+  resp.sequence_id = htons(state->listener_stream_infos[msg->listener_unique_id].sequence_id);
 
   //send
   int result = send_msg(state->socket, &resp, sizeof(resp));
