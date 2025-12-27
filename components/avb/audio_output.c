@@ -71,7 +71,7 @@ static esp_err_t es8311_codec_init(void)
     .i2c_port = I2C_NUM,
     .sda_io_num = I2C_SDA_IO,
     .scl_io_num = I2C_SCL_IO,
-    .clk_source = I2C_CLK_SRC_DEFAULT,
+    .clk_source = I2S_CLK_SRC_APLL,
     .glitch_ignore_cnt = 7,
     /* Pull-up internally for no external pull-up case.
         Suggest to use external pull-up to ensure a strong enough pull-up. */
