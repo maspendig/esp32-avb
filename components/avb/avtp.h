@@ -145,6 +145,8 @@ struct avtp_state_s
   int msrp_socket;
   int mvrp_socket;
 
+  u8 maap_mac[6]; // only one as we have only a single stream
+
   uint16_t acmp_sequence_id;
   uint8_t intf_hw_addr[6];
   uint64_t entity_id;
