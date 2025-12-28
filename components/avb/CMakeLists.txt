@@ -1,5 +1,5 @@
 idf_component_register(SRCS "avtp.c" "acmp.c" "aecp.c" "adp.c" "maap.c" "msrp.c" "mvrp.c" "audio_output.c"
-        PRIV_REQUIRES esp_eth esp_netif esp_driver_i2s esp_driver_i2c esp_driver_gpio esp_codec_dev
+        PRIV_REQUIRES esp_eth esp_netif esp_driver_i2s esp_driver_i2c esp_driver_gpio esp_codec_dev esp_timer
         INCLUDE_DIRS ".")
 
 target_sources(${COMPONENT_LIB} PRIVATE "avtp.c")

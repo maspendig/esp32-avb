@@ -110,7 +110,7 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   state->msrp_socket = msrp_init(interface);
   state->mvrp_socket = mvrp_init(interface);
 
-  memset(state->maap_mac, 0, sizeof(state->maap_mac));
+  maap_init(state);
 
   /* Initialize MSRP state machine */
   msrp_state_init(&state->msrp);

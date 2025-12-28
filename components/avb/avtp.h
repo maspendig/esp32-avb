@@ -8,6 +8,7 @@
 
 #include <aecp.h>
 #include <acmp.h>
+#include <maap.h>
 #include <msrp.h>
 #include <mvrp.h>
 
@@ -145,7 +146,7 @@ struct avtp_state_s
   int msrp_socket;
   int mvrp_socket;
 
-  u8 maap_mac[6]; // only one as we have only a single stream
+  struct maap_db_s maap_db;
 
   uint16_t acmp_sequence_id;
   uint8_t intf_hw_addr[6];
