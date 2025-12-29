@@ -209,6 +209,23 @@ void maap_state_machine(struct avtp_state_s* state, maap_event event)
     maap_send_announce(state, state->maap_db.mac, 1);
     state->maap_db.state = MAAP_STATE_DEFEND;
     break;
+  case MAAP_EVENT_RELEASE:
+    switch (state->maap_db.state)
+    {
+    case MAAP_STATE_PROBE:
+      esp_timer_stop(state->maap_db.probe_timer_handle);
+      esp_timer_delete(state->maap_db.probe_timer_handle);
+      state->maap_db.state = MAAP_STATE_INITIAL;
+      break;
+    case MAAP_STATE_DEFEND:
+      esp_timer_stop(state->maap_db.announce_timer_handle);
+      esp_timer_delete(state->maap_db.announce_timer_handle);
+      state->maap_db.state = MAAP_STATE_INITIAL;
+      break;
+    default:
+      // no action on INITIAL state
+      break;
+    }
   default:
     ESP_LOGW(TAG, "MAAP Event: Unhandled event %d", event);
     break;
