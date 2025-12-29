@@ -260,6 +260,58 @@ void maap_state_machine(struct avtp_state_s* state, maap_event event, struct maa
       return maap_state_machine(state, MAAP_EVENT_RESTART, NULL);
     }
     break;
+
+  case MAAP_EVENT_RPROBE:
+    if (state->maap_db.state != MAAP_STATE_INITIAL)
+    {
+      break;
+    }
+    const bool p_conflict = compare_mac(msg->requested_start_address, ntohs(msg->requested_count),
+                                        state->maap_db.mac, CONFIG_TALKER_STREAM_SOURCES);
+    if (p_conflict)
+    {
+      ESP_LOGW(TAG, "MAAP Conflict detected from Probe message!");
+      switch (state->maap_db.state)
+      {
+      case MAAP_STATE_PROBE:
+        esp_timer_stop(state->maap_db.probe_timer_handle);
+        esp_timer_delete(state->maap_db.probe_timer_handle);
+        maap_state_machine(state, MAAP_EVENT_RESTART, NULL);
+        break;
+      case MAAP_STATE_DEFEND:
+        maap_send_defend(state, msg->requested_start_address, ntohs(msg->requested_count));
+        break;
+      default:
+        break;
+      }
+    }
+    break;
+  case MAAP_EVENT_RDEFEND:
+    if (state->maap_db.state != MAAP_STATE_INITIAL)
+    {
+      break;
+    }
+
+    const bool d_conflict = compare_mac(msg->requested_start_address, ntohs(msg->requested_count),
+                                        state->maap_db.mac, CONFIG_TALKER_STREAM_SOURCES);
+    if (d_conflict)
+    {
+      switch (state->maap_db.state)
+      {
+      case MAAP_STATE_PROBE:
+        esp_timer_stop(state->maap_db.probe_timer_handle);
+        esp_timer_delete(state->maap_db.probe_timer_handle);
+        break;
+      case MAAP_STATE_DEFEND:
+        esp_timer_stop(state->maap_db.announce_timer_handle);
+        esp_timer_delete(state->maap_db.announce_timer_handle);
+        break;
+      default:
+        break;
+      }
+      maap_state_machine(state, MAAP_EVENT_RESTART, NULL);
+    }
+    break;
   case MAAP_EVENT_RELEASE:
     switch (state->maap_db.state)
     {
@@ -296,10 +348,10 @@ void maap_net_rx(struct avtp_state_s* state, struct maap_pdu_s* msg, ssize_t len
     maap_state_machine(state, MAAP_EVENT_RANNOUNCE, msg);
     break;
   case MAAP_MSG_TYPE_PROBE:
-    ESP_LOGI(TAG, "MAAP Probe received");
+    maap_state_machine(state, MAAP_EVENT_RPROBE, msg);
     break;
   case MAAP_MSG_TYPE_DEFEND:
-    ESP_LOGI(TAG, "MAAP Defend received");
+    maap_state_machine(state, MAAP_EVENT_RDEFEND, msg);
     break;
   default:
     ESP_LOGW(TAG, "Unknown MAAP message type received: 0x%02X", msg->message_type);
