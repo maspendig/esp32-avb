@@ -104,6 +104,52 @@ struct maap_pdu_s
   u16 conflicted_count;
 } __attribute__((packed));
 
+static const char* maap_state_str(u16 state)
+{
+  switch (state)
+  {
+  case MAAP_STATE_INITIAL:
+    return "INITIAL";
+  case MAAP_STATE_PROBE:
+    return "PROBE";
+  case MAAP_STATE_DEFEND:
+    return "DEFEND";
+  default:
+    return "UNKNOWN";
+  }
+}
+
+static const char* maap_event_str(u16 desc_type)
+{
+  switch (desc_type)
+  {
+  case MAAP_EVENT_BEGIN:
+    return "BEGIN";
+  case MAAP_EVENT_RELEASE:
+    return "RELEASE";
+  case MAAP_EVENT_RESTART:
+    return "RESTART";
+  case MAAP_EVENT_RESERVE_ADDRESS:
+    return "RESERVE_ADDRESS";
+  case MAAP_EVENT_RPROBE:
+    return "RPROBE";
+  case MAAP_EVENT_RDEFEND:
+    return "RDEFEND";
+  case MAAP_EVENT_RANNOUNCE:
+    return "RANNOUNCE";
+  case MAAP_EVENT_PROBE_COUNT:
+    return "PROBE_COUNT";
+  case MAAP_EVENT_ANNOUNCE_TIMER:
+    return "ANNOUNCE_TIMER";
+  case MAAP_EVENT_PROBE_TIMER:
+    return "PROBE_TIMER";
+  case MAAP_EVENT_PORT_OPERATIONAL:
+    return "PORT_OPERATIONAL";
+  default:
+    return "UNKNOWN";
+  }
+}
+
 struct avtp_state_s;
 
 void maap_net_rx(struct avtp_state_s* state, struct maap_pdu_s* msg, ssize_t len);

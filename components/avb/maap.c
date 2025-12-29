@@ -23,8 +23,10 @@ void generate_address(u8* maap_mac)
   maap_mac[1] = 0xE0;
   maap_mac[2] = 0xF0;
   maap_mac[3] = 0x00;
-  maap_mac[4] = (random_part >> 8) & 0xFF;
-  maap_mac[5] = random_part & 0xFF;
+  // maap_mac[4] = (random_part >> 8) & 0xFF;
+  // maap_mac[5] = random_part & 0xFF;
+  maap_mac[4] = 0xF3;
+  maap_mac[5] = 0xC2;
 }
 
 void create_maap_msg(struct avtp_state_s* state, struct maap_pdu_s* msg, u8 message_type)
@@ -180,11 +182,11 @@ bool compare_mac(const u8* a, const u8 a_count, const u8* b, const u8 b_count)
 
 void maap_state_machine(struct avtp_state_s* state, maap_event event, struct maap_pdu_s* msg)
 {
+  ESP_LOGI(TAG, "process MAAP event: %s, state: %s", maap_event_str(event), maap_state_str(state->maap_db.state));
   switch (event)
   {
   case MAAP_EVENT_BEGIN:
   case MAAP_EVENT_RESTART:
-    ESP_LOGI(TAG, "MAAP Event: BEGIN");
     if (state->maap_db.state == MAAP_STATE_INITIAL)
     {
       generate_address(state->maap_db.mac);
@@ -192,7 +194,6 @@ void maap_state_machine(struct avtp_state_s* state, maap_event event, struct maa
     }
     break;
   case MAAP_EVENT_RESERVE_ADDRESS:
-    ESP_LOGI(TAG, "MAAP Event: RESERVE_ADDRESS");
     if (state->maap_db.state == MAAP_STATE_INITIAL)
     {
       state->maap_db.probe_count = MAAP_PROBE_RETRANSMITS;
@@ -229,7 +230,6 @@ void maap_state_machine(struct avtp_state_s* state, maap_event event, struct maa
     break;
 
   case MAAP_EVENT_RANNOUNCE:
-
     if (state->maap_db.state == MAAP_STATE_INITIAL)
     {
       // Ignore announce in INITIAL state
@@ -256,7 +256,6 @@ void maap_state_machine(struct avtp_state_s* state, maap_event event, struct maa
         break;
       }
       state->maap_db.state = MAAP_STATE_INITIAL;
-      // Restart allocation process
       return maap_state_machine(state, MAAP_EVENT_RESTART, NULL);
     }
     break;
@@ -276,6 +275,7 @@ void maap_state_machine(struct avtp_state_s* state, maap_event event, struct maa
       case MAAP_STATE_PROBE:
         esp_timer_stop(state->maap_db.probe_timer_handle);
         esp_timer_delete(state->maap_db.probe_timer_handle);
+        state->maap_db.state = MAAP_STATE_INITIAL;
         maap_state_machine(state, MAAP_EVENT_RESTART, NULL);
         break;
       case MAAP_STATE_DEFEND:
@@ -309,6 +309,7 @@ void maap_state_machine(struct avtp_state_s* state, maap_event event, struct maa
       default:
         break;
       }
+      state->maap_db.state = MAAP_STATE_INITIAL;
       maap_state_machine(state, MAAP_EVENT_RESTART, NULL);
     }
     break;
