@@ -56,9 +56,15 @@ typedef enum
   MAAP_EVENT_PORT_OPERATIONAL,
 } maap_event;
 
+struct maap_conflict_s
+{
+  u8 conflict_start_address[6];
+  u16 conflict_count;
+};
+
 struct maap_db_s
 {
-  u8 mac[6];
+  u8 start_mac[6];
   u8 state;
   u8 event;
   u8 probe_count;
@@ -149,6 +155,8 @@ static const char* maap_event_str(u16 desc_type)
     return "UNKNOWN";
   }
 }
+
+#define MAC_ARRAY_TO_U64(addr) ((u64)((u64)addr[5] | (u64)addr[4] << 8 | (u64)addr[3] << 16 | (u64)addr[2] << 24 | (u64)addr[1] << 32 | (u64)addr[0] << 40))
 
 struct avtp_state_s;
 

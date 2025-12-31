@@ -110,7 +110,6 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   state->msrp_socket = msrp_init(interface);
   state->mvrp_socket = mvrp_init(interface);
 
-  maap_init(state);
 
   /* Initialize MSRP state machine */
   msrp_state_init(&state->msrp);
@@ -173,6 +172,9 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   {
     ESP_LOGW(TAG, "failed to add AVDECC MAC filter: %s", esp_err_to_name(err));
   }
+
+  // Initialize MAAP
+  maap_init(state);
 
   s_state = state;
   return ESP_OK;

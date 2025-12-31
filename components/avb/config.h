@@ -65,9 +65,9 @@
 // #define CONFIG_TALKER_CAPABILITIES 0x4001
 
 // TODO should be always the same!?
-#define CONFIG_NUM_STREAM_OUTPUTS 0
-#define CONFIG_TALKER_STREAM_SOURCES 0
-#define CONFIG_TALKER_CAPABILITIES 0x0000
+#define CONFIG_NUM_STREAM_OUTPUTS 1
+#define CONFIG_TALKER_STREAM_SOURCES 1
+#define CONFIG_TALKER_CAPABILITIES 0x4001
 
 // Stream port configuration
 // Each stream port has clusters that map audio channels
