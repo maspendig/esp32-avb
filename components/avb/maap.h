@@ -160,6 +160,7 @@ static const char* maap_event_str(u16 desc_type)
 
 struct avtp_state_s;
 
+void maap_begin(struct avtp_state_s* state);
 void maap_release(struct avtp_state_s* state);
 void maap_net_rx(struct avtp_state_s* state, struct maap_pdu_s* msg, ssize_t len);
 void maap_init(struct avtp_state_s* state);

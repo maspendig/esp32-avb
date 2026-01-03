@@ -202,6 +202,23 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_com
   }
 }
 
+bool is_listener_connected(struct avtp_state_s* state, u64 listener_entity_id, u16 listener_unique_id)
+{
+  ESP_LOGI(TAG, "Checking if listener 0x%016llX (unique_id=%u) is already connected",
+           (unsigned long long)listener_entity_id,
+           listener_unique_id);
+  struct listener_pair_s* conn_rx = state->talker_stream_info.connected_listeners;
+  for (u16 i = 0; i < state->talker_stream_info.connection_count; i++)
+  {
+    if (conn_rx[i].listener_entity_id == listener_entity_id && conn_rx[i].listener_unique_id == listener_unique_id)
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Talker handling Connect TX Command
 int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_common_s* msg)
 {
   struct acmp_common_s resp = {0};
@@ -216,6 +233,24 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_commo
 
   ESP_LOGI(TAG, "Received ACMP Connect TX Command");
 
+  if (++state->talker_stream_info.connection_count == 1)
+  {
+    // Acquire stream multicast address via MAAP
+    // maap_begin(state);
+
+    /* Start MSRP Talker Advertisement with proper state machine integration
+     * This will trigger the applicant state machine to send periodic advertisements */
+    msrp_talker_advertise(state,
+                          state->talker_stream_info.stream_id,
+                          state->talker_stream_info.stream_dest_mac,
+                          state->talker_stream_info.stream_vlan_id,
+                          224, /* max_frame_size - typical for audio */
+                          1, /* max_frame_interval */
+                          MSRP_SR_CLASS_A_PRIO, /* priority - Class A */
+                          1, /* rank - non-emergency */
+                          100095); /* accumulated_latency in nanoseconds */
+  }
+
   acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_TX_RESPONSE, 44, 0);
   acmp_set_common_du(state, &resp);
 
@@ -225,10 +260,10 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_commo
   resp.talker_entity_id = msg->talker_entity_id;
   resp.listener_entity_id = msg->listener_entity_id;
 
-  const u8 maap_mac[6] = {0x91, 0xe0, 0xf0, 0x00, 0xfe, 0x00}; // Example MAAP MAC
-  memcpy(resp.stream_dest_mac, maap_mac, sizeof(resp.stream_dest_mac));
+  // wait for MAAP address to be acquired
+  memcpy(resp.stream_dest_mac, state->maap_db.start_mac, sizeof(resp.stream_dest_mac));
 
-  resp.connection_count = htons(1); // One connection established
+  resp.connection_count = htons(state->talker_stream_info.connection_count);
   resp.stream_vlan_id = msg->stream_vlan_id; // Keep the same VLAN ID
 
   if (send_msg(state->socket, &resp, sizeof(resp)) != ESP_OK)
@@ -252,10 +287,19 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_commo
     state->talker_stream_info.stream_vlan_id = ntohs(resp.stream_vlan_id);
     state->talker_stream_info.connection_count = 0;
   }
+
+  if (is_listener_connected(state, listener_entity_id, listener_unique_id) == true)
+  {
+    ESP_LOGW(TAG, "Listener 0x%016llX (unique_id=%u) is already connected, ignoring duplicate connection",
+             (unsigned long long)listener_entity_id,
+             listener_unique_id);
+    return ESP_OK;
+  }
+
   // Add listener to connected_listeners array
   if (state->talker_stream_info.connection_count < MAX_CONNECTED_LISTENERS)
   {
-    u16 index = state->talker_stream_info.connection_count;
+    const u16 index = state->talker_stream_info.connection_count;
     state->talker_stream_info.connected_listeners[index].listener_entity_id = listener_entity_id;
     state->talker_stream_info.connected_listeners[index].listener_unique_id = listener_unique_id;
     state->talker_stream_info.connection_count++;
@@ -487,6 +531,96 @@ void handle_acmp_disconnect_tx_response(struct avtp_state_s* state, struct acmp_
   }
 }
 
+void disconnectTalker(struct avtp_state_s* state, struct acmp_common_s* msg)
+{
+  u64 listener_entity_id = ntohll(msg->listener_entity_id);
+  u16 listener_unique_id = ntohs(msg->listener_unique_id);
+
+  // Find and remove listener from connected_listeners array
+  struct listener_pair_s* conn_rx = state->talker_stream_info.connected_listeners;
+  u16 found_index = MAX_CONNECTED_LISTENERS;
+  for (u16 i = 0; i < state->talker_stream_info.connection_count; i++)
+  {
+    if (conn_rx[i].listener_entity_id == listener_entity_id && conn_rx[i].listener_unique_id == listener_unique_id)
+    {
+      found_index = i;
+      break;
+    }
+  }
+  if (found_index < MAX_CONNECTED_LISTENERS)
+  {
+    // Shift remaining listeners down
+    for (u16 i = found_index; i < state->talker_stream_info.connection_count - 1; i++)
+    {
+      conn_rx[i] = conn_rx[i + 1];
+    }
+    // Clear the last entry
+    conn_rx[state->talker_stream_info.connection_count - 1] = (struct listener_pair_s){0};
+    state->talker_stream_info.connection_count--;
+
+    ESP_LOGI(TAG, "Disconnected listener 0x%016llX (unique_id=%u), remaining connections=%u",
+             (unsigned long long)listener_entity_id,
+             listener_unique_id,
+             state->talker_stream_info.connection_count);
+  }
+  else
+  {
+    ESP_LOGW(TAG, "Listener 0x%016llX (unique_id=%u) not found in connected listeners",
+             (unsigned long long)listener_entity_id,
+             listener_unique_id);
+  }
+
+  if (state->talker_stream_info.connection_count == 0)
+  {
+    /* Withdraw MSRP Talker Advertisement when no more listeners */
+    ESP_LOGI(TAG, "No more connected listeners, withdrawing talker advertisement");
+    msrp_talker_leave(state, state->talker_stream_info.stream_id);
+
+    /* Deallocate stream multicast MAC address */
+    maap_release(state);
+  }
+}
+
+void handle_acmp_disconnect_tx_command(struct avtp_state_s* state, struct acmp_common_s* msg)
+{
+  // check if we are the intended talker
+  if (state->entity_id != htonll(msg->talker_entity_id))
+  {
+    ESP_LOGW(TAG, "Ignoring foreign ACMP DISCONNECT TX Command (target: 0x%016llX, our: 0x%016llX).",
+             htonll(msg->listener_entity_id),
+             state->entity_id);
+    return;
+  }
+  if (is_listener_connected(state, ntohll(msg->listener_entity_id), ntohs(msg->listener_unique_id)) == false)
+  {
+    ESP_LOGW(TAG, "ACMP DISCONNECT TX Command: Listener 0x%016llX (unique_id=%u) not connected",
+             (unsigned long long)ntohll(msg->listener_entity_id),
+             ntohs(msg->listener_unique_id));
+    return;
+  }
+
+
+  ESP_LOGI(TAG, "Received ACMP Disconnect TX Command");
+
+  disconnectTalker(state, msg);
+  // send DISCONNECT RX RESPONSE
+
+  struct acmp_common_s resp = {0};
+  memcpy(&resp, msg, sizeof(struct acmp_common_s));
+  acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_DISCONNECT_TX_RESPONSE, 44, ACMP_STATUS_SUCCESS);
+
+  //send
+  int result = send_msg(state->socket, &resp, sizeof(resp));
+  if (result == ESP_OK)
+  {
+    ESP_LOGI(TAG, "Sent ACMP DISCONNECT TX Response to Listener");
+  }
+  else
+  {
+    ESP_LOGE(TAG, "Failed to send ACMP DISCONNECT TX Response");
+  }
+}
+
 void acmp_net_rx(struct avtp_state_s* state, struct acmp_common_s* msg, ssize_t len)
 {
   switch (msg->message_type)
@@ -514,6 +648,12 @@ void acmp_net_rx(struct avtp_state_s* state, struct acmp_common_s* msg, ssize_t 
     break;
   case ACMP_MSG_TYPE_DISCONNECT_TX_RESPONSE:
     handle_acmp_disconnect_tx_response(state, msg);
+    break;
+  case ACMP_MSG_TYPE_DISCONNECT_TX_COMMAND:
+    handle_acmp_disconnect_tx_command(state, msg);
+    break;
+  case ACMP_MSG_TYPE_DISCONNECT_RX_RESPONSE:
+    ESP_LOGW(TAG, "Received ACMP Disconnect RX Response - NOT IMPLEMENTED");
     break;
   default:
     ESP_LOGW(TAG, "Received unimplemented ACMP message type: 0x%1X", msg->message_type);

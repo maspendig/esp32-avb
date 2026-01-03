@@ -192,6 +192,11 @@ bool compare_mac(const u8* a, const u8 a_count, const u8* b, const u8 b_count, s
   return true; // Overlap detected
 }
 
+void maap_begin(struct avtp_state_s* state)
+{
+  maap_state_machine(state, MAAP_EVENT_BEGIN, NULL);
+}
+
 void maap_release(struct avtp_state_s* state)
 {
   maap_state_machine(state, MAAP_EVENT_RELEASE, NULL);

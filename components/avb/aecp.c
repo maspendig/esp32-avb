@@ -99,7 +99,7 @@ void handle_aem_read_configuration(struct avtp_state_s* state, struct aecp_data_
   } __attribute__((packed));
 
   // Define the number of descriptor types
-  const size_t num_desc_types = 6;
+  const size_t num_desc_types = 7;
 
   // Calculate total response size
   const ssize_t response_size = sizeof(struct aecp_data_unit_s) +
@@ -156,16 +156,16 @@ void handle_aem_read_configuration(struct avtp_state_s* state, struct aecp_data_
   resp->config_desc.descriptor_counts[0].count = htons(1);
   resp->config_desc.descriptor_counts[1].descriptor_type = htons(AEM_DESC_TYPE_STREAM_INPUT);
   resp->config_desc.descriptor_counts[1].count = htons(1);
-  //  resp->config_desc.descriptor_counts[2].descriptor_type = htons(AEM_DESC_TYPE_STREAM_OUTPUT);
-  //  resp->config_desc.descriptor_counts[2].count = htons(1);
-  resp->config_desc.descriptor_counts[2].descriptor_type = htons(AEM_DESC_TYPE_AVB_INTERFACE);
+  resp->config_desc.descriptor_counts[2].descriptor_type = htons(AEM_DESC_TYPE_STREAM_OUTPUT);
   resp->config_desc.descriptor_counts[2].count = htons(1);
-  resp->config_desc.descriptor_counts[3].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_SOURCE);
-  resp->config_desc.descriptor_counts[3].count = htons(CONFIG_NUM_CLOCK_SOURCES);
-  resp->config_desc.descriptor_counts[4].descriptor_type = htons(AEM_DESC_TYPE_LOCALE);
-  resp->config_desc.descriptor_counts[4].count = htons(1);
-  resp->config_desc.descriptor_counts[5].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
+  resp->config_desc.descriptor_counts[3].descriptor_type = htons(AEM_DESC_TYPE_AVB_INTERFACE);
+  resp->config_desc.descriptor_counts[3].count = htons(1);
+  resp->config_desc.descriptor_counts[4].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_SOURCE);
+  resp->config_desc.descriptor_counts[4].count = htons(CONFIG_NUM_CLOCK_SOURCES);
+  resp->config_desc.descriptor_counts[5].descriptor_type = htons(AEM_DESC_TYPE_LOCALE);
   resp->config_desc.descriptor_counts[5].count = htons(1);
+  resp->config_desc.descriptor_counts[6].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
+  resp->config_desc.descriptor_counts[6].count = htons(1);
 
   // Send configuration descriptor response
   send_aecp_msg(state, resp, response_size);
