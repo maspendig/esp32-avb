@@ -355,6 +355,7 @@ void maap_state_machine(struct avtp_state_s* state, maap_event event, struct maa
       // no action on INITIAL state
       break;
     }
+    break;
   default:
     ESP_LOGW(TAG, "MAAP Event: Unhandled event %d", event);
     break;
