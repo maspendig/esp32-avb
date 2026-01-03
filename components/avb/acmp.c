@@ -11,6 +11,7 @@
 #include <string.h>
 #include <assert.h>
 #include <config.h>
+#include <esp_eth_spec.h>
 #include <msrp.h>
 
 #define TAG "acmp"
@@ -64,55 +65,6 @@ int send_msg(int socket, void* buffer, int buflen)
     ESP_LOGE(TAG, "Failed to send ACMP Message: %d (errno: %d)", written, errno);
     return ESP_FAIL;
   }
-  return ESP_OK;
-}
-
-int send_acmp_connect_tx_command(struct avtp_state_s* state, uint8_t msg_type)
-{
-  ESP_LOGI(TAG, "Sent ACMP Connect TX Command to %02X:%02X:%02X:%02X:%02X:%02X entity_id=0x%016llx",
-           state->adp_entities[0].mac[0], state->adp_entities[0].mac[1],
-           state->adp_entities[0].mac[2], state->adp_entities[0].mac[3],
-           state->adp_entities[0].mac[4], state->adp_entities[0].mac[5],
-           (unsigned long long)state->adp_entities[0].entity_id);
-  struct acmp_common_s msg = {0};
-
-  acmp_set_common_header(state, &msg, msg_type, 44, 0);
-  acmp_set_common_du(state, &msg);
-
-  /* ACMP payload - convert to network byte order */
-  const uint64_t talker_entity_id = htonll(state->adp_entities[0].entity_id);
-  msg.talker_entity_id = talker_entity_id;
-  msg.listener_entity_id = htonll(state->entity_id);
-
-  const uint8_t zero_mac[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-  memcpy(msg.stream_dest_mac, zero_mac, sizeof(msg.stream_dest_mac));
-
-  /* Send the message */
-  return send_msg(state->socket, &msg, sizeof(msg));
-}
-
-// TODO msrp send talker advertise after connect rx command sent
-int send_acmp_connect_rx_command(struct avtp_state_s* state, uint8_t msg_type)
-{
-  struct acmp_common_s msg = {0};
-
-  acmp_set_common_header(state, &msg, msg_type, 44, 0);
-  acmp_set_common_du(state, &msg);
-  struct adp_entity_entry_s* talker = &(state->adp_entities[0]);
-
-  msg.talker_entity_id = htonll(state->entity_id);
-  msg.listener_entity_id = htonll(talker->entity_id);
-
-  // FIXME - sure??!!
-  const uint8_t zero_mac[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-  memcpy(msg.stream_dest_mac, zero_mac, sizeof(msg.stream_dest_mac));
-
-  if (send_msg(state->socket, &msg, sizeof(msg)) != ESP_OK)
-  {
-    ESP_LOGE(TAG, "Failed to send ACMP Connect RX Command");
-    return ESP_FAIL;
-  }
-  ESP_LOGI(TAG, "Sent ACMP Connect RX Command to Talker 0x%016llX", (unsigned long long)talker->entity_id);
   return ESP_OK;
 }
 
@@ -218,10 +170,19 @@ bool is_listener_connected(struct avtp_state_s* state, u64 listener_entity_id, u
   return false;
 }
 
+void generate_stream_id(const u8 mac[6], const u8 stream_index, u64* stream_id)
+{
+  *stream_id = MAC_ARRAY_TO_U64(mac);
+  // shift 16 bytes to left to make space for stream index
+  *stream_id <<= 16;
+  *stream_id += stream_index;
+}
+
 // Talker handling Connect TX Command
 int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_common_s* msg)
 {
   struct acmp_common_s resp = {0};
+  u16 status = ACMP_STATUS_SUCCESS;
 
   if (state->entity_id != htonll(msg->talker_entity_id))
   {
@@ -233,10 +194,26 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_commo
 
   ESP_LOGI(TAG, "Received ACMP Connect TX Command");
 
-  if (++state->talker_stream_info.connection_count == 1)
+  // TODO implement talkerIsAcquiredOrLockedByOther 1722.1-2021 p352
+  // if (is_talker_unavailable(&msg))
+  // {
+  //   // Talker is unavailable, send response with appropriate status
+  //   ACMP_SET_CTRL_DATA_STATUS(*resp, ACMP_STATUS_CONTROLLER_NOT_AUTHORIZED, 44);
+  //   status = ACMP_STATUS_CONTROLLER_NOT_AUTHORIZED;
+  // }
+
+  acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_TX_RESPONSE, 44, 0);
+
+  // Save talker stream information
+  u64 listener_entity_id = ntohll(msg->listener_entity_id);
+  u16 listener_unique_id = ntohs(msg->listener_unique_id);
+
+  // Initialize stream info on first connection
+  if (state->talker_stream_info.connection_count == 0)
   {
-    // Acquire stream multicast address via MAAP
-    // maap_begin(state);
+    generate_stream_id(state->intf_hw_addr, 1, &state->talker_stream_info.stream_id);
+    memcpy(state->talker_stream_info.stream_dest_mac, state->maap_db.start_mac, ETH_ADDR_LEN);
+    state->talker_stream_info.stream_vlan_id = 2;
 
     /* Start MSRP Talker Advertisement with proper state machine integration
      * This will trigger the applicant state machine to send periodic advertisements */
@@ -250,45 +227,7 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_commo
                           1, /* rank - non-emergency */
                           100095); /* accumulated_latency in nanoseconds */
   }
-
-  acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_TX_RESPONSE, 44, 0);
-  acmp_set_common_du(state, &resp);
-
-  resp.sequence_id = msg->sequence_id;
-
-  /* ACMP payload - convert to network byte order */
-  resp.talker_entity_id = msg->talker_entity_id;
-  resp.listener_entity_id = msg->listener_entity_id;
-
-  // wait for MAAP address to be acquired
-  memcpy(resp.stream_dest_mac, state->maap_db.start_mac, sizeof(resp.stream_dest_mac));
-
-  resp.connection_count = htons(state->talker_stream_info.connection_count);
-  resp.stream_vlan_id = msg->stream_vlan_id; // Keep the same VLAN ID
-
-  if (send_msg(state->socket, &resp, sizeof(resp)) != ESP_OK)
-  {
-    ESP_LOGE(TAG, "Failed to send ACMP Connect TX Response");
-    return ESP_FAIL;
-  }
-
-  ESP_LOGI(TAG, "Sent ACMP Connect TX Response to Listener 0x%016llX", htonll(msg->listener_entity_id));
-
-  // Save talker stream information
-  u64 listener_entity_id = ntohll(msg->listener_entity_id);
-  u16 listener_unique_id = ntohs(msg->listener_unique_id);
-
-  // Initialize stream info on first connection
-  if (state->talker_stream_info.connection_count == 0)
-  {
-    state->talker_stream_info.stream_id = ntohll(resp.stream_id);
-    memcpy(state->talker_stream_info.stream_dest_mac, resp.stream_dest_mac,
-           sizeof(state->talker_stream_info.stream_dest_mac));
-    state->talker_stream_info.stream_vlan_id = ntohs(resp.stream_vlan_id);
-    state->talker_stream_info.connection_count = 0;
-  }
-
-  if (is_listener_connected(state, listener_entity_id, listener_unique_id) == true)
+  else if (is_listener_connected(state, listener_entity_id, listener_unique_id) == true)
   {
     ESP_LOGW(TAG, "Listener 0x%016llX (unique_id=%u) is already connected, ignoring duplicate connection",
              (unsigned long long)listener_entity_id,
@@ -315,8 +254,32 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_commo
     ESP_LOGW(TAG, "Maximum connected listeners (%d) reached, cannot add listener 0x%016llX",
              MAX_CONNECTED_LISTENERS,
              (unsigned long long)listener_entity_id);
+    status = ACMP_STATUS_TALKER_NO_BANDWIDTH;
   }
 
+  resp.sequence_id = msg->sequence_id;
+
+  /* ACMP payload - convert to network byte order */
+  resp.talker_entity_id = msg->talker_entity_id;
+  resp.controller_entity_id = msg->controller_entity_id;
+  resp.listener_entity_id = msg->listener_entity_id;
+
+  // wait for MAAP address to be acquired
+  memcpy(resp.stream_dest_mac, state->maap_db.start_mac, sizeof(resp.stream_dest_mac));
+
+  resp.connection_count = htons(state->talker_stream_info.connection_count);
+  resp.stream_id = htonll(state->talker_stream_info.stream_id);
+  resp.stream_vlan_id = htons(2); // Keep the same VLAN ID
+
+  ACMP_SET_CTRL_DATA_STATUS((&resp), status, 44);
+
+  if (send_msg(state->socket, &resp, sizeof(resp)) != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to send ACMP Connect TX Response");
+    return ESP_FAIL;
+  }
+
+  ESP_LOGI(TAG, "Sent ACMP Connect TX Response to Listener 0x%016llX", htonll(msg->listener_entity_id));
   return ESP_OK;
 }
 
