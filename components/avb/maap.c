@@ -192,6 +192,11 @@ bool compare_mac(const u8* a, const u8 a_count, const u8* b, const u8 b_count, s
   return true; // Overlap detected
 }
 
+void maap_release(struct avtp_state_s* state)
+{
+  maap_state_machine(state, MAAP_EVENT_RELEASE, NULL);
+}
+
 void maap_state_machine(struct avtp_state_s* state, maap_event event, struct maap_pdu_s* msg)
 {
   ESP_LOGI(TAG, "process MAAP event: %s, state: %s", maap_event_str(event), maap_state_str(state->maap_db.state));
