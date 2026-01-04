@@ -142,31 +142,6 @@ typedef struct
 } msrp_listener_decl_t;
 
 /* ============================================================================
- * MSRP Talker Applicant State (our talker advertisement for a stream)
- * ============================================================================
- */
-typedef struct
-{
-  bool active; /* Is this talker advertisement active? */
-  bool leaving; /* Is this talker in the process of leaving? */
-  u64 stream_id; /* Stream ID we are advertising */
-  u8 dest_addr[6]; /* Destination MAC for stream */
-  u16 vlan_id; /* VLAN ID for stream */
-  u16 max_frame_size; /* Maximum frame size */
-  u16 max_frame_interval; /* Maximum frame interval */
-  u8 priority; /* Stream priority (3 bits) */
-  u8 rank; /* Stream rank (1 bit) */
-  u32 accumulated_latency; /* Accumulated latency */
-
-  /* Applicant state machine */
-  mrp_applicant_state_t applicant_state;
-  struct timespec join_timer; /* Join timer for applicant state */
-
-  /* Flags for transmission */
-  bool tx_pending; /* Need to transmit advertisement */
-} msrp_talker_advert_t;
-
-/* ============================================================================
  * MSRP Domain Information
  * ============================================================================
  */
@@ -193,9 +168,6 @@ typedef struct
 
   /* Our listener declaration - for now only support single stream */
   msrp_listener_decl_t listener;
-
-  /* Our talker advertisement - for now only support single stream */
-  msrp_talker_advert_t talker_advert;
 
   /* Timing for periodic transmissions */
   struct timespec last_tx_time;
@@ -366,52 +338,11 @@ int msrp_send_listener_declaration(struct avtp_state_s* state, u64 stream_id,
  */
 
 /**
- * Start advertising a stream as talker (Join as talker)
- * This triggers the applicant state machine to advertise the stream
+ * Send a talker advertise message
  * @param state Pointer to AVTP state
- * @param stream_id Stream ID to advertise
- * @param dest_addr Destination MAC address for stream
- * @param vlan_id VLAN ID for stream
- * @param max_frame_size Maximum frame size
- * @param max_frame_interval Maximum frame interval
- * @param priority Stream priority (0-7)
- * @param rank Stream rank (0 or 1)
- * @param accumulated_latency Accumulated latency in nanoseconds
  * @return 0 on success, -1 on error
  */
-int msrp_talker_advertise(struct avtp_state_s* state, u64 stream_id,
-                          const u8 dest_addr[6], u16 vlan_id,
-                          u16 max_frame_size, u16 max_frame_interval,
-                          u8 priority, u8 rank, u32 accumulated_latency);
-
-/**
- * Stop advertising a stream as talker (Leave as talker)
- * This triggers the applicant state machine to withdraw advertisement
- * @param state Pointer to AVTP state
- * @param stream_id Stream ID to stop advertising
- * @return 0 on success, -1 on error
- */
-int msrp_talker_leave(struct avtp_state_s* state, u64 stream_id);
-
-/**
- * Send a talker advertise message (internal use by state machine)
- * @param state Pointer to AVTP state
- * @param stream_id Stream ID
- * @param dest_addr Destination MAC address
- * @param vlan_id VLAN ID
- * @param max_frame_size Maximum frame size
- * @param max_frame_interval Maximum frame interval
- * @param priority Stream priority
- * @param rank Stream rank
- * @param accumulated_latency Accumulated latency
- * @param event MRP attribute event (NEW, JOININ, etc.)
- * @return 0 on success, -1 on error
- */
-int msrp_send_talker_advertise(struct avtp_state_s* state, u64 stream_id,
-                               const u8 dest_addr[6], u16 vlan_id,
-                               u16 max_frame_size, u16 max_frame_interval,
-                               u8 priority, u8 rank, u32 accumulated_latency,
-                               u8 event);
+int msrp_send_talker_advertise(struct avtp_state_s* state);
 
 /**
  * Send a domain discovery request

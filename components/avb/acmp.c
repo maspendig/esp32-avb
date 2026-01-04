@@ -217,15 +217,16 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_commo
 
     /* Start MSRP Talker Advertisement with proper state machine integration
      * This will trigger the applicant state machine to send periodic advertisements */
-    msrp_talker_advertise(state,
-                          state->talker_stream_info.stream_id,
-                          state->talker_stream_info.stream_dest_mac,
-                          state->talker_stream_info.stream_vlan_id,
-                          224, /* max_frame_size - typical for audio */
-                          1, /* max_frame_interval */
-                          MSRP_SR_CLASS_A_PRIO, /* priority - Class A */
-                          1, /* rank - non-emergency */
-                          100095); /* accumulated_latency in nanoseconds */
+    // TODO start msrp talker advertise properly
+    // msrp_talker_advertise(state,
+    //                       state->talker_stream_info.stream_id,
+    //                       state->talker_stream_info.stream_dest_mac,
+    //                       state->talker_stream_info.stream_vlan_id,
+    //                       224, /* max_frame_size - typical for audio */
+    //                       1, /* max_frame_interval */
+    //                       MSRP_SR_CLASS_A_PRIO, /* priority - Class A */
+    //                       1, /* rank - non-emergency */
+    //                       100095); /* accumulated_latency in nanoseconds */
   }
   else if (is_listener_connected(state, listener_entity_id, listener_unique_id) == true)
   {
@@ -537,7 +538,8 @@ void disconnectTalker(struct avtp_state_s* state, struct acmp_common_s* msg)
   {
     /* Withdraw MSRP Talker Advertisement when no more listeners */
     ESP_LOGI(TAG, "No more connected listeners, withdrawing talker advertisement");
-    msrp_talker_leave(state, state->talker_stream_info.stream_id);
+    // TODO re-enable when MSRP leave is implemented
+    // msrp_talker_leave(state, state->talker_stream_info.stream_id);
 
     /* Deallocate stream multicast MAC address */
     maap_release(state);

@@ -185,89 +185,74 @@ static void timer_reset(struct timespec* timer)
 /* ============================================================================
  * MRP Applicant State Machine - IEEE 802.1Q-2022 Section 10.7.4
  * ============================================================================
- * Generic implementation for both listener and talker applicants.
- * The state machine is the same for both, only the transmitted attribute differs.
- * For simplicity, we use the same structure layout (active, leaving, applicant_state, tx_pending)
- * which both msrp_listener_decl_t and msrp_talker_advert_t follow.
+ * Simplified implementation for listener participation
  */
-
-/* Generic applicant structure - matches both listener and talker layouts */
-typedef struct
-{
-  bool active;
-  bool leaving;
-  /* other fields not accessed by state machine */
-  u64 _padding[10]; /* ensure we don't access beyond common fields */
-  mrp_applicant_state_t applicant_state;
-  struct timespec join_timer;
-  bool tx_pending;
-} generic_applicant_t;
 
 /**
  * Process applicant state machine on Join! event (local application wants to join)
  */
-static void applicant_join(generic_applicant_t* applicant)
+static void applicant_join(msrp_listener_decl_t* listener)
 {
-  mrp_applicant_state_t old_state = applicant->applicant_state;
+  mrp_applicant_state_t old_state = listener->applicant_state;
 
-  switch (applicant->applicant_state)
+  switch (listener->applicant_state)
   {
   case MRP_APPLICANT_VO:
   case MRP_APPLICANT_LO:
-    applicant->applicant_state = MRP_APPLICANT_VN;
-    applicant->tx_pending = true;
+    listener->applicant_state = MRP_APPLICANT_VN;
+    listener->tx_pending = true;
     break;
   case MRP_APPLICANT_LA:
-    applicant->applicant_state = MRP_APPLICANT_AA;
+    listener->applicant_state = MRP_APPLICANT_AA;
     break;
   case MRP_APPLICANT_AO:
-    applicant->applicant_state = MRP_APPLICANT_AP;
+    listener->applicant_state = MRP_APPLICANT_AP;
     break;
   case MRP_APPLICANT_QO:
-    applicant->applicant_state = MRP_APPLICANT_QP;
+    listener->applicant_state = MRP_APPLICANT_QP;
     break;
   default:
     /* Already in a joined state, no change */
     break;
   }
 
-  if (old_state != applicant->applicant_state)
+  if (old_state != listener->applicant_state)
   {
     ESP_LOGI(TAG, "Applicant Join!: %s -> %s",
              mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(applicant->applicant_state));
+             mrp_applicant_state_string(listener->applicant_state));
   }
 }
 
 /**
  * Process applicant state machine on Leave! event (local application wants to leave)
  */
-static void applicant_leave(generic_applicant_t* applicant)
+static void applicant_leave(msrp_listener_decl_t* listener)
 {
-  mrp_applicant_state_t old_state = applicant->applicant_state;
+  mrp_applicant_state_t old_state = listener->applicant_state;
 
-  switch (applicant->applicant_state)
+  switch (listener->applicant_state)
   {
   case MRP_APPLICANT_VN:
   case MRP_APPLICANT_AN:
   case MRP_APPLICANT_AA:
   case MRP_APPLICANT_QA:
-    applicant->applicant_state = MRP_APPLICANT_LA;
+    listener->applicant_state = MRP_APPLICANT_LA;
     break;
   case MRP_APPLICANT_VP:
   case MRP_APPLICANT_AP:
   case MRP_APPLICANT_QP:
-    applicant->applicant_state = MRP_APPLICANT_VO;
+    listener->applicant_state = MRP_APPLICANT_VO;
     break;
   default:
     break;
   }
 
-  if (old_state != applicant->applicant_state)
+  if (old_state != listener->applicant_state)
   {
     ESP_LOGI(TAG, "Applicant Leave!: %s -> %s",
              mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(applicant->applicant_state));
+             mrp_applicant_state_string(listener->applicant_state));
   }
 }
 
@@ -275,122 +260,122 @@ static void applicant_leave(generic_applicant_t* applicant)
  * Process applicant state machine when receiving rJoinIn event
  * (received JoinIn from another participant)
  */
-static void applicant_rx_joinin(generic_applicant_t* applicant)
+static void applicant_rx_joinin(msrp_listener_decl_t* listener)
 {
-  mrp_applicant_state_t old_state = applicant->applicant_state;
+  mrp_applicant_state_t old_state = listener->applicant_state;
 
-  switch (applicant->applicant_state)
+  switch (listener->applicant_state)
   {
   case MRP_APPLICANT_VO:
-    applicant->applicant_state = MRP_APPLICANT_AO;
+    listener->applicant_state = MRP_APPLICANT_AO;
     break;
   case MRP_APPLICANT_VP:
-    applicant->applicant_state = MRP_APPLICANT_AP;
+    listener->applicant_state = MRP_APPLICANT_AP;
     break;
   case MRP_APPLICANT_AA:
-    applicant->applicant_state = MRP_APPLICANT_QA;
+    listener->applicant_state = MRP_APPLICANT_QA;
     break;
   case MRP_APPLICANT_AO:
-    applicant->applicant_state = MRP_APPLICANT_QO;
+    listener->applicant_state = MRP_APPLICANT_QO;
     break;
   case MRP_APPLICANT_AP:
-    applicant->applicant_state = MRP_APPLICANT_QP;
+    listener->applicant_state = MRP_APPLICANT_QP;
     break;
   default:
     break;
   }
 
-  if (old_state != applicant->applicant_state)
+  if (old_state != listener->applicant_state)
   {
     ESP_LOGD(TAG, "Applicant rJoinIn: %s -> %s",
              mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(applicant->applicant_state));
+             mrp_applicant_state_string(listener->applicant_state));
   }
 }
 
 /**
  * Process applicant state machine when receiving rIn event
  */
-static void applicant_rx_in(generic_applicant_t* applicant)
+static void applicant_rx_in(msrp_listener_decl_t* listener)
 {
-  mrp_applicant_state_t old_state = applicant->applicant_state;
+  mrp_applicant_state_t old_state = listener->applicant_state;
 
-  switch (applicant->applicant_state)
+  switch (listener->applicant_state)
   {
   case MRP_APPLICANT_AA:
-    applicant->applicant_state = MRP_APPLICANT_QA;
+    listener->applicant_state = MRP_APPLICANT_QA;
     break;
   default:
     break;
   }
 
-  if (old_state != applicant->applicant_state)
+  if (old_state != listener->applicant_state)
   {
     ESP_LOGD(TAG, "Applicant rIn: %s -> %s",
              mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(applicant->applicant_state));
+             mrp_applicant_state_string(listener->applicant_state));
   }
 }
 
 /**
  * Process applicant state machine when receiving rJoinMt or rMt event
  */
-static void applicant_rx_empty(generic_applicant_t* applicant)
+static void applicant_rx_empty(msrp_listener_decl_t* listener)
 {
-  mrp_applicant_state_t old_state = applicant->applicant_state;
+  mrp_applicant_state_t old_state = listener->applicant_state;
 
-  switch (applicant->applicant_state)
+  switch (listener->applicant_state)
   {
   case MRP_APPLICANT_QA:
-    applicant->applicant_state = MRP_APPLICANT_AA;
-    applicant->tx_pending = true;
+    listener->applicant_state = MRP_APPLICANT_AA;
+    listener->tx_pending = true;
     break;
   case MRP_APPLICANT_QO:
-    applicant->applicant_state = MRP_APPLICANT_AO;
+    listener->applicant_state = MRP_APPLICANT_AO;
     break;
   case MRP_APPLICANT_QP:
-    applicant->applicant_state = MRP_APPLICANT_AP;
+    listener->applicant_state = MRP_APPLICANT_AP;
     break;
   default:
     break;
   }
 
-  if (old_state != applicant->applicant_state)
+  if (old_state != listener->applicant_state)
   {
     ESP_LOGD(TAG, "Applicant rEmpty: %s -> %s",
              mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(applicant->applicant_state));
+             mrp_applicant_state_string(listener->applicant_state));
   }
 }
 
 /**
  * Process applicant state machine when receiving rLeave event
  */
-static void applicant_rx_leave(generic_applicant_t* applicant)
+static void applicant_rx_leave(msrp_listener_decl_t* listener)
 {
-  mrp_applicant_state_t old_state = applicant->applicant_state;
+  mrp_applicant_state_t old_state = listener->applicant_state;
 
-  switch (applicant->applicant_state)
+  switch (listener->applicant_state)
   {
   case MRP_APPLICANT_VO:
   case MRP_APPLICANT_AO:
   case MRP_APPLICANT_QO:
-    applicant->applicant_state = MRP_APPLICANT_LO;
+    listener->applicant_state = MRP_APPLICANT_LO;
     break;
   case MRP_APPLICANT_VP:
   case MRP_APPLICANT_AP:
   case MRP_APPLICANT_QP:
-    applicant->applicant_state = MRP_APPLICANT_VO;
+    listener->applicant_state = MRP_APPLICANT_VO;
     break;
   default:
     break;
   }
 
-  if (old_state != applicant->applicant_state)
+  if (old_state != listener->applicant_state)
   {
     ESP_LOGD(TAG, "Applicant rLeave: %s -> %s",
              mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(applicant->applicant_state));
+             mrp_applicant_state_string(listener->applicant_state));
   }
 }
 
@@ -399,26 +384,26 @@ static void applicant_rx_leave(generic_applicant_t* applicant)
  * Returns the event to transmit, or -1 if no transmission needed
  * Per IEEE 802.1Q-2022 Table 10-3
  */
-static int applicant_tx(generic_applicant_t* applicant)
+static int applicant_tx(msrp_listener_decl_t* listener)
 {
-  mrp_applicant_state_t old_state = applicant->applicant_state;
+  mrp_applicant_state_t old_state = listener->applicant_state;
   int tx_event = -1;
 
-  switch (applicant->applicant_state)
+  switch (listener->applicant_state)
   {
   case MRP_APPLICANT_VN:
     /* VN + tx! -> AN, send sN (New) */
-    applicant->applicant_state = MRP_APPLICANT_AN;
+    listener->applicant_state = MRP_APPLICANT_AN;
     tx_event = MSRP_ATTRIBUTE_EVENT_NEW;
     break;
   case MRP_APPLICANT_AN:
     /* AN + tx! -> QA, send sN (New) */
-    applicant->applicant_state = MRP_APPLICANT_QA;
+    listener->applicant_state = MRP_APPLICANT_QA;
     tx_event = MSRP_ATTRIBUTE_EVENT_NEW;
     break;
   case MRP_APPLICANT_AA:
     /* AA + tx! -> QA, send sJ (JoinIn) */
-    applicant->applicant_state = MRP_APPLICANT_QA;
+    listener->applicant_state = MRP_APPLICANT_QA;
     tx_event = MSRP_ATTRIBUTE_EVENT_JOININ;
     break;
   case MRP_APPLICANT_QA:
@@ -427,17 +412,17 @@ static int applicant_tx(generic_applicant_t* applicant)
     break;
   case MRP_APPLICANT_LA:
     /* LA + tx! -> VO, send sL (Leave) */
-    applicant->applicant_state = MRP_APPLICANT_VO;
+    listener->applicant_state = MRP_APPLICANT_VO;
     tx_event = MSRP_ATTRIBUTE_EVENT_LV;
     break;
   case MRP_APPLICANT_VP:
     /* VP + tx! -> AA, send sJ (JoinMt) */
-    applicant->applicant_state = MRP_APPLICANT_AA;
+    listener->applicant_state = MRP_APPLICANT_AA;
     tx_event = MSRP_ATTRIBUTE_EVENT_JOINMT;
     break;
   case MRP_APPLICANT_AP:
     /* AP + tx! -> QA, send sJ (JoinIn) */
-    applicant->applicant_state = MRP_APPLICANT_QA;
+    listener->applicant_state = MRP_APPLICANT_QA;
     tx_event = MSRP_ATTRIBUTE_EVENT_JOININ;
     break;
   case MRP_APPLICANT_VO:
@@ -448,19 +433,19 @@ static int applicant_tx(generic_applicant_t* applicant)
     break;
   case MRP_APPLICANT_LO:
     /* LO + tx! -> VO, no transmission */
-    applicant->applicant_state = MRP_APPLICANT_VO;
+    listener->applicant_state = MRP_APPLICANT_VO;
     break;
   default:
     break;
   }
 
-  applicant->tx_pending = false;
+  listener->tx_pending = false;
 
-  if (old_state != applicant->applicant_state)
+  if (old_state != listener->applicant_state)
   {
     ESP_LOGI(TAG, "Applicant TX: %s -> %s (event: %s)",
              mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(applicant->applicant_state),
+             mrp_applicant_state_string(listener->applicant_state),
              tx_event >= 0 ? msrp_attribute_event_string(tx_event) : "none");
   }
 
@@ -649,17 +634,17 @@ static void handle_msrp_talker_advertise(struct avtp_state_s* state, void* buf, 
       switch (event)
       {
       case MSRP_ATTRIBUTE_EVENT_JOININ:
-        applicant_rx_joinin((generic_applicant_t*)&msrp->listener);
+        applicant_rx_joinin(&msrp->listener);
         break;
       case MSRP_ATTRIBUTE_EVENT_IN:
-        applicant_rx_in((generic_applicant_t*)&msrp->listener);
+        applicant_rx_in(&msrp->listener);
         break;
       case MSRP_ATTRIBUTE_EVENT_LV:
-        applicant_rx_leave((generic_applicant_t*)&msrp->listener);
+        applicant_rx_leave(&msrp->listener);
         break;
       case MSRP_ATTRIBUTE_EVENT_MT:
       case MSRP_ATTRIBUTE_EVENT_JOINMT:
-        applicant_rx_empty((generic_applicant_t*)&msrp->listener);
+        applicant_rx_empty(&msrp->listener);
         break;
       default:
         break;
@@ -768,17 +753,17 @@ static void handle_msrp_listener(struct avtp_state_s* state, void* buf, size_t l
     switch (event)
     {
     case MSRP_ATTRIBUTE_EVENT_JOININ:
-      applicant_rx_joinin((generic_applicant_t*)&msrp->listener);
+      applicant_rx_joinin(&msrp->listener);
       break;
     case MSRP_ATTRIBUTE_EVENT_IN:
-      applicant_rx_in((generic_applicant_t*)&msrp->listener);
+      applicant_rx_in(&msrp->listener);
       break;
     case MSRP_ATTRIBUTE_EVENT_LV:
-      applicant_rx_leave((generic_applicant_t*)&msrp->listener);
+      applicant_rx_leave(&msrp->listener);
       break;
     case MSRP_ATTRIBUTE_EVENT_MT:
     case MSRP_ATTRIBUTE_EVENT_JOINMT:
-      applicant_rx_empty((generic_applicant_t*)&msrp->listener);
+      applicant_rx_empty(&msrp->listener);
       break;
     default:
       break;
@@ -897,11 +882,7 @@ int msrp_send_listener_declaration(struct avtp_state_s* state, u64 stream_id,
   return 0;
 }
 
-int msrp_send_talker_advertise(struct avtp_state_s* state, u64 stream_id,
-                               const u8 dest_addr[6], u16 vlan_id,
-                               u16 max_frame_size, u16 max_frame_interval,
-                               u8 priority, u8 rank, u32 accumulated_latency,
-                               u8 event)
+int msrp_send_talker_advertise(struct avtp_state_s* state)
 {
   struct talker_advertise_s msg = {0};
 
@@ -915,23 +896,18 @@ int msrp_send_talker_advertise(struct avtp_state_s* state, u64 stream_id,
   msg.attribute_list_length = htons(30);
 
   msg.number_of_values = htons(1);
-  msg.stream_id = htonll(stream_id);
-  memcpy(msg.stream_da, dest_addr, sizeof(msg.stream_da));
-  msg.stream_vlan_id = htons(vlan_id);
-  msg.max_frame_size = htons(max_frame_size);
-  msg.max_frame_interval = htons(max_frame_interval);
-  msg.priority = priority & 0x07;
-  msg.rank = rank & 0x01;
-  msg.accumulated_latency = htonl(accumulated_latency);
-  msg.attribute_event = encode_three_packed_event(event, 0, 0);
+  msg.stream_id = htonll(state->talker_stream_info.stream_id);
+  memcpy(msg.stream_da, state->talker_stream_info.stream_dest_mac, sizeof(msg.stream_da));
+  msg.stream_vlan_id = htons(state->talker_stream_info.stream_vlan_id);
+  msg.max_frame_size = htons(224);
+  msg.max_frame_interval = htons(1);
+  msg.priority = MSRP_SR_CLASS_A_PRIO;
+  msg.rank = 1;
+  msg.accumulated_latency = htonl(100095);
+  msg.attribute_event = encode_three_packed_event(MSRP_ATTRIBUTE_EVENT_JOININ, 0, 0);
 
-  /* End marks */
-  msg.end_mark_attribute_list = 0;
-  msg.end_mark = 0;
-
-  ESP_LOGI(TAG, "Sending Talker Advertise for stream 0x%016llX (event=%s)",
-           (unsigned long long)stream_id,
-           msrp_attribute_event_string(event));
+  ESP_LOGI(TAG, "Sending Talker Advertise for stream 0x%016llX",
+           (unsigned long long)state->talker_stream_info.stream_id);
 
   ssize_t written = write(state->msrp_socket, &msg, sizeof(msg));
   if (written < 0)
@@ -1102,7 +1078,7 @@ void msrp_periodic(struct avtp_state_s* state)
 
     if (should_tx)
     {
-      int tx_event = applicant_tx((generic_applicant_t*)&msrp->listener);
+      int tx_event = applicant_tx(&msrp->listener);
       if (tx_event >= 0)
       {
         msrp_send_listener_declaration(state,
@@ -1122,59 +1098,6 @@ void msrp_periodic(struct avtp_state_s* state)
                  (unsigned long long)msrp->listener.stream_id);
         msrp->listener.active = false;
         msrp->listener.leaving = false;
-      }
-    }
-  }
-
-  /* Check if we need to transmit talker advertisement */
-  if (msrp->talker_advert.active)
-  {
-    bool should_tx = false;
-
-    /* Only transmit on timer if in an anxious state or tx_pending is set */
-    if (timer_expired(&msrp->last_tx_time, msrp->join_timeout_ms))
-    {
-      /* In anxious states, transmit on timer expiry */
-      if (applicant_is_anxious(msrp->talker_advert.applicant_state))
-      {
-        should_tx = true;
-      }
-      /* Reset timer even if not transmitting to avoid immediate trigger next time */
-      timer_reset(&msrp->last_tx_time);
-    }
-
-    /* Always transmit if tx_pending is explicitly set */
-    if (msrp->talker_advert.tx_pending)
-    {
-      should_tx = true;
-    }
-
-    if (should_tx)
-    {
-      int tx_event = applicant_tx((generic_applicant_t*)&msrp->talker_advert);
-      if (tx_event >= 0)
-      {
-        msrp_send_talker_advertise(state,
-                                   msrp->talker_advert.stream_id,
-                                   msrp->talker_advert.dest_addr,
-                                   msrp->talker_advert.vlan_id,
-                                   msrp->talker_advert.max_frame_size,
-                                   msrp->talker_advert.max_frame_interval,
-                                   msrp->talker_advert.priority,
-                                   msrp->talker_advert.rank,
-                                   msrp->talker_advert.accumulated_latency,
-                                   tx_event);
-        timer_reset(&msrp->talker_advert.join_timer);
-      }
-
-      /* Check if leave process is complete */
-      if (msrp->talker_advert.leaving &&
-        msrp->talker_advert.applicant_state == MRP_APPLICANT_VO)
-      {
-        ESP_LOGD(TAG, "Talker leave process complete for stream 0x%016llX",
-                 (unsigned long long)msrp->talker_advert.stream_id);
-        msrp->talker_advert.active = false;
-        msrp->talker_advert.leaving = false;
       }
     }
   }
@@ -1284,7 +1207,7 @@ int msrp_listener_join(struct avtp_state_s* state, u64 stream_id)
            msrp_listener_decl_string(msrp->listener.declaration_type));
 
   /* Trigger Join! event on applicant state machine */
-  applicant_join((generic_applicant_t*)&msrp->listener);
+  applicant_join(&msrp->listener);
 
   return 0;
 }
@@ -1302,7 +1225,7 @@ int msrp_listener_leave(struct avtp_state_s* state, u64 stream_id)
   ESP_LOGI(TAG, "Leaving stream 0x%016llX as listener", (unsigned long long)stream_id);
 
   /* Trigger Leave! event on applicant state machine */
-  applicant_leave((generic_applicant_t*)&msrp->listener);
+  applicant_leave(&msrp->listener);
 
   /* Mark as leaving - the periodic handler will complete the leave process
    * and send the Leave message when the tx opportunity occurs.
@@ -1311,86 +1234,6 @@ int msrp_listener_leave(struct avtp_state_s* state, u64 stream_id)
    * The listener will be marked inactive after the state machine completes. */
   msrp->listener.leaving = true;
   msrp->listener.tx_pending = true;
-
-  return 0;
-}
-
-/* ============================================================================
- * MSRP Talker Advertise/Leave API
- * ============================================================================
- */
-
-int msrp_talker_advertise(struct avtp_state_s* state, u64 stream_id,
-                          const u8 dest_addr[6], u16 vlan_id,
-                          u16 max_frame_size, u16 max_frame_interval,
-                          u8 priority, u8 rank, u32 accumulated_latency)
-{
-  msrp_state_t* msrp = &state->msrp;
-
-  /* Check if already advertising a different stream */
-  if (msrp->talker_advert.active && !msrp->talker_advert.leaving &&
-    msrp->talker_advert.stream_id != stream_id)
-  {
-    ESP_LOGE(TAG, "Already advertising stream 0x%016llX, cannot advertise 0x%016llX",
-             (unsigned long long)msrp->talker_advert.stream_id,
-             (unsigned long long)stream_id);
-    return -1;
-  }
-
-  /* If we're rejoining after leave completed (active=false),
-   * reset the applicant state machine to initial state.
-   * If we're still in the process of leaving (leaving=true, active=true),
-   * let applicant_join() handle the state transition (LA→AA per IEEE 802.1Q). */
-  if (!msrp->talker_advert.active)
-  {
-    msrp->talker_advert.applicant_state = MRP_APPLICANT_VO;
-    msrp->talker_advert.tx_pending = false;
-    timer_reset(&msrp->talker_advert.join_timer);
-  }
-
-  /* Clear leaving flag since we're now (re)advertising */
-  msrp->talker_advert.leaving = false;
-
-  ESP_LOGI(TAG, "Advertising stream 0x%016llX as talker", (unsigned long long)stream_id);
-
-  msrp->talker_advert.active = true;
-  msrp->talker_advert.stream_id = stream_id;
-  memcpy(msrp->talker_advert.dest_addr, dest_addr, 6);
-  msrp->talker_advert.vlan_id = vlan_id;
-  msrp->talker_advert.max_frame_size = max_frame_size;
-  msrp->talker_advert.max_frame_interval = max_frame_interval;
-  msrp->talker_advert.priority = priority & 0x07;
-  msrp->talker_advert.rank = rank & 0x01;
-  msrp->talker_advert.accumulated_latency = accumulated_latency;
-
-  /* Trigger Join! event on applicant state machine */
-  applicant_join((generic_applicant_t*)&msrp->talker_advert);
-
-  return 0;
-}
-
-int msrp_talker_leave(struct avtp_state_s* state, u64 stream_id)
-{
-  msrp_state_t* msrp = &state->msrp;
-
-  if (!msrp->talker_advert.active || msrp->talker_advert.stream_id != stream_id)
-  {
-    ESP_LOGW(TAG, "Not advertising stream 0x%016llX", (unsigned long long)stream_id);
-    return -1;
-  }
-
-  ESP_LOGI(TAG, "Withdrawing talker advertisement for stream 0x%016llX", (unsigned long long)stream_id);
-
-  /* Trigger Leave! event on applicant state machine */
-  applicant_leave((generic_applicant_t*)&msrp->talker_advert);
-
-  /* Mark as leaving - the periodic handler will complete the leave process
-   * and send the Leave message when the tx opportunity occurs.
-   * Per IEEE 802.1Q, we should not immediately deactivate; instead let the
-   * state machine transition LA -> VO via tx! which sends sL (Leave).
-   * The talker will be marked inactive after the state machine completes. */
-  msrp->talker_advert.leaving = true;
-  msrp->talker_advert.tx_pending = true;
 
   return 0;
 }
@@ -1409,11 +1252,8 @@ void msrp_state_init(msrp_state_t* state)
   state->leave_timeout_ms = MRP_LEAVE_TIME_MS;
   state->leave_all_timeout_ms = MRP_LEAVE_ALL_TIME_MS;
 
-  /* Initialize listener applicant state to VO (observer) */
+  /* Initialize applicant state to VO (observer) */
   state->listener.applicant_state = MRP_APPLICANT_VO;
-
-  /* Initialize talker applicant state to VO (observer) */
-  state->talker_advert.applicant_state = MRP_APPLICANT_VO;
 
   /* Initialize registrar state to MT (empty) */
   state->talker.registrar_state = MRP_REGISTRAR_MT;
