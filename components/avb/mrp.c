@@ -84,10 +84,8 @@ char* mrp_action_to_str(mrp_action_t action)
   }
 }
 
-void mrp_applicant_state_machine(mrp_event_t event)
+void mrp_applicant_state_machine(mrp_event_t event, mrp_state_t state)
 {
-
-  mrp_state_t state = MRP_VO_STATE;
   mrp_action_t* action = MRP_ACTION_NONE;
 
   switch (event)
@@ -106,6 +104,98 @@ void mrp_applicant_state_machine(mrp_event_t event)
     default:
       state = MRP_VN_STATE;
       break;
+    }
+    break;
+  case MRP_EVENT_JOIN:
+    switch (state)
+    {
+    case MRP_VO_STATE:
+    case MRP_LO_STATE:
+      state = MRP_VP_STATE;
+      break;
+    case MRP_LA_STATE:
+      state = MRP_AA_STATE;
+      break;
+    case MRP_AO_STATE:
+      state = MRP_AP_STATE;
+      break;
+    case MRP_QO_STATE:
+      state = MRP_QP_STATE;
+      break;
+    default:
+      break;
+    }
+    break;
+  case MRP_EVENT_LV:
+    switch (state)
+    {
+    case MRP_VP_STATE:
+      state = MRP_VO_STATE;
+      break;
+    case MRP_VN_STATE:
+    case MRP_AN_STATE:
+    case MRP_AA_STATE:
+    case MRP_QA_STATE:
+      state = MRP_LA_STATE;
+      break;
+    case MRP_AP_STATE:
+      state = MRP_AO_STATE;
+      break;
+    case MRP_QP_STATE:
+      state = MRP_QO_STATE;
+      break;
+    default: break;
+    }
+    break;
+  case MRP_EVENT_R_NEW:
+    break;
+  case MRP_EVENT_R_JOIN_IN:
+    switch (state)
+    {
+    case MRP_VO_STATE:
+      state = MRP_AO_STATE;
+      break;
+    case MRP_VP_STATE:
+      state = MRP_AP_STATE;
+      break;
+    case MRP_AA_STATE:
+      state = MRP_QA_STATE;
+      break;
+    case MRP_AO_STATE:
+      state = MRP_QO_STATE;
+      break;
+    case MRP_AP_STATE:
+      state = MRP_QP_STATE;
+      break;
+    default: break;
+    }
+    break;
+  case MRP_EVENT_R_IN:
+    switch (state)
+    {
+    case MRP_AA_STATE:
+      state = MRP_QA_STATE;
+      break;
+    default: break;
+    }
+    break;
+  case MRP_EVENT_R_JOIN_MT:
+  case MRP_EVENT_R_MT:
+    switch (state)
+    {
+    case MRP_QA_STATE:
+      state = MRP_AA_STATE;
+      break;
+    case MRP_QO_STATE:
+      state = MRP_AO_STATE;
+      break;
+    case MRP_QP_STATE:
+      state = MRP_AP_STATE;
+      break;
+    case MRP_LO_STATE:
+      state = MRP_VO_STATE;
+      break;
+    default: break;
     }
     break;
   default:
