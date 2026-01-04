@@ -29,7 +29,9 @@
 #define ACMP_MSG_TYPE_GET_TX_CONNECTION_RESPONSE  0xd
 
 #define ACMP_STATUS_SUCCESS 0x00
+#define ACMP_STATUS_TALKER_NO_BANDWIDTH 0x0
 #define ACMP_STATUS_LISTENER_TALKER_TIMEOUT 0x07
+#define ACMP_STATUS_CONTROLLER_NOT_AUTHORIZED 0x0F
 
 #define ACMP_MULTICAST_MAC (uint8_t[6]){0x91, 0xE0, 0xF0, 0x01, 0x00, 0x00} // for all messages in case of gPTP
 
@@ -107,7 +109,5 @@ struct acmp_du_s
 
 struct avtp_state_s;
 
-int send_acmp_connect_rx_command(struct avtp_state_s* state, u8 msg_type);
-int send_acmp_connect_tx_command(struct avtp_state_s* state, u8 msg_type);
 void acmp_net_rx(struct avtp_state_s* state, struct acmp_common_s* msg, ssize_t len);
 #endif //ETHERNET_PTP_ACMP_H

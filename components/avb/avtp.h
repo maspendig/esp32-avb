@@ -8,6 +8,7 @@
 
 #include <aecp.h>
 #include <acmp.h>
+#include <maap.h>
 #include <msrp.h>
 #include <mvrp.h>
 
@@ -144,6 +145,8 @@ struct avtp_state_s
   int vlan_socket; /* VLAN-tagged frames (0x8100) for AVB streams */
   int msrp_socket;
   int mvrp_socket;
+
+  struct maap_db_s maap_db;
 
   uint16_t acmp_sequence_id;
   uint8_t intf_hw_addr[6];

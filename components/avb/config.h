@@ -58,16 +58,9 @@
 #define CONFIG_LISTENER_CAPABILITIES 0x4001
 
 // Talker configuration (stream source - sends audio)
-// This device has 1 stereo stream output (if acting as talker)
-
-// #define CONFIG_NUM_STREAM_OUTPUTS 0
-// #define CONFIG_TALKER_STREAM_SOURCES 1
-// #define CONFIG_TALKER_CAPABILITIES 0x4001
-
-// TODO should be always the same!?
-#define CONFIG_NUM_STREAM_OUTPUTS 0
-#define CONFIG_TALKER_STREAM_SOURCES 0
-#define CONFIG_TALKER_CAPABILITIES 0x0000
+#define CONFIG_NUM_STREAM_OUTPUTS 1
+#define CONFIG_TALKER_STREAM_SOURCES 1
+#define CONFIG_TALKER_CAPABILITIES 0x4001
 
 // Stream port configuration
 // Each stream port has clusters that map audio channels
@@ -78,7 +71,7 @@
 
 // External ports represent physical I/O (e.g., speaker outputs, mic inputs)
 // For a listener device outputting stereo audio: 2 external output ports
-#define CONFIG_NUM_EXTERNAL_INPUT_PORTS 0
+#define CONFIG_NUM_EXTERNAL_INPUT_PORTS 1
 #define CONFIG_NUM_EXTERNAL_OUTPUT_PORTS CONFIG_AUDIO_CHANNELS
 
 // Audio maps define channel routing between streams and clusters

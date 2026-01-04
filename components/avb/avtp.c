@@ -1,8 +1,10 @@
 #include "avtp.h"
-
-#include <aecp.h>
-
+#include "aecp.h"
 #include "adp.h"
+#include "maap.h"
+#include "msrp.h"
+#include "mvrp.h"
+
 #include "esp_log.h"
 #include "esp_err.h"
 #include <errno.h>
@@ -12,8 +14,6 @@
 #include "acmp.h"
 
 #include <fcntl.h>
-#include <msrp.h>
-#include <mvrp.h>
 
 #include "esp_eth_spec.h"
 #include "pthread.h"
@@ -110,6 +110,7 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   state->msrp_socket = msrp_init(interface);
   state->mvrp_socket = mvrp_init(interface);
 
+
   /* Initialize MSRP state machine */
   msrp_state_init(&state->msrp);
 
@@ -171,6 +172,9 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   {
     ESP_LOGW(TAG, "failed to add AVDECC MAC filter: %s", esp_err_to_name(err));
   }
+
+  // Initialize MAAP
+  maap_init(state);
 
   s_state = state;
   return ESP_OK;
@@ -456,6 +460,7 @@ static void avtp_control_task(void* arg)
     struct avtp_discovery_msg_s adp;
     struct aecp_data_unit_s aecp;
     struct acmp_common_s acmp;
+    struct maap_pdu_s maap;
     struct avtp_header_s header;
     u8 raw[1518];
   } buf;
@@ -507,7 +512,7 @@ static void avtp_control_task(void* arg)
           acmp_net_rx(state, &buf.acmp, len);
           break;
         case AVTP_SUBTYPE_MAAP:
-          ESP_LOGI(TAG, "MAAP Announce received");
+          maap_net_rx(state, &buf.maap, len);
           break;
         default:
           ESP_LOGW(TAG, "Unknown AVTP control subtype received: 0x%02X", subtype);
