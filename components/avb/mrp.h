@@ -51,6 +51,9 @@ typedef enum
   MRP_EVENT_PERIODICTIMER,
 } mrp_event_t;
 
+/** MRP Actions
+ *  ignored encoding optimated actions as not needed for this implementation
+ */
 typedef enum
 {
   MRP_ACTION_NONE = 0,

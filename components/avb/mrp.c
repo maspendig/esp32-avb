@@ -4,6 +4,10 @@
 
 #include "mrp.h"
 
+#include <esp_log.h>
+
+#define TAG "MRP"
+
 char* mrp_state_to_str(mrp_state_t state)
 {
   switch (state)
@@ -80,6 +84,39 @@ char* mrp_action_to_str(mrp_action_t action)
   }
 }
 
+void mrp_applicant_state_machine(mrp_event_t event)
+{
+
+  mrp_state_t state = MRP_VO_STATE;
+  mrp_action_t* action = MRP_ACTION_NONE;
+
+  switch (event)
+  {
+  case MRP_EVENT_BEGIN:
+    // Initial state
+    state = MRP_VO_STATE;
+    action = MRP_ACTION_NONE;
+    break;
+  case MRP_EVENT_NEW:
+    switch (state)
+    {
+    case MRP_VN_STATE:
+    case MRP_AN_STATE:
+      break;
+    default:
+      state = MRP_VN_STATE;
+      break;
+    }
+    break;
+  default:
+    ESP_LOGI(TAG, "Unknown event %s", mrp_event_to_str(event));
+  }
+
+  ESP_LOGI(TAG, "state %s => action %s", mrp_state_to_str(state), mrp_action_to_str(*action));
+}
+
 void mrp_state_init()
 {
 }
+
+
