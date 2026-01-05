@@ -6,6 +6,8 @@
 
 #include <esp_log.h>
 
+#include "../../../../../esp-idf/components/fatfs/src/ff.h"
+
 #define TAG "MRP"
 
 char* mrp_state_to_str(mrp_state_t state)
@@ -86,7 +88,7 @@ char* mrp_action_to_str(mrp_action_t action)
 
 void mrp_applicant_state_machine(mrp_event_t event, mrp_state_t state)
 {
-  mrp_action_t* action = MRP_ACTION_NONE;
+  mrp_action_t action = MRP_ACTION_NONE;
 
   switch (event)
   {
@@ -194,6 +196,133 @@ void mrp_applicant_state_machine(mrp_event_t event, mrp_state_t state)
       break;
     case MRP_LO_STATE:
       state = MRP_VO_STATE;
+      break;
+    default: break;
+    }
+    break;
+  case MRP_EVENT_R_LV:
+  case MRP_EVENT_R_LA:
+  case MRP_EVENT_REDECLARE:
+    switch (state)
+    {
+    case MRP_VO_STATE:
+    case MRP_AO_STATE:
+    case MRP_QO_STATE:
+      state = MRP_LO_STATE;
+      break;
+    case MRP_AN_STATE:
+      state = MRP_VN_STATE;
+      break;
+    case MRP_AA_STATE:
+    case MRP_QA_STATE:
+    case MRP_AP_STATE:
+    case MRP_QP_STATE:
+      state = MRP_VP_STATE;
+      break;
+    default: break;
+    }
+  case MRP_EVENT_PERIODIC:
+    switch (state)
+    {
+    case MRP_QA_STATE:
+      state = MRP_AA_STATE;
+      break;
+    case MRP_QP_STATE:
+      state = MRP_AP_STATE;
+      break;
+    default: break;
+    }
+    break;
+  case MRP_EVENT_TX:
+    switch (state)
+    {
+    case MRP_VP_STATE:
+      state = MRP_AA_STATE;
+      action = MRP_ACTION_S_J;
+      break;
+    case MRP_VN_STATE:
+      state = MRP_AN_STATE;
+      action = MRP_ACTION_S_N;
+      break;
+    case MRP_AN_STATE:
+      state = MRP_QA_STATE;
+      action = MRP_ACTION_S_N;
+      break;
+    case MRP_AA_STATE:
+    case MRP_AP_STATE:
+      state = MRP_QA_STATE;
+      action = MRP_ACTION_S_J;
+      break;
+    case MRP_LA_STATE:
+      state = MRP_VO_STATE;
+      action = MRP_ACTION_S_L;
+      break;
+    case MRP_LO_STATE:
+      state = MRP_VO_STATE;
+      action = MRP_ACTION_S;
+    default: break;
+    }
+  case MRP_EVENT_TXLA:
+    switch (state)
+    {
+    case MRP_VO_STATE:
+    case MRP_AO_STATE:
+    case MRP_QO_STATE:
+      // action = [s];
+      break;
+    case MRP_VP_STATE:
+      state = MRP_AA_STATE;
+      action = MRP_ACTION_S_J;
+      break;
+    case MRP_VN_STATE:
+      state = MRP_AN_STATE;
+      action = MRP_ACTION_S_N;
+      break;
+    case MRP_AN_STATE:
+      state = MRP_QA_STATE;
+      action = MRP_ACTION_S_N;
+      break;
+    case MRP_AA_STATE:
+      state = MRP_QA_STATE;
+      action = MRP_ACTION_S_J;
+      break;
+    case MRP_QA_STATE:
+      // action = [sJ];
+      break;
+    case MRP_LA_STATE:
+      state = MRP_VO_STATE;
+      action = MRP_ACTION_S_L;
+      break;
+    case MRP_AP_STATE:
+      state = MRP_QA_STATE;
+      action = MRP_ACTION_S_J;
+      break;
+    case MRP_LO_STATE:
+      state = MRP_VO_STATE;
+      action = MRP_ACTION_S;
+      break;
+    default: break;
+    }
+    break;
+  case MRP_EVENT_TXLAF:
+    switch (state)
+    {
+    case MRP_VO_STATE:
+    case MRP_LA_STATE:
+    case MRP_AO_STATE:
+    case MRP_QO_STATE:
+      state = MRP_LO_STATE;
+      break;
+    case MRP_VP_STATE:
+    case MRP_AA_STATE:
+    case MRP_QA_STATE:
+    case MRP_AP_STATE:
+    case MRP_QP_STATE:
+      state = MRP_VP_STATE;
+      break;
+    case MRP_VN_STATE:
+    case MRP_AN_STATE:
+      state = MRP_VN_STATE;
       break;
     default: break;
     }
