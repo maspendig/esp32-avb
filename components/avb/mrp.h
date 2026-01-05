@@ -8,7 +8,7 @@
 typedef enum
 {
   /* MRP Applicant States - IEEE 802.1Q-2022 Section 10.7.1 */
-  MRP_VO_STATE = 0,	/* Very Anxious Observer */
+  MRP_VO_STATE = 0, /* Very Anxious Observer */
   MRP_VP_STATE, /* Very Anxious Passive */
   MRP_VN_STATE, /* Very Anxious New */
   MRP_AN_STATE, /* Anxious New */
@@ -18,13 +18,13 @@ typedef enum
   MRP_AO_STATE, /* Anxious Observer State */
   MRP_QO_STATE, /* Quiet Observer State */
   MRP_AP_STATE, /* Anxious Passive State */
-  MRP_QP_STATE,	/* Quiet Passive State */
-  MRP_LO_STATE,	/* Leaving Observer State */
+  MRP_QP_STATE, /* Quiet Passive State */
+  MRP_LO_STATE, /* Leaving Observer State */
 
   /* MRP Registrar States - IEEE 802.1Q-2022 Section 10.7.1 */
   MRP_IN_STATE, /* when Registrar state is IN */
   MRP_LV_STATE, /* registrar state - leaving */
-  MRP_MT_STATE  /* when Registrar state is empty */
+  MRP_MT_STATE /* when Registrar state is empty */
 } mrp_state_t;
 
 typedef enum
@@ -57,18 +57,23 @@ typedef enum
 typedef enum
 {
   MRP_ACTION_NONE = 0,
-  MRP_ACTION_NEW,		/** send a New indication to MAP and the MRP application */
-  MRP_ACTION_JOIN,	/* send a Join indication to MAP and the MRP application */
-  MRP_ACTION_LV,		/* send a Lv indication to MAP and the MRP application */
-  MRP_ACTION_S_N,		/* send a New message */
-  MRP_ACTION_S_J,		/* send a JoinIn or JoinMt message */
-  MRP_ACTION_S_L,		/* send a Lv message */
-  MRP_ACTION_S,		/**< send a In or Empty message */
-  MRP_ACTION_S_LA,		/**< send a Leave All message */
-  MRP_ACTION_PERIODIC,	/**< Periodic transmission event */
-  MRP_ACTION_LEAVETIMER,	/**< Leave All period timer */
-  MRP_ACTION_LEAVEALLTIMER,	/**< Leave All timer */
-  MRP_ACTION_PERIODICTIMER	/**< Periodic transmission timer */
+  MRP_ACTION_NEW, /** send a New indication to MAP and the MRP application */
+  MRP_ACTION_JOIN, /* send a Join indication to MAP and the MRP application */
+  MRP_ACTION_LV, /* send a Lv indication to MAP and the MRP application */
+  MRP_ACTION_S_N, /* send a New message */
+  MRP_ACTION_S_J, /* send a JoinIn or JoinMt message */
+  MRP_ACTION_S_L, /* send a Lv message */
+  MRP_ACTION_S, /**< send a In or Empty message */
+  MRP_ACTION_S_LA, /**< send a Leave All message */
+  MRP_ACTION_PERIODIC, /**< Periodic transmission event */
+  MRP_ACTION_LEAVETIMER, /**< Leave All period timer */
+  MRP_ACTION_LEAVEALLTIMER, /**< Leave All timer */
+  MRP_ACTION_PERIODICTIMER /**< Periodic transmission timer */
 } mrp_action_t;
 
+typedef enum
+{
+  MRP_ACTIVE = 0,
+  MRP_PASSIVE,
+} mrp_active_state_t;
 #endif //ETHERNET_PTP_MRP_H

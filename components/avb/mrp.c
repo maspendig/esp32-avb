@@ -6,7 +6,6 @@
 
 #include <esp_log.h>
 
-#include "../../../../../esp-idf/components/fatfs/src/ff.h"
 
 #define TAG "MRP"
 
@@ -331,7 +330,100 @@ void mrp_applicant_state_machine(mrp_event_t event, mrp_state_t state)
     ESP_LOGI(TAG, "Unknown event %s", mrp_event_to_str(event));
   }
 
-  ESP_LOGI(TAG, "state %s => action %s", mrp_state_to_str(state), mrp_action_to_str(*action));
+  ESP_LOGI(TAG, "state %s => action %s", mrp_state_to_str(state), mrp_action_to_str(action));
+}
+
+void mrp_registrar_state_machine(mrp_event_t event, mrp_state_t state)
+{
+  mrp_action_t action = MRP_ACTION_NONE;
+  switch (event)
+  {
+  case MRP_EVENT_BEGIN:
+    state = MRP_MT_STATE;
+    break;
+  case MRP_EVENT_R_NEW:
+    if (state == MRP_LV_STATE)
+    {
+      // TODO stop leavetimer
+    }
+    state = MRP_IN_STATE;
+    action = MRP_ACTION_NEW;
+    break;
+  case MRP_EVENT_R_JOIN_IN:
+  case MRP_EVENT_R_JOIN_MT:
+    if (state == MRP_LV_STATE)
+    {
+      // TODO stop leavetimer
+    }
+    else if (state == MRP_MT_STATE)
+    {
+      action = MRP_ACTION_JOIN;
+    }
+    state = MRP_IN_STATE;
+    break;
+  case MRP_EVENT_R_LV:
+  case MRP_EVENT_R_LA:
+  case MRP_EVENT_TXLA:
+  case MRP_EVENT_REDECLARE:
+    if (state == MRP_IN_STATE)
+    {
+      // TODO start leavetimer
+      state = MRP_LV_STATE;
+    }
+    break;
+  case MRP_EVENT_FLUSH:
+    if (state == MRP_IN_STATE || state == MRP_LV_STATE)
+    {
+      action = MRP_ACTION_LV;
+    }
+    state = MRP_MT_STATE;
+    break;
+  case MRP_EVENT_LEAVETIMER:
+    if (state == MRP_LV_STATE)
+    {
+      state = MRP_MT_STATE;
+      action = MRP_ACTION_LV;
+    }
+    else if (state == MRP_MT_STATE)
+    {
+      state = MRP_MT_STATE;
+    }
+    break;
+  default:
+    ESP_LOGW(TAG, "Unknown event %s", mrp_event_to_str(event));
+    break;
+  }
+
+  ESP_LOGI(TAG, "state %s => action %s", mrp_state_to_str(state), mrp_action_to_str(action));
+}
+
+void mrp_leave_all_state_machine(mrp_event_t event, mrp_active_state_t state)
+{
+  mrp_action_t action = MRP_ACTION_NONE;
+  switch (event)
+  {
+  case MRP_EVENT_BEGIN:
+    state = MRP_PASSIVE;
+    // TODO start leavealltimer
+    break;
+  case MRP_EVENT_TX:
+    if (state == MRP_ACTIVE)
+    {
+      state = MRP_PASSIVE;
+      action = MRP_ACTION_S_LA;
+    }
+    break;
+  case MRP_EVENT_R_LA:
+    state = MRP_PASSIVE;
+    // TODO start leavealltimer
+    break;
+  case MRP_EVENT_LEAVEALLTIMER:
+    state = MRP_ACTIVE;
+    // TODO start leavealltimer
+    break;
+  default:
+    ESP_LOGW(TAG, "Unknown event %s for leave all state machine!", mrp_event_to_str(event));
+  }
 }
 
 void mrp_state_init()
