@@ -104,13 +104,30 @@ int mrp_init_leavealltimer(const struct mrp_database_s* db)
     .arg = (void*)db,
     .name = "mrp_leaveall_timer"
   };
-  esp_timer_create(&timer_args, &db->leave_timer);
-  return ESP_OK;
+  return esp_timer_create(&timer_args, &db->leaveall_timer);
+}
+
+void mrp_leave_timer_callback(void* arg)
+{
+  const struct mrp_database_s* db = (struct mrp_database_s*)arg;
+  // TODO use dynamic state
+  mrp_leaveall_state_machine(db, MRP_EVENT_LEAVETIMER, MRP_PASSIVE);
+}
+
+int mrp_init_leavetimer(const struct mrp_database_s* db)
+{
+  esp_timer_create_args_t timer_args = {
+    .callback = &mrp_leave_timer_callback,
+    .arg = (void*)db,
+    .name = "mrp_leave_timer"
+  };
+  return esp_timer_create(&timer_args, &db->leave_timer);
 }
 
 void init_timers(const struct mrp_database_s* db)
 {
   mrp_init_leavealltimer(db);
+  mrp_init_leavetimer(db);
 }
 
 /* IEEE802.1Q-2022 10.7.4.3 leavealltimer */
