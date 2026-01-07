@@ -130,29 +130,33 @@ void init_timers(const struct mrp_database_s* db)
   mrp_init_leavetimer(db);
 }
 
+void delete_timers(const struct mrp_database_s* db)
+{
+  esp_timer_delete(db->leaveall_timer);
+  esp_timer_delete(db->leave_timer);
+}
+
 /* IEEE802.1Q-2022 10.7.4.3 leavealltimer */
 int mrp_start_leavealltimer(const struct mrp_database_s* db)
 {
   // LeaveAllTime < T < 1.5 x LeaveAllTime
   u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5);
-
-  esp_timer_start_periodic(db->leaveall_timer, interval);
-  return ESP_OK;
+  return esp_timer_start_periodic(db->leaveall_timer, interval);
 }
 
 int mrp_stop_leavealltimer(const struct mrp_database_s* db)
 {
-  return ESP_OK;
+  return esp_timer_stop(db->leaveall_timer);
 }
 
 int mrp_start_leavetimer(const struct mrp_database_s* db)
 {
-  return ESP_OK;
+  return esp_timer_start_periodic(db->leave_timer, MRP_LEAVE_TIME_MS);
 }
 
 int mrp_stop_leavetimer(const struct mrp_database_s* db)
 {
-  return ESP_OK;
+  return esp_timer_stop(db->leave_timer);
 }
 
 void mrp_applicant_state_machine(mrp_event_t event, mrp_state_t state)
