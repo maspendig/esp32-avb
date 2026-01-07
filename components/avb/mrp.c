@@ -168,7 +168,7 @@ int mrp_stop_leavetimer(const struct mrp_attribute* attr)
 void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
 {
   mrp_action_t action = MRP_ACTION_NONE;
-  const struct mrp_applicant* applicant = &attr->applicant;
+  struct mrp_applicant* applicant = &attr->applicant;
   mrp_state_t state = applicant->state;
 
   switch (event)
@@ -412,6 +412,8 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
     ESP_LOGI(TAG, "Unknown event %s", mrp_event_to_str(event));
   }
 
+  applicant->state = state;
+  applicant->action = action;
   ESP_LOGI(TAG, "state %s => action %s", mrp_state_to_str(state), mrp_action_to_str(action));
 }
 
@@ -478,6 +480,8 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
     break;
   }
 
+  registrar->state = state;
+  registrar->action = action;
   ESP_LOGI(TAG, "state %s => action %s", mrp_state_to_str(state), mrp_action_to_str(action));
 }
 
