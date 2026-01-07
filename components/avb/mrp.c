@@ -96,6 +96,8 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event);
 //region join timer
 int mrp_start_join_timer(const struct mrp_attribute* attr)
 {
+  // in order to fit the state machine definitions, we only use once timer here
+  // the timer is restarted by the state machine
   return esp_timer_start_once(attr->app->join_timer, MRP_JOIN_TIME_MS);
 }
 
@@ -147,6 +149,8 @@ int mrp_start_leaveall_timer(const struct mrp_attribute* attr)
   const struct mrp_application* app = attr->app;
   // LeaveAllTime < T < 1.5 x LeaveAllTime
   u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5);
+  // in order to fit the state machine definitions, we only use once timer here
+  // the timer is restarted by the state machine
   return esp_timer_start_once(app->leaveall.timer, interval);
 }
 
@@ -204,6 +208,8 @@ int mrp_init_leave_timer(struct mrp_attribute* attr)
 int mrp_start_leave_timer(const struct mrp_attribute* attr)
 {
   const struct mrp_registrar* registrar = &attr->registrar;
+  // in order to fit the state machine definitions, we only use once timer here
+  // the timer is restarted by the state machine
   return esp_timer_start_once(registrar->leave_timer, MRP_LEAVE_TIME_MS);
 }
 
