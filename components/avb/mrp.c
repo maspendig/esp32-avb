@@ -221,14 +221,16 @@ int mrp_stop_leave_timer(const struct mrp_attribute* attr)
 
 //endregion
 
-void init_timers(struct mrp_attribute* attr)
+int mrp_init_timers(struct mrp_attribute* attr)
 {
-  mrp_init_leaveall_timer(attr);
-  mrp_init_leave_timer(attr);
-  mrp_init_join_timer(attr);
+  int ret = ESP_OK;
+  ret += mrp_init_leaveall_timer(attr);
+  ret += mrp_init_leave_timer(attr);
+  ret += mrp_init_join_timer(attr);
+  return ret;
 }
 
-void delete_timers(const struct mrp_attribute* attr)
+void mrp_delete_timers(const struct mrp_attribute* attr)
 {
   esp_timer_delete(attr->app->leaveall.timer);
   esp_timer_delete(attr->registrar.leave_timer);
@@ -592,8 +594,38 @@ void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t ev
   leaveall->action = action;
 }
 
-void mrp_state_init()
+void mrp_begin(struct mrp_attribute* attr)
 {
+  // TODO check participant type
+  // if(attr->app->participant_type == MRP_PARTICIPANT_FULL)
+  {
+    mrp_leaveall_state_machine(attr, MRP_EVENT_BEGIN);
+  }
+  if (attr->app->type != MSRP)
+  {
+    // TODO implement periodic
+    // mrp_periodic_state_machine(attr, MRP_EVENT_BEGIN);
+  }
+}
+
+int mrp_init(struct mrp_attribute* attr, mrp_application_type_t type)
+{
+  attr->app->type = type;
+  if (mrp_init_timers(attr) > ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to initialize MRP timers");
+    return ESP_FAIL;
+  }
+
+  mrp_begin(attr);
+
+  return ESP_OK;
+}
+
+int mrp_exit(const struct mrp_attribute* attr)
+{
+  mrp_delete_timers(attr);
+  return ESP_OK;
 }
 
 

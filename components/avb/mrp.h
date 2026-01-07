@@ -79,6 +79,13 @@ typedef enum
 
 typedef enum
 {
+  MSRP = 0,
+  MVRP,
+  MMRP,
+} mrp_application_type_t;
+
+typedef enum
+{
   MRP_ACTIVE = 0,
   MRP_PASSIVE,
 } mrp_active_state_t;
@@ -106,6 +113,7 @@ struct mrp_leaveall
 
 struct mrp_application
 {
+  mrp_application_type_t type;
   struct mrp_leaveall leaveall;
   esp_timer_handle_t join_timer;
 };
