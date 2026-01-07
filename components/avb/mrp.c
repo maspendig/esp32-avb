@@ -131,12 +131,12 @@ void mrp_join_timer_callback(void* arg)
 
 int mrp_init_join_timer(const struct mrp_attribute* attr)
 {
-  esp_timer_create_args_t timer_args = {
+  const esp_timer_create_args_t timer_args = {
     .callback = &mrp_join_timer_callback,
     .arg = (void*)attr,
     .name = "mrp_join_timer"
   };
-  const struct mrp_application* app = attr->app;
+  struct mrp_application* app = attr->app;
   return esp_timer_create(&timer_args, &app->join_timer);
 }
 
@@ -176,12 +176,12 @@ void mrp_leaveall_timer_callback(void* arg)
 
 int mrp_init_leaveall_timer(const struct mrp_attribute* attr)
 {
-  esp_timer_create_args_t timer_args = {
+  const esp_timer_create_args_t timer_args = {
     .callback = &mrp_leaveall_timer_callback,
     .arg = (void*)attr,
     .name = "mrp_leaveall_timer"
   };
-  const struct mrp_application* app = attr->app;
+  struct mrp_application* app = attr->app;
   return esp_timer_create(&timer_args, &app->leaveall.timer);
 }
 
@@ -234,7 +234,6 @@ void delete_timers(const struct mrp_attribute* attr)
   esp_timer_delete(attr->registrar.leave_timer);
   esp_timer_delete(attr->app->join_timer);
 }
-
 
 void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
 {
@@ -373,6 +372,7 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
       break;
     default: break;
     }
+    break;
   case MRP_EVENT_PERIODIC:
     switch (state)
     {
@@ -414,6 +414,7 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
       action = MRP_ACTION_S;
     default: break;
     }
+    break;
   case MRP_EVENT_TXLA:
     switch (state)
     {
