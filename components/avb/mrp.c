@@ -3,8 +3,11 @@
 //
 
 #include "mrp.h"
+#include "common.h"
 
+#include <esp_err.h>
 #include <esp_log.h>
+#include <types.h>
 
 
 #define TAG "MRP"
@@ -83,6 +86,56 @@ char* mrp_action_to_str(mrp_action_t action)
   case MRP_ACTION_PERIODICTIMER: return "periodictimer";
   default: return "UNKNOWN";
   }
+}
+
+void mrp_leaveall_state_machine(const struct mrp_database_s* db, mrp_event_t event, mrp_active_state_t state);
+
+void mrp_leaveall_timer_callback(void* arg)
+{
+  const struct mrp_database_s* db = (struct mrp_database_s*)arg;
+  // TODO use dynamic state
+  mrp_leaveall_state_machine(db, MRP_EVENT_LEAVEALLTIMER, MRP_PASSIVE);
+}
+
+int mrp_init_leavealltimer(const struct mrp_database_s* db)
+{
+  esp_timer_create_args_t timer_args = {
+    .callback = &mrp_leaveall_timer_callback,
+    .arg = (void*)db,
+    .name = "mrp_leaveall_timer"
+  };
+  esp_timer_create(&timer_args, &db->leave_timer);
+  return ESP_OK;
+}
+
+void init_timers(const struct mrp_database_s* db)
+{
+  mrp_init_leavealltimer(db);
+}
+
+/* IEEE802.1Q-2022 10.7.4.3 leavealltimer */
+int mrp_start_leavealltimer(const struct mrp_database_s* db)
+{
+  // LeaveAllTime < T < 1.5 x LeaveAllTime
+  u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5);
+
+  esp_timer_start_periodic(db->leaveall_timer, interval);
+  return ESP_OK;
+}
+
+int mrp_stop_leavealltimer(const struct mrp_database_s* db)
+{
+  return ESP_OK;
+}
+
+int mrp_start_leavetimer(const struct mrp_database_s* db)
+{
+  return ESP_OK;
+}
+
+int mrp_stop_leavetimer(const struct mrp_database_s* db)
+{
+  return ESP_OK;
 }
 
 void mrp_applicant_state_machine(mrp_event_t event, mrp_state_t state)
@@ -333,8 +386,10 @@ void mrp_applicant_state_machine(mrp_event_t event, mrp_state_t state)
   ESP_LOGI(TAG, "state %s => action %s", mrp_state_to_str(state), mrp_action_to_str(action));
 }
 
-void mrp_registrar_state_machine(mrp_event_t event, mrp_state_t state)
+void mrp_registrar_state_machine(const struct mrp_database_s* db, const struct mrp_applicant_attribute_s* attr,
+                                 const mrp_event_t event)
 {
+  mrp_state_t state = attr->state;
   mrp_action_t action = MRP_ACTION_NONE;
   switch (event)
   {
@@ -345,6 +400,7 @@ void mrp_registrar_state_machine(mrp_event_t event, mrp_state_t state)
     if (state == MRP_LV_STATE)
     {
       // TODO stop leavetimer
+      mrp_stop_leavetimer(db);
     }
     state = MRP_IN_STATE;
     action = MRP_ACTION_NEW;
@@ -354,6 +410,7 @@ void mrp_registrar_state_machine(mrp_event_t event, mrp_state_t state)
     if (state == MRP_LV_STATE)
     {
       // TODO stop leavetimer
+      mrp_stop_leavetimer(db);
     }
     else if (state == MRP_MT_STATE)
     {
@@ -368,6 +425,7 @@ void mrp_registrar_state_machine(mrp_event_t event, mrp_state_t state)
     if (state == MRP_IN_STATE)
     {
       // TODO start leavetimer
+      mrp_start_leavetimer(db);
       state = MRP_LV_STATE;
     }
     break;
@@ -397,7 +455,7 @@ void mrp_registrar_state_machine(mrp_event_t event, mrp_state_t state)
   ESP_LOGI(TAG, "state %s => action %s", mrp_state_to_str(state), mrp_action_to_str(action));
 }
 
-void mrp_leave_all_state_machine(mrp_event_t event, mrp_active_state_t state)
+void mrp_leaveall_state_machine(const struct mrp_database_s* db, mrp_event_t event, mrp_active_state_t state)
 {
   mrp_action_t action = MRP_ACTION_NONE;
   switch (event)
@@ -405,6 +463,7 @@ void mrp_leave_all_state_machine(mrp_event_t event, mrp_active_state_t state)
   case MRP_EVENT_BEGIN:
     state = MRP_PASSIVE;
     // TODO start leavealltimer
+    mrp_start_leavealltimer(db);
     break;
   case MRP_EVENT_TX:
     if (state == MRP_ACTIVE)
@@ -416,10 +475,12 @@ void mrp_leave_all_state_machine(mrp_event_t event, mrp_active_state_t state)
   case MRP_EVENT_R_LA:
     state = MRP_PASSIVE;
     // TODO start leavealltimer
+    mrp_start_leavealltimer(db);
     break;
   case MRP_EVENT_LEAVEALLTIMER:
     state = MRP_ACTIVE;
     // TODO start leavealltimer
+    mrp_stop_leavealltimer(db);
     break;
   default:
     ESP_LOGW(TAG, "Unknown event %s for leave all state machine!", mrp_event_to_str(event));

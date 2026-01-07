@@ -4,6 +4,12 @@
 
 #ifndef ETHERNET_PTP_MRP_H
 #define ETHERNET_PTP_MRP_H
+#include <esp_timer.h>
+
+/* MRP timer parameter values defined in IEEE 802.1Q-2022 Table 10-7 */
+#define MRP_JOIN_TIME_MS     200
+#define MRP_LEAVE_TIME_MS    1000
+#define MRP_LEAVEALL_TIME_MS 10000
 
 typedef enum
 {
@@ -76,4 +82,15 @@ typedef enum
   MRP_ACTIVE = 0,
   MRP_PASSIVE,
 } mrp_active_state_t;
+
+struct mrp_database_s
+{
+  esp_timer_handle_t leave_timer;
+  esp_timer_handle_t leaveall_timer;
+};
+
+struct mrp_applicant_attribute_s
+{
+  mrp_state_t state;
+};
 #endif //ETHERNET_PTP_MRP_H
