@@ -89,6 +89,7 @@ char* mrp_action_to_str(mrp_action_t action)
   }
 }
 
+void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event);
 void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t event);
 void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event);
 
@@ -103,12 +104,27 @@ int mrp_stop_join_timer(const struct mrp_attribute* attr)
   return esp_timer_stop(attr->app->join_timer);
 }
 
+/**
+ * Callback for join timer expiration
+ * Offers a transmission opportunity to the applicant state machine
+ */
 void mrp_join_timer_callback(void* arg)
 {
-  const struct mrp_attribute* attr = (struct mrp_attribute*)arg;
-  // TODO find IEEE802.1Q-2022 reference for this timer
-  // mrp_leaveall_state_machine(attr, MRP_EVENT_TX);
-  // TODO finalize
+  struct mrp_attribute* attr = (struct mrp_attribute*)arg;
+  struct mrp_application* app = attr->app;
+  mrp_event_t event = MRP_EVENT_TX;
+
+  /* IEEE802.1q-2022 10.7.5.7
+   * The tx! event is modified by the behaviour of the LeaveAll state machine.
+   * If the LeaveAll state machine has signaled LeaveAll, then tx! is modified to txLA!
+   */
+  mrp_leaveall_state_machine(attr, MRP_EVENT_TX);
+  if (app->leaveall.action == MRP_ACTION_S_LA)
+  {
+    event = MRP_EVENT_TXLA;
+  }
+
+  mrp_applicant_state_machine(attr, event);
 }
 
 int mrp_init_join_timer(const struct mrp_attribute* attr)
