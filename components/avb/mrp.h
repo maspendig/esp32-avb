@@ -107,6 +107,7 @@ struct mrp_leaveall
 struct mrp_application
 {
   struct mrp_leaveall leaveall;
+  esp_timer_handle_t join_timer;
 };
 
 struct mrp_attribute

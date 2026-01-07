@@ -92,13 +92,61 @@ char* mrp_action_to_str(mrp_action_t action)
 void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t event);
 void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event);
 
+//region join timer
+int mrp_start_join_timer(const struct mrp_attribute* attr)
+{
+  return esp_timer_start_periodic(attr->app->join_timer, MRP_JOIN_TIME_MS);
+}
+
+int mrp_stop_join_timer(const struct mrp_attribute* attr)
+{
+  return esp_timer_stop(attr->app->join_timer);
+}
+
+void mrp_join_timer_callback(void* arg)
+{
+  const struct mrp_attribute* attr = (struct mrp_attribute*)arg;
+  // TODO find IEEE802.1Q-2022 reference for this timer
+  // mrp_leaveall_state_machine(attr, MRP_EVENT_TX);
+  // TODO finalize
+}
+
+int mrp_init_join_timer(const struct mrp_attribute* attr)
+{
+  esp_timer_create_args_t timer_args = {
+    .callback = &mrp_join_timer_callback,
+    .arg = (void*)attr,
+    .name = "mrp_join_timer"
+  };
+  const struct mrp_application* app = attr->app;
+  return esp_timer_create(&timer_args, &app->join_timer);
+}
+
+//endregion
+
+//region leaveall timer
+/* IEEE802.1Q-2022 10.7.4.3 leavealltimer */
+int mrp_start_leaveall_timer(const struct mrp_attribute* attr)
+{
+  const struct mrp_application* app = attr->app;
+  // LeaveAllTime < T < 1.5 x LeaveAllTime
+  u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5);
+  return esp_timer_start_periodic(app->leaveall.timer, interval);
+}
+
+int mrp_stop_leaveall_timer(const struct mrp_attribute* attr)
+{
+  const struct mrp_application* app = attr->app;
+  return esp_timer_stop(app->leaveall.timer);
+}
+
 void mrp_leaveall_timer_callback(void* arg)
 {
   const struct mrp_attribute* attr = (struct mrp_attribute*)arg;
   mrp_leaveall_state_machine(attr, MRP_EVENT_LEAVEALLTIMER);
 }
 
-int mrp_init_leavealltimer(const struct mrp_attribute* attr)
+int mrp_init_leaveall_timer(const struct mrp_attribute* attr)
 {
   esp_timer_create_args_t timer_args = {
     .callback = &mrp_leaveall_timer_callback,
@@ -109,13 +157,16 @@ int mrp_init_leavealltimer(const struct mrp_attribute* attr)
   return esp_timer_create(&timer_args, &app->leaveall.timer);
 }
 
+//endregion
+
+//region leave timer
 void mrp_leave_timer_callback(void* arg)
 {
   struct mrp_attribute* attr = (struct mrp_attribute*)arg;
   mrp_registrar_state_machine(attr, MRP_EVENT_LEAVETIMER);
 }
 
-int mrp_init_leavetimer(struct mrp_attribute* attr)
+int mrp_init_leave_timer(struct mrp_attribute* attr)
 {
   esp_timer_create_args_t timer_args = {
     .callback = &mrp_leave_timer_callback,
@@ -126,44 +177,34 @@ int mrp_init_leavetimer(struct mrp_attribute* attr)
   return esp_timer_create(&timer_args, &registrar->leave_timer);
 }
 
+int mrp_start_leave_timer(const struct mrp_attribute* attr)
+{
+  const struct mrp_registrar* registrar = &attr->registrar;
+  return esp_timer_start_periodic(registrar->leave_timer, MRP_LEAVE_TIME_MS);
+}
+
+int mrp_stop_leave_timer(const struct mrp_attribute* attr)
+{
+  const struct mrp_registrar* registrar = &attr->registrar;
+  return esp_timer_stop(registrar->leave_timer);
+}
+
+//endregion
+
 void init_timers(struct mrp_attribute* attr)
 {
-  mrp_init_leavealltimer(attr);
-  mrp_init_leavetimer(attr);
+  mrp_init_leaveall_timer(attr);
+  mrp_init_leave_timer(attr);
+  mrp_init_join_timer(attr);
 }
 
 void delete_timers(const struct mrp_attribute* attr)
 {
   esp_timer_delete(attr->app->leaveall.timer);
   esp_timer_delete(attr->registrar.leave_timer);
+  esp_timer_delete(attr->app->join_timer);
 }
 
-/* IEEE802.1Q-2022 10.7.4.3 leavealltimer */
-int mrp_start_leavealltimer(const struct mrp_attribute* attr)
-{
-  const struct mrp_application* app = attr->app;
-  // LeaveAllTime < T < 1.5 x LeaveAllTime
-  u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5);
-  return esp_timer_start_periodic(app->leaveall.timer, interval);
-}
-
-int mrp_stop_leavealltimer(const struct mrp_attribute* attr)
-{
-  const struct mrp_application* app = attr->app;
-  return esp_timer_stop(app->leaveall.timer);
-}
-
-int mrp_start_leavetimer(const struct mrp_attribute* attr)
-{
-  const struct mrp_registrar* registrar = &attr->registrar;
-  return esp_timer_start_periodic(registrar->leave_timer, MRP_LEAVE_TIME_MS);
-}
-
-int mrp_stop_leavetimer(const struct mrp_attribute* attr)
-{
-  const struct mrp_registrar* registrar = &attr->registrar;
-  return esp_timer_stop(registrar->leave_timer);
-}
 
 void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
 {
@@ -430,7 +471,7 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
   case MRP_EVENT_R_NEW:
     if (state == MRP_LV_STATE)
     {
-      mrp_stop_leavetimer(attr);
+      mrp_stop_leave_timer(attr);
     }
     state = MRP_IN_STATE;
     action = MRP_ACTION_NEW;
@@ -439,7 +480,7 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
   case MRP_EVENT_R_JOIN_MT:
     if (state == MRP_LV_STATE)
     {
-      mrp_stop_leavetimer(attr);
+      mrp_stop_leave_timer(attr);
     }
     else if (state == MRP_MT_STATE)
     {
@@ -453,7 +494,7 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
   case MRP_EVENT_REDECLARE:
     if (state == MRP_IN_STATE)
     {
-      mrp_start_leavetimer(attr);
+      mrp_start_leave_timer(attr);
       state = MRP_LV_STATE;
     }
     break;
@@ -495,7 +536,7 @@ void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t ev
   {
   case MRP_EVENT_BEGIN:
     state = MRP_PASSIVE;
-    mrp_start_leavealltimer(attr);
+    mrp_start_leaveall_timer(attr);
     break;
   case MRP_EVENT_TX:
     if (state == MRP_ACTIVE)
@@ -506,11 +547,11 @@ void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t ev
     break;
   case MRP_EVENT_R_LA:
     state = MRP_PASSIVE;
-    mrp_start_leavealltimer(attr);
+    mrp_start_leaveall_timer(attr);
     break;
   case MRP_EVENT_LEAVEALLTIMER:
     state = MRP_ACTIVE;
-    mrp_start_leavealltimer(attr);
+    mrp_start_leaveall_timer(attr);
     break;
   default:
     ESP_LOGW(TAG, "Unknown event %s for leave all state machine!", mrp_event_to_str(event));
