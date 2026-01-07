@@ -7,6 +7,7 @@
 
 #include <esp_err.h>
 #include <esp_log.h>
+#include <msrp.h>
 #include <types.h>
 
 
@@ -88,80 +89,87 @@ char* mrp_action_to_str(mrp_action_t action)
   }
 }
 
-void mrp_leaveall_state_machine(const struct mrp_database_s* db, mrp_event_t event, mrp_active_state_t state);
+void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t event);
+void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event);
 
 void mrp_leaveall_timer_callback(void* arg)
 {
-  const struct mrp_database_s* db = (struct mrp_database_s*)arg;
-  // TODO use dynamic state
-  mrp_leaveall_state_machine(db, MRP_EVENT_LEAVEALLTIMER, MRP_PASSIVE);
+  const struct mrp_attribute* attr = (struct mrp_attribute*)arg;
+  mrp_leaveall_state_machine(attr, MRP_EVENT_LEAVEALLTIMER);
 }
 
-int mrp_init_leavealltimer(const struct mrp_database_s* db)
+int mrp_init_leavealltimer(const struct mrp_attribute* attr)
 {
   esp_timer_create_args_t timer_args = {
     .callback = &mrp_leaveall_timer_callback,
-    .arg = (void*)db,
+    .arg = (void*)attr,
     .name = "mrp_leaveall_timer"
   };
-  return esp_timer_create(&timer_args, &db->leaveall_timer);
+  const struct mrp_application* app = attr->app;
+  return esp_timer_create(&timer_args, &app->leaveall.timer);
 }
 
 void mrp_leave_timer_callback(void* arg)
 {
-  const struct mrp_database_s* db = (struct mrp_database_s*)arg;
-  // TODO use dynamic state
-  mrp_leaveall_state_machine(db, MRP_EVENT_LEAVETIMER, MRP_PASSIVE);
+  struct mrp_attribute* attr = (struct mrp_attribute*)arg;
+  mrp_registrar_state_machine(attr, MRP_EVENT_LEAVETIMER);
 }
 
-int mrp_init_leavetimer(const struct mrp_database_s* db)
+int mrp_init_leavetimer(struct mrp_attribute* attr)
 {
   esp_timer_create_args_t timer_args = {
     .callback = &mrp_leave_timer_callback,
-    .arg = (void*)db,
+    .arg = (void*)attr,
     .name = "mrp_leave_timer"
   };
-  return esp_timer_create(&timer_args, &db->leave_timer);
+  struct mrp_registrar* registrar = &attr->registrar;
+  return esp_timer_create(&timer_args, &registrar->leave_timer);
 }
 
-void init_timers(const struct mrp_database_s* db)
+void init_timers(struct mrp_attribute* attr)
 {
-  mrp_init_leavealltimer(db);
-  mrp_init_leavetimer(db);
+  mrp_init_leavealltimer(attr);
+  mrp_init_leavetimer(attr);
 }
 
-void delete_timers(const struct mrp_database_s* db)
+void delete_timers(const struct mrp_attribute* attr)
 {
-  esp_timer_delete(db->leaveall_timer);
-  esp_timer_delete(db->leave_timer);
+  esp_timer_delete(attr->app->leaveall.timer);
+  esp_timer_delete(attr->registrar.leave_timer);
 }
 
 /* IEEE802.1Q-2022 10.7.4.3 leavealltimer */
-int mrp_start_leavealltimer(const struct mrp_database_s* db)
+int mrp_start_leavealltimer(const struct mrp_attribute* attr)
 {
+  const struct mrp_application* app = attr->app;
   // LeaveAllTime < T < 1.5 x LeaveAllTime
   u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5);
-  return esp_timer_start_periodic(db->leaveall_timer, interval);
+  return esp_timer_start_periodic(app->leaveall.timer, interval);
 }
 
-int mrp_stop_leavealltimer(const struct mrp_database_s* db)
+int mrp_stop_leavealltimer(const struct mrp_attribute* attr)
 {
-  return esp_timer_stop(db->leaveall_timer);
+  const struct mrp_application* app = attr->app;
+  return esp_timer_stop(app->leaveall.timer);
 }
 
-int mrp_start_leavetimer(const struct mrp_database_s* db)
+int mrp_start_leavetimer(const struct mrp_attribute* attr)
 {
-  return esp_timer_start_periodic(db->leave_timer, MRP_LEAVE_TIME_MS);
+  const struct mrp_registrar* registrar = &attr->registrar;
+  return esp_timer_start_periodic(registrar->leave_timer, MRP_LEAVE_TIME_MS);
 }
 
-int mrp_stop_leavetimer(const struct mrp_database_s* db)
+int mrp_stop_leavetimer(const struct mrp_attribute* attr)
 {
-  return esp_timer_stop(db->leave_timer);
+  const struct mrp_registrar* registrar = &attr->registrar;
+  return esp_timer_stop(registrar->leave_timer);
 }
 
-void mrp_applicant_state_machine(mrp_event_t event, mrp_state_t state)
+void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
 {
   mrp_action_t action = MRP_ACTION_NONE;
+  const struct mrp_applicant* applicant = &attr->applicant;
+  mrp_state_t state = applicant->state;
 
   switch (event)
   {
@@ -407,10 +415,10 @@ void mrp_applicant_state_machine(mrp_event_t event, mrp_state_t state)
   ESP_LOGI(TAG, "state %s => action %s", mrp_state_to_str(state), mrp_action_to_str(action));
 }
 
-void mrp_registrar_state_machine(const struct mrp_database_s* db, const struct mrp_applicant_attribute_s* attr,
-                                 const mrp_event_t event)
+void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
 {
-  mrp_state_t state = attr->state;
+  struct mrp_registrar* registrar = &attr->registrar;
+  mrp_state_t state = registrar->state;
   mrp_action_t action = MRP_ACTION_NONE;
   switch (event)
   {
@@ -420,8 +428,7 @@ void mrp_registrar_state_machine(const struct mrp_database_s* db, const struct m
   case MRP_EVENT_R_NEW:
     if (state == MRP_LV_STATE)
     {
-      // TODO stop leavetimer
-      mrp_stop_leavetimer(db);
+      mrp_stop_leavetimer(attr);
     }
     state = MRP_IN_STATE;
     action = MRP_ACTION_NEW;
@@ -430,8 +437,7 @@ void mrp_registrar_state_machine(const struct mrp_database_s* db, const struct m
   case MRP_EVENT_R_JOIN_MT:
     if (state == MRP_LV_STATE)
     {
-      // TODO stop leavetimer
-      mrp_stop_leavetimer(db);
+      mrp_stop_leavetimer(attr);
     }
     else if (state == MRP_MT_STATE)
     {
@@ -445,8 +451,7 @@ void mrp_registrar_state_machine(const struct mrp_database_s* db, const struct m
   case MRP_EVENT_REDECLARE:
     if (state == MRP_IN_STATE)
     {
-      // TODO start leavetimer
-      mrp_start_leavetimer(db);
+      mrp_start_leavetimer(attr);
       state = MRP_LV_STATE;
     }
     break;
@@ -476,15 +481,17 @@ void mrp_registrar_state_machine(const struct mrp_database_s* db, const struct m
   ESP_LOGI(TAG, "state %s => action %s", mrp_state_to_str(state), mrp_action_to_str(action));
 }
 
-void mrp_leaveall_state_machine(const struct mrp_database_s* db, mrp_event_t event, mrp_active_state_t state)
+void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t event)
 {
+  struct mrp_application* app = attr->app;
+  struct mrp_leaveall* leaveall = &app->leaveall;
+  mrp_active_state_t state = leaveall->state;
   mrp_action_t action = MRP_ACTION_NONE;
   switch (event)
   {
   case MRP_EVENT_BEGIN:
     state = MRP_PASSIVE;
-    // TODO start leavealltimer
-    mrp_start_leavealltimer(db);
+    mrp_start_leavealltimer(attr);
     break;
   case MRP_EVENT_TX:
     if (state == MRP_ACTIVE)
@@ -495,17 +502,17 @@ void mrp_leaveall_state_machine(const struct mrp_database_s* db, mrp_event_t eve
     break;
   case MRP_EVENT_R_LA:
     state = MRP_PASSIVE;
-    // TODO start leavealltimer
-    mrp_start_leavealltimer(db);
+    mrp_start_leavealltimer(attr);
     break;
   case MRP_EVENT_LEAVEALLTIMER:
     state = MRP_ACTIVE;
-    // TODO start leavealltimer
-    mrp_stop_leavealltimer(db);
+    mrp_start_leavealltimer(attr);
     break;
   default:
     ESP_LOGW(TAG, "Unknown event %s for leave all state machine!", mrp_event_to_str(event));
   }
+  leaveall->state = state;
+  leaveall->action = action;
 }
 
 void mrp_state_init()

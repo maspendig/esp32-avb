@@ -83,14 +83,36 @@ typedef enum
   MRP_PASSIVE,
 } mrp_active_state_t;
 
-struct mrp_database_s
-{
-  esp_timer_handle_t leave_timer;
-  esp_timer_handle_t leaveall_timer;
-};
 
-struct mrp_applicant_attribute_s
+struct mrp_applicant
 {
   mrp_state_t state;
+  mrp_action_t action;
+};
+
+struct mrp_registrar
+{
+  mrp_state_t state;
+  mrp_action_t action;
+  esp_timer_handle_t leave_timer;
+};
+
+struct mrp_leaveall
+{
+  mrp_active_state_t state;
+  mrp_action_t action;
+  esp_timer_handle_t timer;
+};
+
+struct mrp_application
+{
+  struct mrp_leaveall leaveall;
+};
+
+struct mrp_attribute
+{
+  struct mrp_application* app;
+  struct mrp_applicant applicant;
+  struct mrp_registrar registrar;
 };
 #endif //ETHERNET_PTP_MRP_H
