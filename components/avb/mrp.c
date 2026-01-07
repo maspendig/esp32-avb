@@ -96,7 +96,7 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event);
 //region join timer
 int mrp_start_join_timer(const struct mrp_attribute* attr)
 {
-  return esp_timer_start_periodic(attr->app->join_timer, MRP_JOIN_TIME_MS);
+  return esp_timer_start_once(attr->app->join_timer, MRP_JOIN_TIME_MS);
 }
 
 int mrp_stop_join_timer(const struct mrp_attribute* attr)
@@ -147,7 +147,15 @@ int mrp_start_leaveall_timer(const struct mrp_attribute* attr)
   const struct mrp_application* app = attr->app;
   // LeaveAllTime < T < 1.5 x LeaveAllTime
   u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5);
-  return esp_timer_start_periodic(app->leaveall.timer, interval);
+  return esp_timer_start_once(app->leaveall.timer, interval);
+}
+
+int mrp_restart_leaveall_timer(const struct mrp_attribute* attr)
+{
+  const struct mrp_application* app = attr->app;
+  // LeaveAllTime < T < 1.5 x LeaveAllTime
+  u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5);
+  return esp_timer_restart(app->leaveall.timer, interval);
 }
 
 int mrp_stop_leaveall_timer(const struct mrp_attribute* attr)
@@ -196,7 +204,7 @@ int mrp_init_leave_timer(struct mrp_attribute* attr)
 int mrp_start_leave_timer(const struct mrp_attribute* attr)
 {
   const struct mrp_registrar* registrar = &attr->registrar;
-  return esp_timer_start_periodic(registrar->leave_timer, MRP_LEAVE_TIME_MS);
+  return esp_timer_start_once(registrar->leave_timer, MRP_LEAVE_TIME_MS);
 }
 
 int mrp_stop_leave_timer(const struct mrp_attribute* attr)
@@ -563,7 +571,8 @@ void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t ev
     break;
   case MRP_EVENT_R_LA:
     state = MRP_PASSIVE;
-    mrp_start_leaveall_timer(attr);
+    // IEEE 802.1Q-2022 10.6: on LeaveAll message from another Participant, reset timer to minimize network traffic
+    mrp_restart_leaveall_timer(attr);
     break;
   case MRP_EVENT_LEAVEALLTIMER:
     state = MRP_ACTIVE;
