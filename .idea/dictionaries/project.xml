@@ -2,6 +2,10 @@
   <dictionary name="project">
     <words>
       <w>aecp</w>
+      <w>leaveall</w>
+      <w>leavealltimer</w>
+      <w>leavetimer</w>
+      <w>periodictimer</w>
     </words>
   </dictionary>
 </component>

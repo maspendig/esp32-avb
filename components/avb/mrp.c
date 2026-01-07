@@ -117,7 +117,7 @@ void mrp_join_timer_callback(void* arg)
   mrp_event_t event = MRP_EVENT_TX;
 
   /* IEEE802.1q-2022 10.7.5.7
-   * The tx! event is modified by the behaviour of the LeaveAll state machine.
+   * The tx! event is modified by the behavior of the LeaveAll state machine.
    * If the LeaveAll state machine has signaled LeaveAll, then tx! is modified to txLA!
    */
   mrp_leaveall_state_machine(attr, MRP_EVENT_TX);
@@ -594,7 +594,7 @@ void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t ev
   leaveall->action = action;
 }
 
-void mrp_begin(struct mrp_attribute* attr)
+void mrp_begin(const struct mrp_attribute* attr)
 {
   // TODO check participant type
   // if(attr->app->participant_type == MRP_PARTICIPANT_FULL)
