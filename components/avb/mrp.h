@@ -125,6 +125,12 @@ struct mrp_attribute
   struct mrp_registrar registrar;
 };
 
+typedef struct mrp_vector_header
+{
+  u16 leave_all_event : 3;
+  u16 number_of_values : 13;
+} __attribute__((packed)) mrp_vector_header_t;
+
 typedef struct mrp_data_unit_header
 {
   u8 attribute_type;
@@ -138,6 +144,7 @@ void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t ev
 void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event);
 int mrp_init_timers(struct mrp_attribute* attr);
 void mrp_delete_timers(const struct mrp_attribute* attr);
+void mrp_parse_vector_header(u16 vector_header, bool* leave_all_event, u16* number_of_values);
 int mrp_init(struct mrp_attribute* attr, mrp_application_type_t type);
 
 #endif //ETHERNET_PTP_MRP_H

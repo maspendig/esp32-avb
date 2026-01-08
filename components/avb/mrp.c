@@ -90,6 +90,16 @@ char* mrp_action_to_str(mrp_action_t action)
   }
 }
 
+char* mrp_active_state_to_str(mrp_active_state_t state)
+{
+  switch (state)
+  {
+  case MRP_ACTIVE: return "Active";
+  case MRP_PASSIVE: return "Passive";
+  default: return "UNKNOWN";
+  }
+}
+
 //endregion
 
 //region join timer
@@ -97,7 +107,7 @@ int mrp_start_join_timer(const struct mrp_attribute* attr)
 {
   // in order to fit the state machine definitions, we only use once timer here
   // the timer is restarted by the state machine
-  return esp_timer_start_once(attr->app->join_timer, MRP_JOIN_TIME_MS);
+  return esp_timer_start_once(attr->app->join_timer, MRP_JOIN_TIME_MS * 1000);
 }
 
 int mrp_stop_join_timer(const struct mrp_attribute* attr)
@@ -157,7 +167,7 @@ int mrp_restart_leaveall_timer(const struct mrp_attribute* attr)
 {
   const struct mrp_application* app = attr->app;
   // LeaveAllTime < T < 1.5 x LeaveAllTime
-  u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5);
+  u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5) * 1000;
   return esp_timer_restart(app->leaveall.timer, interval);
 }
 
@@ -209,7 +219,7 @@ int mrp_start_leave_timer(const struct mrp_attribute* attr)
   const struct mrp_registrar* registrar = &attr->registrar;
   // in order to fit the state machine definitions, we only use once timer here
   // the timer is restarted by the state machine
-  return esp_timer_start_once(registrar->leave_timer, MRP_LEAVE_TIME_MS);
+  return esp_timer_start_once(registrar->leave_timer, MRP_LEAVE_TIME_MS * 1000);
 }
 
 int mrp_stop_leave_timer(const struct mrp_attribute* attr)
@@ -234,6 +244,12 @@ void mrp_delete_timers(const struct mrp_attribute* attr)
   esp_timer_delete(attr->app->leaveall.timer);
   esp_timer_delete(attr->registrar.leave_timer);
   esp_timer_delete(attr->app->join_timer);
+}
+
+void mrp_parse_vector_header(u16 vector_header, bool* leave_all_event, u16* number_of_values)
+{
+  *leave_all_event = (vector_header >> 13) & 0x1;
+  *number_of_values = vector_header & 0x1FFF;
 }
 
 //region state machines
@@ -487,9 +503,14 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
     ESP_LOGI(TAG, "Unknown event %s", mrp_event_to_str(event));
   }
 
+  ESP_LOGI(TAG, "Applicant SM - event: %s, state [%s] => [%s], action %s",
+           mrp_event_to_str(event),
+           mrp_state_to_str(applicant->state),
+           mrp_state_to_str(state),
+           mrp_action_to_str(action));
+
   applicant->state = state;
   applicant->action = action;
-  ESP_LOGI(TAG, "state %s => action %s", mrp_state_to_str(state), mrp_action_to_str(action));
 }
 
 void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
@@ -556,9 +577,14 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
     break;
   }
 
+  ESP_LOGI(TAG, "Registrar SM - event: %s, state [%s] => [%s], action %s",
+           mrp_event_to_str(event),
+           mrp_state_to_str(registrar->state),
+           mrp_state_to_str(state),
+           mrp_action_to_str(action));
+
   registrar->state = state;
   registrar->action = action;
-  ESP_LOGI(TAG, "state %s => action %s", mrp_state_to_str(state), mrp_action_to_str(action));
 }
 
 void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t event)
@@ -594,8 +620,8 @@ void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t ev
   }
   ESP_LOGI(TAG, "LeaveAll SM - event: %s, state: [%s] => [%s], action: %s",
            mrp_event_to_str(event),
-           leaveall->state == MRP_ACTIVE ? "ACTIVE": "PASSIVE",
-           state == MRP_ACTIVE ? "ACTIVE" : "PASSIVE",
+           mrp_active_state_to_str(leaveall->state),
+           mrp_active_state_to_str(state),
            mrp_action_to_str(action));
 
   leaveall->state = state;
@@ -606,6 +632,9 @@ void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t ev
 
 void mrp_begin(const struct mrp_attribute* attr)
 {
+  // TODO check correct init phase
+  mrp_registrar_state_machine(attr, MRP_EVENT_BEGIN);
+  mrp_applicant_state_machine(attr, MRP_EVENT_BEGIN);
   // TODO check participant type
   // if(attr->app->participant_type == MRP_PARTICIPANT_FULL)
   {

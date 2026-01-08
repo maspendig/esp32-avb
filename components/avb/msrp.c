@@ -54,7 +54,6 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
     u8 protocol_version;
   } __attribute__((packed));
 
-
   u16 attribute_pointer = sizeof(struct msrp_packet_s); // header + protocol_version
   while (len > attribute_pointer)
   {
@@ -76,26 +75,35 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
     ESP_LOGI(TAG, "Received MSRP attribute type: %s",
              msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type));
 
-    attribute_pointer += sizeof(msrp_attribute_t) + ntohs(attrib->attribute_list_length);
+
+    u16 vector_header = ntohs(*(u16*)((u8*)attrib + sizeof(msrp_attribute_t)));
+    bool leave_all_event = false;
+    u16 number_of_values = 0;
+    mrp_parse_vector_header(vector_header, &leave_all_event, &number_of_values);
+
+    if (leave_all_event == true)
+    {
+      mrp_leaveall_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
+      mrp_applicant_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
+      mrp_registrar_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
+    }
 
     switch (attrib->attribute_type)
     {
     case MSRP_TALKER_ADVERTISE:
-      // TODO process talker advertise
       break;
     case MSRP_TALKER_FAILED:
-      // TODO process talker failed
       break;
     case MSRP_LISTENER:
-      // TODO process listener
       break;
     case MSRP_DOMAIN:
-      // TODO process domain
       break;
     default:
       ESP_LOGW(TAG, "Unknown MSRP attribute type: %d", attrib->attribute_type);
       break;
     }
+    // Move to the next potential attribute
+    attribute_pointer += sizeof(msrp_attribute_t) + ntohs(attrib->attribute_list_length);
   }
 }
 
