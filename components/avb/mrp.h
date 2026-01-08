@@ -131,4 +131,13 @@ typedef struct mrp_data_unit_header
   u8 attribute_length;
   u16 attribute_list_length;
 } __attribute__((packed)) mrp_data_unit_header_t;
+
+// Function declarations
+void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event);
+void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t event);
+void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event);
+int mrp_init_timers(struct mrp_attribute* attr);
+void mrp_delete_timers(const struct mrp_attribute* attr);
+int mrp_init(struct mrp_attribute* attr, mrp_application_type_t type);
+
 #endif //ETHERNET_PTP_MRP_H

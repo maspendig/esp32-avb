@@ -13,6 +13,7 @@
 
 #define TAG "MRP"
 
+//region string conversion helpers
 char* mrp_state_to_str(mrp_state_t state)
 {
   switch (state)
@@ -89,9 +90,7 @@ char* mrp_action_to_str(mrp_action_t action)
   }
 }
 
-void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event);
-void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t event);
-void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event);
+//endregion
 
 //region join timer
 int mrp_start_join_timer(const struct mrp_attribute* attr)
@@ -148,7 +147,7 @@ int mrp_start_leaveall_timer(const struct mrp_attribute* attr)
 {
   const struct mrp_application* app = attr->app;
   // LeaveAllTime < T < 1.5 x LeaveAllTime
-  u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5);
+  u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5) * 1000;
   // in order to fit the state machine definitions, we only use once timer here
   // the timer is restarted by the state machine
   return esp_timer_start_once(app->leaveall.timer, interval);
@@ -236,6 +235,8 @@ void mrp_delete_timers(const struct mrp_attribute* attr)
   esp_timer_delete(attr->registrar.leave_timer);
   esp_timer_delete(attr->app->join_timer);
 }
+
+//region state machines
 
 void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
 {
@@ -591,9 +592,17 @@ void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t ev
   default:
     ESP_LOGW(TAG, "Unknown event %s for leave all state machine!", mrp_event_to_str(event));
   }
+  ESP_LOGI(TAG, "LeaveAll SM - event: %s, state: [%s] => [%s], action: %s",
+           mrp_event_to_str(event),
+           leaveall->state == MRP_ACTIVE ? "ACTIVE": "PASSIVE",
+           state == MRP_ACTIVE ? "ACTIVE" : "PASSIVE",
+           mrp_action_to_str(action));
+
   leaveall->state = state;
   leaveall->action = action;
 }
+
+//endregion
 
 void mrp_begin(const struct mrp_attribute* attr)
 {
@@ -611,6 +620,12 @@ void mrp_begin(const struct mrp_attribute* attr)
 
 int mrp_init(struct mrp_attribute* attr, mrp_application_type_t type)
 {
+  struct mrp_application* app = calloc(1, sizeof(struct mrp_application));
+  struct mrp_registrar* reg = calloc(1, sizeof(struct mrp_registrar));
+  struct mrp_applicant* applicant = calloc(1, sizeof(struct mrp_applicant));
+  attr->app = app;
+  attr->applicant = *applicant;
+  attr->registrar = *reg;
   attr->app->type = type;
   if (mrp_init_timers(attr) > ESP_OK)
   {

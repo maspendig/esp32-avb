@@ -77,6 +77,25 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
              msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type));
 
     attribute_pointer += sizeof(msrp_attribute_t) + ntohs(attrib->attribute_list_length);
+
+    switch (attrib->attribute_type)
+    {
+    case MSRP_TALKER_ADVERTISE:
+      // TODO process talker advertise
+      break;
+    case MSRP_TALKER_FAILED:
+      // TODO process talker failed
+      break;
+    case MSRP_LISTENER:
+      // TODO process listener
+      break;
+    case MSRP_DOMAIN:
+      // TODO process domain
+      break;
+    default:
+      ESP_LOGW(TAG, "Unknown MSRP attribute type: %d", attrib->attribute_type);
+      break;
+    }
   }
 }
 
@@ -102,11 +121,8 @@ void msrp_state_init(msrp_state_t* state)
 
   /* Initialize the MRP attribute structure */
   memset(state, 0, sizeof(msrp_state_t));
-  struct mrp_application* msrp = malloc(sizeof(struct mrp_application));
 
-  msrp->type = MSRP;
-
-  state->mrp.app = msrp;
+  mrp_init(&state->mrp, MSRP);
 
   ESP_LOGI(TAG, "MSRP state initialized");
 }
