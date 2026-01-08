@@ -22,9 +22,62 @@
 
 #define TAG "msrp"
 
+char* msrp_attribute_type_to_str(msrp_attribute_type_t type)
+{
+  switch (type)
+  {
+  case MSRP_TALKER_ADVERTISE: return "Talker Advertise";
+  case MSRP_TALKER_FAILED: return "Talker Failed";
+  case MSRP_LISTENER: return "Listener";
+  case MSRP_DOMAIN: return "Domain";
+  default: return "UNKNOWN";
+  }
+}
+
+bool validate_attribute_length(const msrp_attribute_t* attrib)
+{
+  switch (attrib->attribute_type)
+  {
+  case MSRP_TALKER_ADVERTISE: return attrib->attribute_length == MSRP_ATTRIBUTE_LENGTH_TALKER_ADVERTISE;
+  case MSRP_TALKER_FAILED: return attrib->attribute_length == MSRP_ATTRIBUTE_LENGTH_TALKER_FAILED;
+  case MSRP_LISTENER: return attrib->attribute_length == MSRP_ATTRIBUTE_LENGTH_LISTENER;
+  case MSRP_DOMAIN: return attrib->attribute_length == MSRP_ATTRIBUTE_LENGTH_DOMAIN;
+  default: return false;
+  }
+}
+
 void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
 {
-  ESP_LOGI(TAG, "Received MSRP packet (%d bytes)", (int)len);
+  struct msrp_packet_s
+  {
+    struct header_s header;
+    u8 protocol_version;
+  } __attribute__((packed));
+
+
+  u16 attribute_pointer = sizeof(struct msrp_packet_s); // header + protocol_version
+  while (len > attribute_pointer)
+  {
+    // check for end mark 0x0000
+    if (buf[attribute_pointer] == 0x00 && buf[attribute_pointer + 1] == 0x00)
+    {
+      break;
+    }
+
+    const msrp_attribute_t* attrib = (msrp_attribute_t*)(buf + attribute_pointer);
+    if (validate_attribute_length(attrib) == false)
+    {
+      ESP_LOGW(TAG, "Invalid MSRP attribute length: type %s, length %d",
+               msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type),
+               attrib->attribute_length);
+      break;
+    }
+
+    ESP_LOGI(TAG, "Received MSRP attribute type: %s",
+             msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type));
+
+    attribute_pointer += sizeof(msrp_attribute_t) + ntohs(attrib->attribute_list_length);
+  }
 }
 
 void msrp_net_rx(struct avtp_state_s* state)

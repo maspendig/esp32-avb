@@ -5,6 +5,7 @@
 #ifndef ETHERNET_PTP_MRP_H
 #define ETHERNET_PTP_MRP_H
 #include <esp_timer.h>
+#include <types.h>
 
 /* MRP timer parameter values defined in IEEE 802.1Q-2022 Table 10-7 */
 #define MRP_JOIN_TIME_MS     200
@@ -90,7 +91,6 @@ typedef enum
   MRP_PASSIVE,
 } mrp_active_state_t;
 
-
 struct mrp_applicant
 {
   mrp_state_t state;
@@ -124,4 +124,11 @@ struct mrp_attribute
   struct mrp_applicant applicant;
   struct mrp_registrar registrar;
 };
+
+typedef struct mrp_data_unit_header
+{
+  u8 attribute_type;
+  u8 attribute_length;
+  u16 attribute_list_length;
+} __attribute__((packed)) mrp_data_unit_header_t;
 #endif //ETHERNET_PTP_MRP_H
