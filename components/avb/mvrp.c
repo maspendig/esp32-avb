@@ -5,6 +5,7 @@
 // IEEE 802.1Q-2022 Section 11.2
 //
 
+#include "mrp.h"
 #include "mvrp.h"
 #include "avtp.h"
 #include "types.h"
@@ -102,10 +103,10 @@ static const char* event_string(u8 event)
   switch (event)
   {
   case MRP_EVENT_NEW: return "New";
-  case MRP_EVENT_JOININ: return "JoinIn";
-  case MRP_EVENT_IN: return "In";
-  case MRP_EVENT_JOINMT: return "JoinMt";
-  case MRP_EVENT_MT: return "Mt";
+  case MRP_EVENT_R_JOIN_IN: return "JoinIn";
+  case MRP_EVENT_R_IN: return "In";
+  case MRP_EVENT_R_JOIN_MT: return "JoinMt";
+  case MRP_EVENT_R_MT: return "Mt";
   case MRP_EVENT_LV: return "Leave";
   default: return "??";
   }
@@ -332,7 +333,7 @@ static int applicant_tx(mvrp_vlan_decl_t* decl)
   case MVRP_APPLICANT_AA:
     /* AA + tx! -> QA, send JoinIn */
     decl->applicant_state = MVRP_APPLICANT_QA;
-    tx_event = MRP_EVENT_JOININ;
+    tx_event = MRP_EVENT_R_JOIN_IN;
     break;
   case MVRP_APPLICANT_LA:
     /* LA + tx! -> VO, send Leave */
@@ -342,17 +343,17 @@ static int applicant_tx(mvrp_vlan_decl_t* decl)
   case MVRP_APPLICANT_VP:
     /* VP + tx! -> AA, send JoinIn */
     decl->applicant_state = MVRP_APPLICANT_AA;
-    tx_event = MRP_EVENT_JOININ;
+    tx_event = MRP_EVENT_R_JOIN_IN;
     break;
   case MVRP_APPLICANT_AP:
     /* AP + tx! -> QA, send JoinIn */
     decl->applicant_state = MVRP_APPLICANT_QA;
-    tx_event = MRP_EVENT_JOININ;
+    tx_event = MRP_EVENT_R_JOIN_IN;
     break;
   case MVRP_APPLICANT_AO:
     /* AO + tx! -> QO, send In */
     decl->applicant_state = MVRP_APPLICANT_QO;
-    tx_event = MRP_EVENT_IN;
+    tx_event = MRP_EVENT_R_IN;
     break;
   case MVRP_APPLICANT_LO:
     /* LO + tx! -> VO, send empty (no tx) */
@@ -641,8 +642,8 @@ static void handle_mvrp_vid_message(struct avtp_state_s* state, const u8* buf, s
       switch (event)
       {
       case MRP_EVENT_NEW:
-      case MRP_EVENT_JOININ:
-      case MRP_EVENT_JOINMT:
+      case MRP_EVENT_R_JOIN_IN:
+      case MRP_EVENT_R_JOIN_MT:
         registrar_rx_join(reg);
         break;
       case MRP_EVENT_LV:
@@ -659,14 +660,14 @@ static void handle_mvrp_vid_message(struct avtp_state_s* state, const u8* buf, s
     {
       switch (event)
       {
-      case MRP_EVENT_JOININ:
+      case MRP_EVENT_R_JOIN_IN:
         applicant_rx_joinin(&mvrp->vlan_decl);
         break;
-      case MRP_EVENT_IN:
+      case MRP_EVENT_R_IN:
         applicant_rx_in(&mvrp->vlan_decl);
         break;
-      case MRP_EVENT_JOINMT:
-      case MRP_EVENT_MT:
+      case MRP_EVENT_R_JOIN_MT:
+      case MRP_EVENT_R_MT:
         applicant_rx_empty(&mvrp->vlan_decl);
         break;
       case MRP_EVENT_LV:

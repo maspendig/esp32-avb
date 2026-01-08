@@ -5,6 +5,7 @@
 #ifndef ETHERNET_PTP_MSRP_H
 #define ETHERNET_PTP_MSRP_H
 
+#include <mrp.h>
 #include <stdbool.h>
 #include <sys/time.h>
 
@@ -154,26 +155,9 @@ typedef struct
   mrp_registrar_state_t registrar_state;
 } msrp_domain_info_t;
 
-/* ============================================================================
- * MSRP State (to be included in avtp_state_s)
- * ============================================================================
- */
-typedef struct
+typedef struct msrp_state
 {
-  /* Domain information - support 2 domains (Class A and Class B) */
-  msrp_domain_info_t domains[2];
-
-  /* Received talker stream info - for now only support single stream */
-  msrp_talker_info_t talker;
-
-  /* Our listener declaration - for now only support single stream */
-  msrp_listener_decl_t listener;
-
-  /* Timing for periodic transmissions */
-  struct timespec last_tx_time;
-  u32 join_timeout_ms; /* JoinTime in ms (typically 200ms) */
-  u32 leave_timeout_ms; /* LeaveTime in ms (typically 600ms) */
-  u32 leave_all_timeout_ms; /* LeaveAllTime in ms (typically 10000ms) */
+  struct mrp_attribute mrp;
 } msrp_state_t;
 
 struct msrp_header_s
@@ -278,7 +262,7 @@ struct talker_advertise_s
  * @param interface Network interface name
  * @return Socket file descriptor or -1 on error
  */
-int msrp_init(const char* interface);
+int msrp_init_socket(const char* interface);
 
 /**
  * Initialize MSRP state with default values
@@ -291,63 +275,5 @@ void msrp_state_init(msrp_state_t* state);
  * @param state Pointer to AVTP state
  */
 void msrp_net_rx(struct avtp_state_s* state);
-
-/**
- * Process MSRP timers and send pending messages
- * @param state Pointer to AVTP state
- */
-void msrp_periodic(struct avtp_state_s* state);
-
-/* ============================================================================
- * MSRP Listener Applicant Functions
- * ============================================================================
- */
-
-/**
- * Start listening to a stream (Join as listener)
- * This triggers the applicant state machine to declare Listener Ready
- * @param state Pointer to AVTP state
- * @param stream_id Stream ID to listen to
- * @return 0 on success, -1 on error
- */
-int msrp_listener_join(struct avtp_state_s* state, u64 stream_id);
-
-/**
- * Stop listening to a stream (Leave as listener)
- * This triggers the applicant state machine to withdraw declaration
- * @param state Pointer to AVTP state
- * @param stream_id Stream ID to stop listening to
- * @return 0 on success, -1 on error
- */
-int msrp_listener_leave(struct avtp_state_s* state, u64 stream_id);
-
-/**
- * Send a listener declaration message
- * @param state Pointer to AVTP state
- * @param stream_id Stream ID
- * @param declaration_type MSRP_LISTENER_READY, MSRP_LISTENER_READY_FAILED, etc.
- * @param event MRP attribute event (NEW, JOININ, etc.)
- * @return 0 on success, -1 on error
- */
-int msrp_send_listener_declaration(struct avtp_state_s* state, u64 stream_id,
-                                   u8 declaration_type, u8 event);
-
-/* ============================================================================
- * MSRP Talker Functions (for future use)
- * ============================================================================
- */
-
-/**
- * Send a talker advertise message
- * @param state Pointer to AVTP state
- * @return 0 on success, -1 on error
- */
-int msrp_send_talker_advertise(struct avtp_state_s* state);
-
-/**
- * Send a domain discovery request
- * @param state Pointer to AVTP state
- */
-void msrp_send_domain_request(const struct avtp_state_s* state);
 
 #endif // ETHERNET_PTP_MSRP_H

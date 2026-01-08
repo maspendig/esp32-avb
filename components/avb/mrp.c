@@ -539,6 +539,7 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
     state = MRP_MT_STATE;
     break;
   case MRP_EVENT_LEAVETIMER:
+    // TODO investigate operPointToPointMAC condition
     if (state == MRP_LV_STATE)
     {
       state = MRP_MT_STATE;
@@ -627,5 +628,3 @@ int mrp_exit(const struct mrp_attribute* attr)
   mrp_delete_timers(attr);
   return ESP_OK;
 }
-
-

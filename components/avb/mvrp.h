@@ -30,14 +30,6 @@ struct avtp_state_s;
 #define MVRP_ATTRIBUTE_TYPE_VID 1
 #define MVRP_ATTRIBUTE_LENGTH_VID 2
 
-/* MRP Attribute Events (IEEE 802.1Q-2022 Section 10.8) */
-#define MRP_EVENT_NEW    0  /* New declaration */
-#define MRP_EVENT_JOININ 1  /* JoinIn */
-#define MRP_EVENT_IN     2  /* In */
-#define MRP_EVENT_JOINMT 3  /* JoinMt (Join Empty) */
-#define MRP_EVENT_MT     4  /* Mt (Empty) */
-#define MRP_EVENT_LV     5  /* Leave */
-
 /* MRP Timer Values (IEEE 802.1Q-2022 Section 10.7) */
 #define MVRP_JOIN_TIME_MS       200   /* JoinTime: 200ms default */
 #define MVRP_LEAVE_TIME_MS      600   /* LeaveTime: 600ms default */
@@ -82,15 +74,15 @@ typedef enum
  */
 typedef struct
 {
-  bool active;                            /* Is this declaration active? */
-  u16 vlan_id;                            /* VLAN ID we are declaring */
+  bool active; /* Is this declaration active? */
+  u16 vlan_id; /* VLAN ID we are declaring */
 
   /* Applicant state machine */
   mvrp_applicant_state_t applicant_state; /* Current applicant state */
-  struct timespec join_timer;             /* Join timer for applicant state */
+  struct timespec join_timer; /* Join timer for applicant state */
 
   /* Flags for transmission */
-  bool tx_pending;                        /* Need to transmit declaration */
+  bool tx_pending; /* Need to transmit declaration */
 } mvrp_vlan_decl_t;
 
 /* ============================================================================
@@ -99,12 +91,12 @@ typedef struct
  */
 typedef struct
 {
-  bool valid;                             /* Is this entry in use? */
-  u16 vlan_id;                            /* VLAN ID registered */
+  bool valid; /* Is this entry in use? */
+  u16 vlan_id; /* VLAN ID registered */
 
   /* Registrar state machine */
   mvrp_registrar_state_t registrar_state; /* Current registrar state */
-  struct timespec leave_timer;            /* Leave timer for registrar state */
+  struct timespec leave_timer; /* Leave timer for registrar state */
 } mvrp_vlan_reg_t;
 
 /* Maximum number of VLAN registrations to track */
@@ -123,10 +115,10 @@ typedef struct
   mvrp_vlan_reg_t vlan_registrations[MVRP_MAX_VLAN_REGISTRATIONS];
 
   /* Timing for periodic transmissions */
-  struct timespec last_tx_time;           /* Last transmission time */
-  u32 join_timeout_ms;                    /* JoinTime in ms */
-  u32 leave_timeout_ms;                   /* LeaveTime in ms */
-  u32 leave_all_timeout_ms;               /* LeaveAllTime in ms */
+  struct timespec last_tx_time; /* Last transmission time */
+  u32 join_timeout_ms; /* JoinTime in ms */
+  u32 leave_timeout_ms; /* LeaveTime in ms */
+  u32 leave_all_timeout_ms; /* LeaveAllTime in ms */
 } mvrp_state_t;
 
 /* ============================================================================

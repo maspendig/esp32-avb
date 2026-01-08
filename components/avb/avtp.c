@@ -107,7 +107,7 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   }
 
   state->acmp_sequence_id = 0;
-  state->msrp_socket = msrp_init(interface);
+  state->msrp_socket = msrp_init_socket(interface);
   state->mvrp_socket = mvrp_init(interface);
 
 
@@ -468,7 +468,7 @@ static void avtp_control_task(void* arg)
   ESP_LOGI(TAG, "Control task started on core %d (priority %d)",
            xPortGetCoreID(), uxTaskPriorityGet(NULL));
 
-  msrp_send_domain_request(state);
+  // msrp_send_domain_request(state);
   mvrp_vlan_join(state, 2);
 
   while (!state->stop)
@@ -534,7 +534,6 @@ static void avtp_control_task(void* arg)
     }
 
     /* Process periodic tasks */
-    msrp_periodic(state);
     mvrp_periodic(state);
 
     /* Send periodic ADP announcements */
