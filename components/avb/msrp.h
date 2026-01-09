@@ -88,6 +88,17 @@ typedef struct msrp_header
   msrp_attribute_t attribute[];
 } __attribute__((packed)) msrp_header_t;
 
+typedef struct msrpdu_talker_advertise
+{
+  u64 stream_id;
+  u8 dest_mac[6];
+  u16 vlan_id;
+  u16 max_frame_size;
+  u16 max_frame_interval;
+  u8 priority_and_rank;
+  u32 accumulated_latency;
+} __attribute__((packed)) msrpdu_talker_advertise_t;
+
 typedef struct msrpdu_listener
 {
   u64 stream_id;
