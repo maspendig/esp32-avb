@@ -513,6 +513,27 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
   applicant->action = action;
 }
 
+void mrp_registrar_exec_action(struct mrp_attribute* attr)
+{
+  switch (attr->registrar.action)
+  {
+  case MRP_ACTION_NEW:
+    /* IEEE 802.1Q-2022 10.7.6.12 New */
+    attr->app->mad_join_indication(attr, true);
+    break;
+  case MRP_ACTION_JOIN:
+    /* IEEE 802.1Q-2022 10.7.6.13 Join */
+    attr->app->mad_join_indication(attr, false);
+    break;
+  case MRP_ACTION_LV:
+    /* IEEE 802.1Q-2022 Lv */
+    attr->app->mad_leave_indication(attr);
+    break;
+  default:
+    break;
+  }
+}
+
 void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
 {
   struct mrp_registrar* registrar = &attr->registrar;
@@ -585,6 +606,8 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
 
   registrar->state = state;
   registrar->action = action;
+
+  mrp_registrar_exec_action(attr);
 }
 
 void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t event)

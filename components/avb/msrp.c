@@ -46,6 +46,19 @@ bool validate_attribute_length(const msrp_attribute_t* attrib)
   }
 }
 
+void msrp_mad_join_indication(struct mrp_attribute* attr, bool new)
+{
+  ESP_LOGI(TAG, "MSRP MAD Join Indication: attribute type %s, new %d",
+           msrp_attribute_type_to_str((msrp_attribute_type_t)attr->app->type),
+           new);
+}
+
+void msrp_mad_leave_indication(struct mrp_attribute* attr)
+{
+  ESP_LOGI(TAG, "MSRP MAD Leave Indication: attribute type %s",
+           msrp_attribute_type_to_str((msrp_attribute_type_t)attr->app->type));
+}
+
 void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
 {
   struct msrp_packet_s
@@ -131,6 +144,8 @@ void msrp_state_init(msrp_state_t* state)
   memset(state, 0, sizeof(msrp_state_t));
 
   mrp_init(&state->mrp, MSRP);
+  state->mrp.app->mad_join_indication = &msrp_mad_join_indication;
+  state->mrp.app->mad_leave_indication = &msrp_mad_leave_indication;
 
   ESP_LOGI(TAG, "MSRP state initialized");
 }

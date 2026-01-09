@@ -111,9 +111,13 @@ struct mrp_leaveall
   esp_timer_handle_t timer;
 };
 
+struct mrp_attribute;
+
 struct mrp_application
 {
   mrp_application_type_t type;
+  void (*mad_join_indication)(struct mrp_attribute* attr, bool new);
+  void (*mad_leave_indication)(struct mrp_attribute* attr);
   struct mrp_leaveall leaveall;
   esp_timer_handle_t join_timer;
 };
@@ -137,6 +141,31 @@ typedef struct mrp_data_unit_header
   u8 attribute_length;
   u16 attribute_list_length;
 } __attribute__((packed)) mrp_data_unit_header_t;
+
+/**
+ * IEEE 802.1Q-2022 10.8.2.10.1 Encoding of Vector ThreePackedEvents
+ *
+ * (((((firstAttributeEvent) × 6) + secondAttributeEvent) × 6) + thirdAttributeEvent)
+ */
+inline void mrp_decode_three_packed_event(u8 packed_event, u8* event)
+{
+  event[0] = packed_event / 36;
+  event[1] = (packed_event % 36) / 6;
+  event[2] = packed_event % 6;
+}
+
+/**
+ * IEEE 802.1Q-2022 10.8.2.10.2 Encoding of Vector FourPackedEvents
+ *
+ * ((firstFourPackedType × 64) + (secondFourPackedType × 16) + (thirdFourPackedType × 4) + (fourthFourPackedType))
+ */
+inline void mrp_decode_four_packed_event(u8 packed_event, u8* event)
+{
+  event[0] = packed_event / 64;
+  event[1] = (packed_event % 64) / 16;
+  event[2] = (packed_event % 16) / 4;
+  event[3] = packed_event % 4;
+}
 
 // Function declarations
 void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event);
