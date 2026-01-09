@@ -56,6 +56,10 @@ typedef enum
 #define MSRP_FAIL_VLAN_DISABLED 18
 #define MSRP_FAIL_SR_PRIO_ERR   19
 
+/* IEEE 802.1Q-2022 35.2.1.2 Direction */
+#define MSRP_DIRECTION_TALKER   0
+#define MSRP_DIRECTION_LISTENER 1
+
 /* Class ID definitions */
 #define MSRP_SR_CLASS_A      6
 #define MSRP_SR_CLASS_B      5
