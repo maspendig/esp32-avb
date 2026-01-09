@@ -115,7 +115,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
         {
         case MSRP_TALKER_ADVERTISE:
           msrpdu_talker_advertise_t* talker_adv = (msrpdu_talker_advertise_t*)(buf + first_value_pointer);
-          mrp_decode_three_packed_event(buf[vector_end], three_packed);
+          mrp_decode_four_packed_event(buf[vector_end], three_packed);
           ESP_LOGI(TAG, "  Talker Stream ID: 0x%016llX", ntohll(talker_adv->stream_id));
           ESP_LOGI(TAG, "  Dest MAC: %02X:%02X:%02X:%02X:%02X:%02X",
                    talker_adv->dest_mac[0], talker_adv->dest_mac[1], talker_adv->dest_mac[2],
@@ -135,8 +135,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
           break;
         case MSRP_DOMAIN:
           struct msrpdu_domain* domain = (struct msrpdu_domain*)(buf + first_value_pointer);
-          u8 attribute_event = buf[vector_end];
-          mrp_decode_three_packed_event(attribute_event, three_packed);
+          mrp_decode_three_packed_event(buf[vector_end], three_packed);
           //TODO use all three packed event values
 
           ESP_LOGI(TAG, " SR Class: {id: %d, prio: %d, vid: %d}, event: %s",
@@ -152,7 +151,12 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
           msrpdu_listener_t* listener = (msrpdu_listener_t*)(buf + first_value_pointer);
           vector_end = vector_pointer + vector_length - 1;
 
+          u8 declaration_type[4]; // four_packed
+          mrp_decode_three_packed_event(buf[vector_end - 1], three_packed);
+          mrp_decode_four_packed_event(buf[vector_end], declaration_type);
           ESP_LOGI(TAG, "  Listener Stream ID: 0x%016llX", ntohll(listener->stream_id));
+          ESP_LOGI(TAG, "  Event: %s", mrp_attribute_event_to_str(three_packed[0]));
+          ESP_LOGI(TAG, "  Declaration Type: %d", declaration_type[0]);
           break;
         default:
           ESP_LOGW(TAG, "Unknown MSRP attribute type: %d", attrib->attribute_type);
