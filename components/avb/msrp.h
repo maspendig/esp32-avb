@@ -88,6 +88,18 @@ typedef struct msrp_header
   msrp_attribute_t attribute[];
 } __attribute__((packed)) msrp_header_t;
 
+typedef struct msrpdu_listener
+{
+  u64 stream_id;
+} msrpdu_listener_t;
+
+typedef struct msrpdu_domain
+{
+  u8 sr_class_id;
+  u8 sr_class_priority;
+  u16 sr_class_vid;
+} __attribute__((packed)) msrpdu_domain_t;
+
 /**
  * Initialize the MSRP subsystem
  * @param interface Network interface name

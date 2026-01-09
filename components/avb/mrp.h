@@ -129,6 +129,28 @@ struct mrp_attribute
   struct mrp_registrar registrar;
 };
 
+/* IEEE 802.1Q-2022 10.8.2.5 Encoding of AttributeEvent */
+typedef enum
+{
+  MRP_ATTRIBUTE_EVENT_NEW = 0,
+  MRP_ATTRIBUTE_EVENT_JOIN_IN,
+  MRP_ATTRIBUTE_EVENT_IN,
+  MRP_ATTRIBUTE_EVENT_JOIN_MT,
+  MRP_ATTRIBUTE_EVENT_MT,
+  MRP_ATTRIBUTE_EVENT_LV,
+} mrp_attribute_event_t;
+
+// mapping of attribute event to state machine events
+static const mrp_event_t mrp_attribute_event_to_event_map[] = {
+  [MRP_ATTRIBUTE_EVENT_NEW] = MRP_EVENT_R_NEW,
+  [MRP_ATTRIBUTE_EVENT_JOIN_IN] = MRP_EVENT_R_JOIN_IN,
+  [MRP_ATTRIBUTE_EVENT_IN] = MRP_EVENT_R_IN,
+  [MRP_ATTRIBUTE_EVENT_JOIN_MT] = MRP_EVENT_R_JOIN_MT,
+  [MRP_ATTRIBUTE_EVENT_MT] = MRP_EVENT_R_MT,
+  [MRP_ATTRIBUTE_EVENT_LV] = MRP_EVENT_R_LV
+};
+
+
 typedef struct mrp_vector_header
 {
   u16 leave_all_event : 3;
@@ -168,6 +190,7 @@ inline void mrp_decode_four_packed_event(u8 packed_event, u8* event)
 }
 
 // Function declarations
+char* mrp_attribute_event_to_str(mrp_attribute_event_t event);
 void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event);
 void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t event);
 void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event);

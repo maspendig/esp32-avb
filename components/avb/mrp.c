@@ -100,6 +100,20 @@ char* mrp_active_state_to_str(mrp_active_state_t state)
   }
 }
 
+char* mrp_attribute_event_to_str(mrp_attribute_event_t event)
+{
+  switch (event)
+  {
+  case MRP_ATTRIBUTE_EVENT_NEW: return "New";
+  case MRP_ATTRIBUTE_EVENT_JOIN_IN: return "JoinIn";
+  case MRP_ATTRIBUTE_EVENT_IN: return "In";
+  case MRP_ATTRIBUTE_EVENT_JOIN_MT: return "JoinMt";
+  case MRP_ATTRIBUTE_EVENT_MT: return "Mt";
+  case MRP_ATTRIBUTE_EVENT_LV: return "Lv";
+  default: return "UNKNOWN";
+  }
+}
+
 //endregion
 
 //region join timer

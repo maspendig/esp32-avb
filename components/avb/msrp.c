@@ -68,6 +68,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
   } __attribute__((packed));
 
   u16 attribute_pointer = sizeof(struct msrp_packet_s); // header + protocol_version
+  u16 vector_pointer, vector_length = 0, vector_end, number_of_values;
   while (len > attribute_pointer)
   {
     // check for end mark 0x0000
@@ -85,37 +86,80 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
       break;
     }
 
-    ESP_LOGI(TAG, "Received MSRP attribute type: %s",
-             msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type));
-
-
-    u16 vector_header = ntohs(*(u16*)((u8*)attrib + sizeof(msrp_attribute_t)));
-    bool leave_all_event = false;
-    u16 number_of_values = 0;
-    mrp_parse_vector_header(vector_header, &leave_all_event, &number_of_values);
-
-    if (leave_all_event == true)
+    ESP_LOGI(TAG, "Attribute Type: %s, Attribute Length: %d, List Length: %d",
+             msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type),
+             attrib->attribute_length,
+             ntohs(attrib->attribute_list_length));
+    bool next_vector = true;
+    vector_pointer = attribute_pointer + sizeof(msrp_attribute_t);
+    do
     {
-      mrp_leaveall_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
-      mrp_applicant_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
-      mrp_registrar_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
-    }
+      bool leave_all_event = false;
+      u16* vector_header = (u16*)(buf + vector_pointer);
+      mrp_parse_vector_header(ntohs(*vector_header), &leave_all_event, &number_of_values);
 
-    switch (attrib->attribute_type)
-    {
-    case MSRP_TALKER_ADVERTISE:
-      break;
-    case MSRP_TALKER_FAILED:
-      break;
-    case MSRP_LISTENER:
-      break;
-    case MSRP_DOMAIN:
-      break;
-    default:
-      ESP_LOGW(TAG, "Unknown MSRP attribute type: %d", attrib->attribute_type);
-      break;
+      if (leave_all_event == true)
+      {
+        mrp_leaveall_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
+        mrp_applicant_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
+        mrp_registrar_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
+        next_vector = false;
+      }
+      else
+      {
+        vector_length = attrib->attribute_length + sizeof(struct mrp_vector_header) + 1;
+        u16 first_value_pointer = vector_pointer + sizeof(mrp_vector_header_t);
+        vector_end = vector_pointer + vector_length - 1;
+        switch (attrib->attribute_type)
+        {
+        case MSRP_TALKER_ADVERTISE:
+          break;
+        case MSRP_TALKER_FAILED:
+          break;
+        case MSRP_DOMAIN:
+          struct msrpdu_domain* domain = (struct msrpdu_domain*)(buf + first_value_pointer);
+          u8 attribute_event = buf[vector_end];
+          u8 three_packed[3];
+          mrp_decode_three_packed_event(attribute_event, three_packed);
+          //TODO use all three packed event values
+
+          ESP_LOGI(TAG, " SR Class: {id: %d, prio: %d, vid: %d}, event: %s",
+                   domain->sr_class_id,
+                   domain->sr_class_priority,
+                   ntohs(domain->sr_class_vid),
+                   mrp_attribute_event_to_str(three_packed[0]));
+          mrp_registrar_state_machine(&state->msrp.mrp, mrp_attribute_event_to_event_map[three_packed[0]]);
+          mrp_applicant_state_machine(&state->msrp.mrp, mrp_attribute_event_to_event_map[three_packed[0]]);
+          break;
+        case MSRP_LISTENER:
+          vector_length = attrib->attribute_length + sizeof(struct mrp_vector_header) + 2;
+          msrpdu_listener_t* listener = (msrpdu_listener_t*)(buf + first_value_pointer);
+          vector_end = vector_pointer + vector_length - 1;
+
+          ESP_LOGI(TAG, "  Listener Stream ID: 0x%016llX", ntohll(listener->stream_id));
+          break;
+        default:
+          ESP_LOGW(TAG, "Unknown MSRP attribute type: %d", attrib->attribute_type);
+          break;
+        }
+
+        // check attribute list end mark
+        if (buf[vector_end + 1] == 0x00 && buf[vector_end + 2] == 0x00)
+        {
+          next_vector = false;
+        }
+
+        // safety check
+        if (len < vector_end + 1)
+        {
+          next_vector = false;
+        }
+
+        vector_pointer = vector_end + 1;
+      }
     }
-    // Move to the next potential attribute
+    while (next_vector);
+
     attribute_pointer += sizeof(msrp_attribute_t) + ntohs(attrib->attribute_list_length);
   }
 }
