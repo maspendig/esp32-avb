@@ -127,6 +127,10 @@ struct mrp_attribute
   struct mrp_application* app;
   struct mrp_applicant applicant;
   struct mrp_registrar registrar;
+  /* Attribute type identifier */
+  u8 type;
+  /* Attribute value(s) */
+  u8 value[0];
 };
 
 /* IEEE 802.1Q-2022 10.8.2.5 Encoding of AttributeEvent */

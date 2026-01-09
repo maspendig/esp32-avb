@@ -46,17 +46,68 @@ bool validate_attribute_length(const msrp_attribute_t* attrib)
   }
 }
 
+void msrp_talker_advertise_join_indication(struct mrp_attribute* attr, bool new)
+{
+  ESP_LOGW(TAG, "msrp_talker_advertise_join_indication not implemented yet");
+}
+
+void msrp_talker_failed_join_indication(struct mrp_attribute* attr, bool new)
+{
+  ESP_LOGW(TAG, "msrp_talker_failed_join_indication not implemented yet");
+}
+
+void msrp_listener_join_indication(struct mrp_attribute* attr, bool new)
+{
+  ESP_LOGW(TAG, "msrp_listener_join_indication not implemented yet");
+}
+
+void msrp_domain_join_indication(struct mrp_attribute* attr, bool new)
+{
+  ESP_LOGW(TAG, "msrp_domain_join_indication not implemented yet");
+}
+
 void msrp_mad_join_indication(struct mrp_attribute* attr, bool new)
 {
-  ESP_LOGI(TAG, "MSRP MAD Join Indication: attribute type %s, new %d",
-           msrp_attribute_type_to_str((msrp_attribute_type_t)attr->app->type),
-           new);
+  switch (attr->type)
+  {
+  case MSRP_TALKER_ADVERTISE:
+    msrp_talker_advertise_join_indication(attr, new);
+    break;
+  case MSRP_TALKER_FAILED:
+    msrp_talker_failed_join_indication(attr, new);
+    break;
+  case MSRP_LISTENER:
+    msrp_listener_join_indication(attr, new);
+    break;
+  case MSRP_DOMAIN:
+    msrp_domain_join_indication(attr, new);
+    break;
+  default:
+    ESP_LOGW(TAG, "MAD Join Indication: unknown attribute type %d", attr->type);
+    break;
+  }
 }
 
 void msrp_mad_leave_indication(struct mrp_attribute* attr)
 {
-  ESP_LOGI(TAG, "MSRP MAD Leave Indication: attribute type %s",
-           msrp_attribute_type_to_str((msrp_attribute_type_t)attr->app->type));
+  switch (attr->type)
+  {
+  case MSRP_TALKER_ADVERTISE:
+    ESP_LOGW(TAG, "msrp_talker_advertise_leave_indication not implemented yet");
+    break;
+  case MSRP_TALKER_FAILED:
+    ESP_LOGW(TAG, "msrp_talker_failed_leave_indication not implemented yet");
+    break;
+  case MSRP_LISTENER:
+    ESP_LOGW(TAG, "msrp_listener_leave_indication not implemented yet");
+    break;
+  case MSRP_DOMAIN:
+    ESP_LOGW(TAG, "msrp_domain_leave_indication not implemented yet");
+    break;
+  default:
+    ESP_LOGW(TAG, "MAD Leave Indication: unknown attribute type %d", attr->type);
+    break;
+  }
 }
 
 void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
