@@ -667,13 +667,53 @@ void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t ev
 
 //endregion
 
+struct mrp_attribute* mrp_get_attribute(struct mrp_application* app, u8 attribute_type, u8* value)
+{
+  const u8 length = app->get_attribute_value_length(attribute_type);
+  const struct mrp_attribute* attribute;
+  struct Node* temp = app->attributes[attribute_type];
+  ESP_LOGI(TAG, "Searching for attribute of type %d", attribute_type);
+  ESP_LOGI(TAG, "next: %p", temp->next);
+  // traverse the linked list, if next match the current node we reached the end
+  while (temp->next != temp)
+  {
+    attribute = (struct mrp_attribute*)temp;
+    ESP_LOGI(TAG, "Comparing attribute value for type %d", attribute->type);
+    if (memcmp(attribute->value, value, length) == 0)
+    {
+      return (struct mrp_attribute*)temp;
+    }
+    temp = temp->next;
+  }
+
+  return NULL;
+}
+
+void mrp_append_attributes_list(struct mrp_application* app, struct mrp_attribute* attr)
+{
+  struct Node* node = &attr->list;
+  node->next = node;
+
+  struct Node* temp = app->attributes[attr->type];
+  while (temp->next != temp)
+  {
+    temp = temp->next;
+  }
+  node->prev = temp;
+  temp->next = node;
+  attr->list = *node;
+}
+
 struct mrp_attribute* mrp_create_attribute(struct mrp_application* app, u8 attribute_type, u8* value)
 {
-  struct mrp_attribute* attr = calloc(1, sizeof(struct mrp_attribute));
+  ESP_LOGI(TAG, "Creating new attribute for type %d", attribute_type);
   const u8 attribute_value_length = app->get_attribute_value_length(attribute_type);
+  struct mrp_attribute* attr = calloc(1, sizeof(struct mrp_attribute) + attribute_value_length);
   attr->app = app;
   attr->type = attribute_type;
   memcpy(attr->value, value, attribute_value_length);
+
+  mrp_append_attributes_list(app, attr);
 
   mrp_applicant_state_machine(attr, MRP_EVENT_BEGIN);
   mrp_registrar_state_machine(attr, MRP_EVENT_BEGIN);
@@ -681,11 +721,21 @@ struct mrp_attribute* mrp_create_attribute(struct mrp_application* app, u8 attri
   return attr;
 }
 
+struct mrp_attribute* mrp_get_or_create_attribute(struct mrp_application* app, u8 attribute_type, u8* value)
+{
+  struct mrp_attribute* attr = mrp_get_attribute(app, attribute_type, value);
+  if (attr == NULL)
+  {
+    attr = mrp_create_attribute(app, attribute_type, value);
+  }
+  return attr;
+}
+
 void mrp_mad_join_request(struct mrp_application* app, u8 attribute_type, u8* value, bool new)
 {
   struct mrp_attribute* attribute;
 
-  attribute = mrp_create_attribute(app, attribute_type, value);
+  attribute = mrp_get_or_create_attribute(app, attribute_type, value);
   if (new)
   {
     mrp_applicant_state_machine(attribute, MRP_EVENT_NEW);
@@ -694,6 +744,15 @@ void mrp_mad_join_request(struct mrp_application* app, u8 attribute_type, u8* va
   {
     mrp_applicant_state_machine(attribute, MRP_EVENT_JOIN);
   }
+}
+
+void mrp_process_attribute_event(struct mrp_application* app, u8 type, u8* value, mrp_attribute_event_t event)
+{
+  struct mrp_attribute* attr;
+  attr = mrp_get_or_create_attribute(app, type, value);
+
+  mrp_registrar_state_machine(attr, mrp_attribute_event_to_event_map[event]);
+  mrp_applicant_state_machine(attr, mrp_attribute_event_to_event_map[event]);
 }
 
 void mrp_begin(const struct mrp_attribute* attr)
@@ -710,6 +769,7 @@ void mrp_begin(const struct mrp_attribute* attr)
   }
 }
 
+// TODO only app is to be initialized here, nothing about attributes
 int mrp_init(struct mrp_attribute* attr, mrp_application_type_t type)
 {
   struct mrp_application* app = calloc(1, sizeof(struct mrp_application));
@@ -723,6 +783,14 @@ int mrp_init(struct mrp_attribute* attr, mrp_application_type_t type)
   {
     ESP_LOGE(TAG, "Failed to initialize MRP timers");
     return ESP_FAIL;
+  }
+
+  for (int i = 0; i < MRP_MAX_ATTRIBUTE_TYPES; i++)
+  {
+    struct Node* head = calloc(1, sizeof(struct Node));
+    head->next = head;
+    head->prev = head;
+    app->attributes[i] = head;
   }
 
   mrp_begin(attr);

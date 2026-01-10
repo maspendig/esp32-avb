@@ -12,6 +12,9 @@
 #define MRP_LEAVE_TIME_MS    1000
 #define MRP_LEAVEALL_TIME_MS 10000
 
+/* Maximum number of attribute types supported */
+#define MRP_MAX_ATTRIBUTE_TYPES 5
+
 typedef enum
 {
   /* MRP Applicant States - IEEE 802.1Q-2022 Section 10.7.1 */
@@ -111,12 +114,19 @@ struct mrp_leaveall
   esp_timer_handle_t timer;
 };
 
+struct Node
+{
+  struct Node* next;
+  struct Node* prev;
+};
+
 struct mrp_attribute;
 
 struct mrp_application
 {
   mrp_application_type_t type;
 
+  struct Node* attributes[MRP_MAX_ATTRIBUTE_TYPES];
   void (*mad_join_indication)(struct mrp_application* app, struct mrp_attribute* attr, bool new);
   void (*mad_leave_indication)(struct mrp_application* app, struct mrp_attribute* attr);
   u8 (*get_attribute_value_length)(u8 attribute_type);
@@ -127,6 +137,7 @@ struct mrp_application
 
 struct mrp_attribute
 {
+  struct Node list;
   struct mrp_application* app;
   struct mrp_applicant applicant;
   struct mrp_registrar registrar;
@@ -202,6 +213,7 @@ char* mrp_attribute_event_to_str(mrp_attribute_event_t event);
 void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event);
 void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t event);
 void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event);
+void mrp_process_attribute_event(struct mrp_application* app, u8 type, u8* value, mrp_attribute_event_t event);
 int mrp_init_timers(struct mrp_attribute* attr);
 void mrp_delete_timers(const struct mrp_attribute* attr);
 void mrp_parse_vector_header(u16 vector_header, bool* leave_all_event, u16* number_of_values);

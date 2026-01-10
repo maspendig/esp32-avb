@@ -170,9 +170,9 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
 
       if (leave_all_event == true)
       {
-        mrp_leaveall_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
-        mrp_applicant_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
-        mrp_registrar_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
+        // mrp_leaveall_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
+        // mrp_applicant_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
+        // mrp_registrar_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
         next_vector = false;
       }
       else
@@ -246,6 +246,9 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
 
         vector_pointer = vector_end + 1;
       }
+      mrp_process_attribute_event(state->msrp.mrp.app, attrib->attribute_type,
+                                  (u8*)(buf + attribute_pointer + sizeof(msrp_attribute_t)),
+                                  three_packed[0]);
     }
     while (next_vector);
 
