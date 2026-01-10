@@ -170,6 +170,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
 
       if (leave_all_event == true)
       {
+        // TODO process leave all event
         // mrp_leaveall_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
         // mrp_applicant_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
         // mrp_registrar_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
@@ -197,8 +198,6 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
           ESP_LOGI(TAG, "  Event: %s",
                    mrp_attribute_event_to_str(three_packed[0]));
 
-          // mrp_registrar_state_machine(&state->msrp.mrp, mrp_attribute_event_to_event_map[three_packed[0]]);
-          // mrp_applicant_state_machine(&state->msrp.mrp, mrp_attribute_event_to_event_map[three_packed[0]]);
           break;
         case MSRP_TALKER_FAILED:
           break;
@@ -212,8 +211,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
                    domain->sr_class_priority,
                    ntohs(domain->sr_class_vid),
                    mrp_attribute_event_to_str(three_packed[0]));
-          // mrp_registrar_state_machine(&state->msrp.mrp, mrp_attribute_event_to_event_map[three_packed[0]]);
-          // mrp_applicant_state_machine(&state->msrp.mrp, mrp_attribute_event_to_event_map[three_packed[0]]);
+
           break;
         case MSRP_LISTENER:
           vector_length = attrib->attribute_length + sizeof(struct mrp_vector_header) + 2;
@@ -245,10 +243,16 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
         }
 
         vector_pointer = vector_end + 1;
+
+        ESP_LOGI(TAG, "Processing MSRP attribute event: type %s, event %s[%d],",
+                 msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type),
+                 mrp_attribute_event_to_str(three_packed[0])
+        );
+
+        mrp_process_attribute_event(state->msrp.mrp.app, attrib->attribute_type,
+                                    (u8*)(buf + attribute_pointer + sizeof(msrp_attribute_t)),
+                                    three_packed[0]);
       }
-      mrp_process_attribute_event(state->msrp.mrp.app, attrib->attribute_type,
-                                  (u8*)(buf + attribute_pointer + sizeof(msrp_attribute_t)),
-                                  three_packed[0]);
     }
     while (next_vector);
 

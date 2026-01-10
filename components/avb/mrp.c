@@ -514,7 +514,7 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
     }
     break;
   default:
-    ESP_LOGI(TAG, "Unknown event %s", mrp_event_to_str(event));
+    ESP_LOGI(TAG, "Unknown event %d", event);
   }
 
   ESP_LOGI(TAG, "Applicant SM - event: %s, state [%s] => [%s], action %s",
@@ -608,7 +608,7 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
     }
     break;
   default:
-    ESP_LOGW(TAG, "Unknown event %s", mrp_event_to_str(event));
+    ESP_LOGW(TAG, "Unknown event %d", event);
     break;
   }
 
@@ -751,6 +751,12 @@ void mrp_process_attribute_event(struct mrp_application* app, u8 type, u8* value
   struct mrp_attribute* attr;
   attr = mrp_get_or_create_attribute(app, type, value);
 
+  const mrp_event_t _event = mrp_attribute_event_to_event_map[event];
+  ESP_LOGI(TAG, "Mapped attribute event %s[%d] to protocol event %s[%d]",
+           mrp_attribute_event_to_str(event),
+           event,
+           mrp_event_to_str(_event),
+           _event);
   mrp_registrar_state_machine(attr, mrp_attribute_event_to_event_map[event]);
   mrp_applicant_state_machine(attr, mrp_attribute_event_to_event_map[event]);
 }
