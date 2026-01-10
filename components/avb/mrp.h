@@ -116,8 +116,11 @@ struct mrp_attribute;
 struct mrp_application
 {
   mrp_application_type_t type;
-  void (*mad_join_indication)(struct mrp_attribute* attr, bool new);
-  void (*mad_leave_indication)(struct mrp_attribute* attr);
+
+  void (*mad_join_indication)(struct mrp_application* app, struct mrp_attribute* attr, bool new);
+  void (*mad_leave_indication)(struct mrp_application* app, struct mrp_attribute* attr);
+  u8 (*get_attribute_value_length)(u8 attribute_type);
+
   struct mrp_leaveall leaveall;
   esp_timer_handle_t join_timer;
 };
@@ -194,6 +197,7 @@ inline void mrp_decode_four_packed_event(u8 packed_event, u8* event)
 }
 
 // Function declarations
+void mrp_mad_join_request(struct mrp_application* app, u8 attribute_type, u8* value, bool new);
 char* mrp_attribute_event_to_str(mrp_attribute_event_t event);
 void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event);
 void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t event);

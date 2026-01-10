@@ -46,49 +46,49 @@ bool validate_attribute_length(const msrp_attribute_t* attrib)
   }
 }
 
-void msrp_talker_advertise_join_indication(struct mrp_attribute* attr, bool new)
+void msrp_talker_advertise_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
   ESP_LOGW(TAG, "msrp_talker_advertise_join_indication not implemented yet");
 }
 
-void msrp_talker_failed_join_indication(struct mrp_attribute* attr, bool new)
+void msrp_talker_failed_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
   ESP_LOGW(TAG, "msrp_talker_failed_join_indication not implemented yet");
 }
 
-void msrp_listener_join_indication(struct mrp_attribute* attr, bool new)
+void msrp_listener_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
   ESP_LOGW(TAG, "msrp_listener_join_indication not implemented yet");
 }
 
-void msrp_domain_join_indication(struct mrp_attribute* attr, bool new)
+void msrp_domain_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
   ESP_LOGW(TAG, "msrp_domain_join_indication not implemented yet");
 }
 
-void msrp_mad_join_indication(struct mrp_attribute* attr, bool new)
+void msrp_mad_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
-  switch (attr->type)
+  switch (attribute->type)
   {
   case MSRP_TALKER_ADVERTISE:
-    msrp_talker_advertise_join_indication(attr, new);
+    msrp_talker_advertise_join_indication(app, attribute, new);
     break;
   case MSRP_TALKER_FAILED:
-    msrp_talker_failed_join_indication(attr, new);
+    msrp_talker_failed_join_indication(app, attribute, new);
     break;
   case MSRP_LISTENER:
-    msrp_listener_join_indication(attr, new);
+    msrp_listener_join_indication(app, attribute, new);
     break;
   case MSRP_DOMAIN:
-    msrp_domain_join_indication(attr, new);
+    msrp_domain_join_indication(app, attribute, new);
     break;
   default:
-    ESP_LOGW(TAG, "MAD Join Indication: unknown attribute type %d", attr->type);
+    ESP_LOGW(TAG, "MAD Join Indication: unknown attribute type %d", attribute->type);
     break;
   }
 }
 
-void msrp_mad_leave_indication(struct mrp_attribute* attr)
+void msrp_mad_leave_indication(struct mrp_application* app, struct mrp_attribute* attr)
 {
   switch (attr->type)
   {
@@ -107,6 +107,24 @@ void msrp_mad_leave_indication(struct mrp_attribute* attr)
   default:
     ESP_LOGW(TAG, "MAD Leave Indication: unknown attribute type %d", attr->type);
     break;
+  }
+}
+
+u8 msrp_get_attribute_value_length(u8 attribute_type)
+{
+  switch (attribute_type)
+  {
+  case MSRP_TALKER_ADVERTISE:
+    return MSRP_ATTRIBUTE_LENGTH_TALKER_ADVERTISE;
+  case MSRP_TALKER_FAILED:
+    return MSRP_ATTRIBUTE_LENGTH_TALKER_FAILED;
+  case MSRP_LISTENER:
+    return MSRP_ATTRIBUTE_LENGTH_LISTENER;
+  case MSRP_DOMAIN:
+    return MSRP_ATTRIBUTE_LENGTH_DOMAIN;
+  default:
+    ESP_LOGW(TAG, "Unknown MSRP attribute type %d for value length retrieval", attribute_type);
+    return 0;
   }
 }
 
@@ -247,6 +265,11 @@ void msrp_net_rx(struct avtp_state_s* state)
   msrp_process_rx(state, buf, len);
 }
 
+void msrp_declare_domain(struct mrp_application* app, msrpdu_domain_t* domain)
+{
+  mrp_mad_join_request(app, MSRP_DOMAIN, (u8*)domain, true);
+}
+
 void msrp_state_init(msrp_state_t* state)
 {
   if (state == NULL)
@@ -261,6 +284,18 @@ void msrp_state_init(msrp_state_t* state)
   mrp_init(&state->mrp, MSRP);
   state->mrp.app->mad_join_indication = &msrp_mad_join_indication;
   state->mrp.app->mad_leave_indication = &msrp_mad_leave_indication;
+  state->mrp.app->get_attribute_value_length = &msrp_get_attribute_value_length;
+
+  // register domains
+
+  msrpdu_domain_t default_domain = {
+    .sr_class_id = MSRP_SR_CLASS_A,
+    .sr_class_priority = MSRP_SR_CLASS_A_PRIO,
+    // TODO move to config
+    .sr_class_vid = htons(2)
+  };
+
+  msrp_declare_domain(state->mrp.app, &default_domain);
 
   ESP_LOGI(TAG, "MSRP state initialized");
 }

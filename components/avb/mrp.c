@@ -533,15 +533,15 @@ void mrp_registrar_exec_action(struct mrp_attribute* attr)
   {
   case MRP_ACTION_NEW:
     /* IEEE 802.1Q-2022 10.7.6.12 New */
-    attr->app->mad_join_indication(attr, true);
+    attr->app->mad_join_indication(attr->app, attr, true);
     break;
   case MRP_ACTION_JOIN:
     /* IEEE 802.1Q-2022 10.7.6.13 Join */
-    attr->app->mad_join_indication(attr, false);
+    attr->app->mad_join_indication(attr->app, attr, false);
     break;
   case MRP_ACTION_LV:
     /* IEEE 802.1Q-2022 Lv */
-    attr->app->mad_leave_indication(attr);
+    attr->app->mad_leave_indication(attr->app, attr);
     break;
   default:
     break;
@@ -667,11 +667,37 @@ void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t ev
 
 //endregion
 
+struct mrp_attribute* mrp_create_attribute(struct mrp_application* app, u8 attribute_type, u8* value)
+{
+  struct mrp_attribute* attr = calloc(1, sizeof(struct mrp_attribute));
+  const u8 attribute_value_length = app->get_attribute_value_length(attribute_type);
+  attr->app = app;
+  attr->type = attribute_type;
+  memcpy(attr->value, value, attribute_value_length);
+
+  mrp_applicant_state_machine(attr, MRP_EVENT_BEGIN);
+  mrp_registrar_state_machine(attr, MRP_EVENT_BEGIN);
+
+  return attr;
+}
+
+void mrp_mad_join_request(struct mrp_application* app, u8 attribute_type, u8* value, bool new)
+{
+  struct mrp_attribute* attribute;
+
+  attribute = mrp_create_attribute(app, attribute_type, value);
+  if (new)
+  {
+    mrp_applicant_state_machine(attribute, MRP_EVENT_NEW);
+  }
+  else
+  {
+    mrp_applicant_state_machine(attribute, MRP_EVENT_JOIN);
+  }
+}
+
 void mrp_begin(const struct mrp_attribute* attr)
 {
-  // TODO check correct init phase
-  mrp_registrar_state_machine(attr, MRP_EVENT_BEGIN);
-  mrp_applicant_state_machine(attr, MRP_EVENT_BEGIN);
   // TODO check participant type
   // if(attr->app->participant_type == MRP_PARTICIPANT_FULL)
   {
