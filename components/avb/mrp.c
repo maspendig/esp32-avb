@@ -116,12 +116,24 @@ char* mrp_attribute_event_to_str(mrp_attribute_event_t event)
 
 //endregion
 
-//region join timer
-int mrp_start_join_timer(const struct mrp_attribute* attr)
+void mrp_delete_attribute(struct mrp_attribute* attr)
 {
+  struct Node* node = &attr->list;
+  node->prev->next = node->next;
+  node->next->prev = node->prev;
+  free(attr);
+}
+
+//region join timer
+/* Join timer per application */
+int mrp_start_join_timer(const struct mrp_application* app)
+{
+  if (esp_timer_is_active(app->join_timer))
+    return ESP_OK;
+
   // in order to fit the state machine definitions, we only use once timer here
   // the timer is restarted by the state machine
-  return esp_timer_start_once(attr->app->join_timer, MRP_JOIN_TIME_MS * 1000);
+  return esp_timer_start_once(app->join_timer, MRP_JOIN_TIME_MS * 1000);
 }
 
 int mrp_stop_join_timer(const struct mrp_attribute* attr)
@@ -135,6 +147,8 @@ int mrp_stop_join_timer(const struct mrp_attribute* attr)
  */
 void mrp_join_timer_callback(void* arg)
 {
+  ESP_LOGI(TAG, "MRP Join Timer expired, processing tx event");
+  // TODO refactor to pass only app instead of attribute
   struct mrp_attribute* attr = (struct mrp_attribute*)arg;
   struct mrp_application* app = attr->app;
   mrp_event_t event = MRP_EVENT_TX;
@@ -149,7 +163,19 @@ void mrp_join_timer_callback(void* arg)
     event = MRP_EVENT_TXLA;
   }
 
-  mrp_applicant_state_machine(attr, event);
+  // loop through all attributes of all types
+  for (u8 type = 0; type < MRP_MAX_ATTRIBUTE_TYPES; type++)
+  {
+    struct Node* node = app->attributes[attr->type];
+    while (node->next != node)
+    {
+      struct mrp_attribute* attribute = (struct mrp_attribute*)node;
+      ESP_LOGI(TAG, "Processing MRP Join Timer tx event [loop: %d] [attribute type: %d]", type, attribute->type);
+      // mrp_applicant_state_machine(attribute, event);
+      // mrp_delete_attribute(attribute);
+      node = node->next;
+    }
+  }
 }
 
 int mrp_init_join_timer(const struct mrp_attribute* attr)
@@ -264,6 +290,26 @@ void mrp_parse_vector_header(u16 vector_header, bool* leave_all_event, u16* numb
 {
   *leave_all_event = (vector_header >> 13) & 0x1;
   *number_of_values = vector_header & 0x1FFF;
+}
+
+/* IEEE 802.1Q-2022 Table 10-3 Note 6:
+ * Request opportunity to transmit on entry to VN, AN, AA, LA, VP, AP, and LO states
+ */
+bool mrp_request_state_transmit(const mrp_state_t state)
+{
+  switch (state)
+  {
+  case MRP_VN_STATE:
+  case MRP_AN_STATE:
+  case MRP_AA_STATE:
+  case MRP_LA_STATE:
+  case MRP_VP_STATE:
+  case MRP_AP_STATE:
+  case MRP_LO_STATE:
+    return true;
+  default:
+    return false;
+  }
 }
 
 //region state machines
@@ -523,8 +569,18 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
            mrp_state_to_str(state),
            mrp_action_to_str(action));
 
+  /* IEEE 802.1Q-2022 Table 10-3 Note 6:
+   * Request opportunity to transmit on entry to VN, AN, AA, LA, VP, AP, and LO states
+   */
+  if (mrp_request_state_transmit(state))
+  {
+    mrp_start_join_timer(attr->app);
+  }
+
   applicant->state = state;
   applicant->action = action;
+  if (action != MRP_ACTION_NONE)
+    attr->app->mrp_send_action(attr->app, attr);
 }
 
 void mrp_registrar_exec_action(struct mrp_attribute* attr)
@@ -672,13 +728,10 @@ struct mrp_attribute* mrp_get_attribute(struct mrp_application* app, u8 attribut
   const u8 length = app->get_attribute_value_length(attribute_type);
   const struct mrp_attribute* attribute;
   struct Node* temp = app->attributes[attribute_type];
-  ESP_LOGI(TAG, "Searching for attribute of type %d", attribute_type);
-  ESP_LOGI(TAG, "next: %p", temp->next);
   // traverse the linked list, if next match the current node we reached the end
   while (temp->next != temp)
   {
     attribute = (struct mrp_attribute*)temp;
-    ESP_LOGI(TAG, "Comparing attribute value for type %d", attribute->type);
     if (memcmp(attribute->value, value, length) == 0)
     {
       return (struct mrp_attribute*)temp;
@@ -689,8 +742,11 @@ struct mrp_attribute* mrp_get_attribute(struct mrp_application* app, u8 attribut
   return NULL;
 }
 
+
 void mrp_append_attributes_list(struct mrp_application* app, struct mrp_attribute* attr)
 {
+  ESP_LOGI(TAG, "Appending attribute type %d to application's attribute list", attr->type);
+
   struct Node* node = &attr->list;
   node->next = node;
 

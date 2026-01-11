@@ -129,6 +129,7 @@ struct mrp_application
   struct Node* attributes[MRP_MAX_ATTRIBUTE_TYPES];
   void (*mad_join_indication)(struct mrp_application* app, struct mrp_attribute* attr, bool new);
   void (*mad_leave_indication)(struct mrp_application* app, struct mrp_attribute* attr);
+  void (*mrp_send_action)(struct mrp_application* app, struct mrp_attribute* attr);
   u8 (*get_attribute_value_length)(u8 attribute_type);
 
   struct mrp_leaveall leaveall;

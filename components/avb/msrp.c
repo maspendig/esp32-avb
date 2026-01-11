@@ -128,6 +128,11 @@ u8 msrp_get_attribute_value_length(u8 attribute_type)
   }
 }
 
+void msrp_send_action(struct mrp_application* app, struct mrp_attribute* attr)
+{
+  ESP_LOGW(TAG, "msrp_send_action not implemented yet");
+}
+
 void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
 {
   struct msrp_packet_s
@@ -139,7 +144,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
   u16 attribute_pointer = sizeof(struct msrp_packet_s); // header + protocol_version
   u16 vector_pointer, vector_length = 0, vector_end, number_of_values;
   u8 three_packed[3];
-  while (len > attribute_pointer)
+  while (len > attribute_pointer + 1)
   {
     // check for end mark 0x0000
     if (buf[attribute_pointer] == 0x00 && buf[attribute_pointer + 1] == 0x00)
@@ -150,8 +155,9 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
     const msrp_attribute_t* attrib = (msrp_attribute_t*)(buf + attribute_pointer);
     if (validate_attribute_length(attrib) == false)
     {
-      ESP_LOGW(TAG, "Invalid MSRP attribute length: type %s, length %d",
+      ESP_LOGW(TAG, "Invalid MSRP attribute length: type %s[%d], length %d",
                msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type),
+               attrib->attribute_type,
                attrib->attribute_length);
       break;
     }
@@ -292,6 +298,7 @@ void msrp_state_init(msrp_state_t* state)
   state->mrp.app->mad_join_indication = &msrp_mad_join_indication;
   state->mrp.app->mad_leave_indication = &msrp_mad_leave_indication;
   state->mrp.app->get_attribute_value_length = &msrp_get_attribute_value_length;
+  state->mrp.app->mrp_send_action = &msrp_send_action;
 
   // register domains
 
