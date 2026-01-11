@@ -48,7 +48,17 @@ bool validate_attribute_length(const msrp_attribute_t* attrib)
 
 void msrp_talker_advertise_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
-  ESP_LOGW(TAG, "msrp_talker_advertise_join_indication not implemented yet");
+  msrpdu_talker_advertise_t* attr_value = (msrpdu_talker_advertise_t*)attribute->value;
+  ESP_LOGI(TAG, "MSRP Talker Advertise Join Indication:");
+  ESP_LOGI(TAG, "  Stream ID: 0x%012llX", ntohll(attr_value->stream_id));
+  ESP_LOGI(TAG, "  Dest MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+           attr_value->dest_mac[0], attr_value->dest_mac[1], attr_value->dest_mac[2],
+           attr_value->dest_mac[3], attr_value->dest_mac[4], attr_value->dest_mac[5]);
+  ESP_LOGI(TAG, "  VLAN ID: %d", ntohs(attr_value->vlan_id));
+  ESP_LOGI(TAG, "  Max Frame Size: %d", ntohs(attr_value->max_frame_size));
+  ESP_LOGI(TAG, "  Max Frame Interval: %d", ntohs(attr_value->max_frame_interval));
+  ESP_LOGI(TAG, "  Priority and Rank: 0x%02X", attr_value->priority_and_rank);
+  ESP_LOGI(TAG, "  Accumulated Latency: %d", ntohl(attr_value->accumulated_latency));
 }
 
 void msrp_talker_failed_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
@@ -63,7 +73,11 @@ void msrp_listener_join_indication(struct mrp_application* app, struct mrp_attri
 
 void msrp_domain_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
-  ESP_LOGW(TAG, "msrp_domain_join_indication not implemented yet");
+  msrpdu_domain_t* attr_value = (msrpdu_domain_t*)attribute->value;
+  ESP_LOGI(TAG, "MSRP Domain Join Indication:");
+  ESP_LOGI(TAG, "  SR Class ID: 0x%02X", attr_value->sr_class_id);
+  ESP_LOGI(TAG, "  SR Class Priority: %d", attr_value->sr_class_priority);
+  ESP_LOGI(TAG, "  SR Class VID: %d", ntohs(attr_value->sr_class_vid));
 }
 
 void msrp_mad_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
@@ -144,6 +158,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
   u16 attribute_pointer = sizeof(struct msrp_packet_s); // header + protocol_version
   u16 vector_pointer, vector_length = 0, vector_end, number_of_values;
   u8 three_packed[3];
+  u8* value;
   while (len > attribute_pointer + 1)
   {
     // check for end mark 0x0000
@@ -170,6 +185,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
     vector_pointer = attribute_pointer + sizeof(msrp_attribute_t);
     do
     {
+      u8* value = 0;
       bool leave_all_event = false;
       u16* vector_header = (u16*)(buf + vector_pointer);
       mrp_parse_vector_header(ntohs(*vector_header), &leave_all_event, &number_of_values);
@@ -203,6 +219,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
           ESP_LOGI(TAG, "  Accumulated Latency: %lu", ntohl(talker_adv->accumulated_latency));
           ESP_LOGI(TAG, "  Event: %s",
                    mrp_attribute_event_to_str(three_packed[0]));
+          value = (u8*)talker_adv;
 
           break;
         case MSRP_TALKER_FAILED:
@@ -217,6 +234,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
                    domain->sr_class_priority,
                    ntohs(domain->sr_class_vid),
                    mrp_attribute_event_to_str(three_packed[0]));
+          value = (u8*)domain;
 
           break;
         case MSRP_LISTENER:
@@ -230,6 +248,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
           ESP_LOGI(TAG, "  Listener Stream ID: 0x%016llX", ntohll(listener->stream_id));
           ESP_LOGI(TAG, "  Event: %s", mrp_attribute_event_to_str(three_packed[0]));
           ESP_LOGI(TAG, "  Declaration Type: %d", declaration_type[0]);
+          value = (u8*)listener;
           break;
         default:
           ESP_LOGW(TAG, "Unknown MSRP attribute type: %d", attrib->attribute_type);
@@ -256,7 +275,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
         );
 
         mrp_process_attribute_event(state->msrp.mrp.app, attrib->attribute_type,
-                                    (u8*)(buf + attribute_pointer + sizeof(msrp_attribute_t)),
+                                    value,
                                     three_packed[0]);
       }
     }
