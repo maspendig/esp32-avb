@@ -709,6 +709,14 @@ void mrp_leaveall_state_machine(const struct mrp_application* app, mrp_event_t e
            mrp_active_state_to_str(state),
            mrp_action_to_str(action));
 
+  /* IEEE 802.1Q-2022 Table 10-5 Note a:
+   * Request opportunity to trasmit on entry to the active state
+   */
+  if (leaveall->state == MRP_PASSIVE && state == MRP_ACTIVE)
+  {
+    mrp_start_join_timer(app);
+  }
+
   leaveall->state = state;
   leaveall->action = action;
 }
