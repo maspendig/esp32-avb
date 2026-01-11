@@ -212,11 +212,11 @@ inline void mrp_decode_four_packed_event(u8 packed_event, u8* event)
 void mrp_mad_join_request(struct mrp_application* app, u8 attribute_type, u8* value, bool new);
 char* mrp_attribute_event_to_str(mrp_attribute_event_t event);
 void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event);
-void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t event);
+void mrp_leaveall_state_machine(const struct mrp_application* app, mrp_event_t event);
 void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event);
 void mrp_process_attribute_event(struct mrp_application* app, u8 type, u8* value, mrp_attribute_event_t event);
-int mrp_init_timers(struct mrp_attribute* attr);
-void mrp_delete_timers(const struct mrp_attribute* attr);
+int mrp_init_timers(struct mrp_application* app);
+void mrp_delete_timers(const struct mrp_application* app);
 void mrp_parse_vector_header(u16 vector_header, bool* leave_all_event, u16* number_of_values);
 int mrp_init(struct mrp_attribute* attr, mrp_application_type_t type);
 

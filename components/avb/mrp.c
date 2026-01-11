@@ -148,16 +148,14 @@ int mrp_stop_join_timer(const struct mrp_attribute* attr)
 void mrp_join_timer_callback(void* arg)
 {
   ESP_LOGI(TAG, "MRP Join Timer expired, processing tx event");
-  // TODO refactor to pass only app instead of attribute
-  struct mrp_attribute* attr = (struct mrp_attribute*)arg;
-  struct mrp_application* app = attr->app;
+  struct mrp_application* app = (struct mrp_application*)arg;
   mrp_event_t event = MRP_EVENT_TX;
 
   /* IEEE802.1q-2022 10.7.5.7
    * The tx! event is modified by the behavior of the LeaveAll state machine.
    * If the LeaveAll state machine has signaled LeaveAll, then tx! is modified to txLA!
    */
-  mrp_leaveall_state_machine(attr, MRP_EVENT_TX);
+  mrp_leaveall_state_machine(app, MRP_EVENT_TX);
   if (app->leaveall.action == MRP_ACTION_S_LA)
   {
     event = MRP_EVENT_TXLA;
@@ -166,26 +164,26 @@ void mrp_join_timer_callback(void* arg)
   // loop through all attributes of all types
   for (u8 type = 0; type < MRP_MAX_ATTRIBUTE_TYPES; type++)
   {
-    struct Node* node = app->attributes[attr->type];
-    while (node->next != node)
+    struct Node* head = app->attributes[type];
+    struct Node* node = head;
+    while (node->next != head)
     {
-      struct mrp_attribute* attribute = (struct mrp_attribute*)node;
+      struct mrp_attribute* attribute = (struct mrp_attribute*)node->next;
       ESP_LOGI(TAG, "Processing MRP Join Timer tx event [loop: %d] [attribute type: %d]", type, attribute->type);
-      // mrp_applicant_state_machine(attribute, event);
-      // mrp_delete_attribute(attribute);
+      mrp_applicant_state_machine(attribute, event);
+      mrp_delete_attribute(attribute);
       node = node->next;
     }
   }
 }
 
-int mrp_init_join_timer(const struct mrp_attribute* attr)
+int mrp_init_join_timer(const struct mrp_application* app)
 {
   const esp_timer_create_args_t timer_args = {
     .callback = &mrp_join_timer_callback,
-    .arg = (void*)attr,
+    .arg = (void*)app,
     .name = "mrp_join_timer"
   };
-  struct mrp_application* app = attr->app;
   return esp_timer_create(&timer_args, &app->join_timer);
 }
 
@@ -193,9 +191,8 @@ int mrp_init_join_timer(const struct mrp_attribute* attr)
 
 //region leaveall timer
 /* IEEE802.1Q-2022 10.7.4.3 leavealltimer */
-int mrp_start_leaveall_timer(const struct mrp_attribute* attr)
+int mrp_start_leaveall_timer(const struct mrp_application* app)
 {
-  const struct mrp_application* app = attr->app;
   // LeaveAllTime < T < 1.5 x LeaveAllTime
   u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5) * 1000;
   // in order to fit the state machine definitions, we only use once timer here
@@ -203,9 +200,8 @@ int mrp_start_leaveall_timer(const struct mrp_attribute* attr)
   return esp_timer_start_once(app->leaveall.timer, interval);
 }
 
-int mrp_restart_leaveall_timer(const struct mrp_attribute* attr)
+int mrp_restart_leaveall_timer(const struct mrp_application* app)
 {
-  const struct mrp_application* app = attr->app;
   // LeaveAllTime < T < 1.5 x LeaveAllTime
   u32 interval = random_in_range(MRP_LEAVEALL_TIME_MS, MRP_LEAVEALL_TIME_MS * 1.5) * 1000;
   return esp_timer_restart(app->leaveall.timer, interval);
@@ -219,18 +215,17 @@ int mrp_stop_leaveall_timer(const struct mrp_attribute* attr)
 
 void mrp_leaveall_timer_callback(void* arg)
 {
-  const struct mrp_attribute* attr = (struct mrp_attribute*)arg;
-  mrp_leaveall_state_machine(attr, MRP_EVENT_LEAVEALLTIMER);
+  const struct mrp_application* app = (struct mrp_application*)arg;
+  mrp_leaveall_state_machine(app, MRP_EVENT_LEAVEALLTIMER);
 }
 
-int mrp_init_leaveall_timer(const struct mrp_attribute* attr)
+int mrp_init_leaveall_timer(const struct mrp_application* app)
 {
   const esp_timer_create_args_t timer_args = {
     .callback = &mrp_leaveall_timer_callback,
-    .arg = (void*)attr,
+    .arg = (void*)app,
     .name = "mrp_leaveall_timer"
   };
-  struct mrp_application* app = attr->app;
   return esp_timer_create(&timer_args, &app->leaveall.timer);
 }
 
@@ -270,20 +265,18 @@ int mrp_stop_leave_timer(const struct mrp_attribute* attr)
 
 //endregion
 
-int mrp_init_timers(struct mrp_attribute* attr)
+int mrp_init_timers(struct mrp_application* app)
 {
   int ret = ESP_OK;
-  ret += mrp_init_leaveall_timer(attr);
-  ret += mrp_init_leave_timer(attr);
-  ret += mrp_init_join_timer(attr);
+  ret += mrp_init_leaveall_timer(app);
+  ret += mrp_init_join_timer(app);
   return ret;
 }
 
-void mrp_delete_timers(const struct mrp_attribute* attr)
+void mrp_delete_timers(const struct mrp_application* app)
 {
-  esp_timer_delete(attr->app->leaveall.timer);
-  esp_timer_delete(attr->registrar.leave_timer);
-  esp_timer_delete(attr->app->join_timer);
+  esp_timer_delete(app->leaveall.timer);
+  esp_timer_delete(app->join_timer);
 }
 
 void mrp_parse_vector_header(u16 vector_header, bool* leave_all_event, u16* number_of_values)
@@ -680,9 +673,8 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
   mrp_registrar_exec_action(attr);
 }
 
-void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t event)
+void mrp_leaveall_state_machine(const struct mrp_application* app, mrp_event_t event)
 {
-  struct mrp_application* app = attr->app;
   struct mrp_leaveall* leaveall = &app->leaveall;
   mrp_active_state_t state = leaveall->state;
   mrp_action_t action = MRP_ACTION_NONE;
@@ -690,7 +682,7 @@ void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t ev
   {
   case MRP_EVENT_BEGIN:
     state = MRP_PASSIVE;
-    mrp_start_leaveall_timer(attr);
+    mrp_start_leaveall_timer(app);
     break;
   case MRP_EVENT_TX:
     if (state == MRP_ACTIVE)
@@ -702,11 +694,11 @@ void mrp_leaveall_state_machine(const struct mrp_attribute* attr, mrp_event_t ev
   case MRP_EVENT_R_LA:
     state = MRP_PASSIVE;
     // IEEE 802.1Q-2022 10.6: on LeaveAll message from another Participant, reset timer to minimize network traffic
-    mrp_restart_leaveall_timer(attr);
+    mrp_restart_leaveall_timer(app);
     break;
   case MRP_EVENT_LEAVEALLTIMER:
     state = MRP_ACTIVE;
-    mrp_start_leaveall_timer(attr);
+    mrp_start_leaveall_timer(app);
     break;
   default:
     ESP_LOGW(TAG, "Unknown event %s for leave all state machine!", mrp_event_to_str(event));
@@ -727,9 +719,10 @@ struct mrp_attribute* mrp_get_attribute(struct mrp_application* app, u8 attribut
 {
   const u8 length = app->get_attribute_value_length(attribute_type);
   const struct mrp_attribute* attribute;
-  struct Node* temp = app->attributes[attribute_type];
+  struct Node* head = app->attributes[attribute_type];
+  struct Node* temp = head;
   // traverse the linked list, if next match the current node we reached the end
-  while (temp->next != temp)
+  while (temp->next != head)
   {
     attribute = (struct mrp_attribute*)temp;
     if (memcmp(attribute->value, value, length) == 0)
@@ -745,19 +738,19 @@ struct mrp_attribute* mrp_get_attribute(struct mrp_application* app, u8 attribut
 
 void mrp_append_attributes_list(struct mrp_application* app, struct mrp_attribute* attr)
 {
+  struct Node* head = app->attributes[attr->type];
+  struct Node* entry = &attr->list;
+
   ESP_LOGI(TAG, "Appending attribute type %d to application's attribute list", attr->type);
 
-  struct Node* node = &attr->list;
-  node->next = node;
+  struct Node* last_entry = head->prev;
 
-  struct Node* temp = app->attributes[attr->type];
-  while (temp->next != temp)
-  {
-    temp = temp->next;
-  }
-  node->prev = temp;
-  temp->next = node;
-  attr->list = *node;
+  // | head | <-> | ... | <-> | last_entry | <-> | entry |
+  entry->prev = last_entry;
+  last_entry->next = entry;
+
+  head->prev = entry;
+  entry->next = head;
 }
 
 struct mrp_attribute* mrp_create_attribute(struct mrp_application* app, u8 attribute_type, u8* value)
@@ -770,6 +763,10 @@ struct mrp_attribute* mrp_create_attribute(struct mrp_application* app, u8 attri
   memcpy(attr->value, value, attribute_value_length);
 
   mrp_append_attributes_list(app, attr);
+
+
+  // initialize leave timer
+  mrp_init_leave_timer(attr);
 
   mrp_applicant_state_machine(attr, MRP_EVENT_BEGIN);
   mrp_registrar_state_machine(attr, MRP_EVENT_BEGIN);
@@ -822,7 +819,7 @@ void mrp_begin(const struct mrp_attribute* attr)
   // TODO check participant type
   // if(attr->app->participant_type == MRP_PARTICIPANT_FULL)
   {
-    mrp_leaveall_state_machine(attr, MRP_EVENT_BEGIN);
+    mrp_leaveall_state_machine(attr->app, MRP_EVENT_BEGIN);
   }
   if (attr->app->type != MSRP)
   {
@@ -841,7 +838,7 @@ int mrp_init(struct mrp_attribute* attr, mrp_application_type_t type)
   attr->applicant = *applicant;
   attr->registrar = *reg;
   attr->app->type = type;
-  if (mrp_init_timers(attr) > ESP_OK)
+  if (mrp_init_timers(app) > ESP_OK)
   {
     ESP_LOGE(TAG, "Failed to initialize MRP timers");
     return ESP_FAIL;
@@ -860,8 +857,8 @@ int mrp_init(struct mrp_attribute* attr, mrp_application_type_t type)
   return ESP_OK;
 }
 
-int mrp_exit(const struct mrp_attribute* attr)
+int mrp_exit(const struct mrp_application* app)
 {
-  mrp_delete_timers(attr);
+  mrp_delete_timers(app);
   return ESP_OK;
 }
