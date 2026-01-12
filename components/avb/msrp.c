@@ -46,6 +46,12 @@ bool validate_attribute_length(const msrp_attribute_t* attrib)
   }
 }
 
+/**
+ * IEEE 802.1Q-2022 - 35.2.3.1.2 REGISTER_STREAM.indication
+ * On receipt of a MAD_Join.indication service primitive (10.2, 10.3)
+ * with an attribute_type of Talker Advertise, Talker Failed, or Talker Enhanced (35.2.2.4),
+ * the MSRP application shall issue a REGISTER_STREAM.indication to the Listener application entity.
+ */
 void msrp_talker_advertise_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
   msrpdu_talker_advertise_t* attr_value = (msrpdu_talker_advertise_t*)attribute->value;
@@ -66,6 +72,17 @@ void msrp_talker_failed_join_indication(struct mrp_application* app, struct mrp_
   ESP_LOGW(TAG, "msrp_talker_failed_join_indication not implemented yet");
 }
 
+/**
+ * IEEE 802.1Q-2022 35.1.2.1
+ * On receipt of a MAD_Join.indication for a Listener Declaration,
+ * the Talker first merges (35.2.4.4.3) the Listener Declarations that it has registered for the same Stream.
+ * Then the Talker examines the StreamID (35.2.2.8.2) and Declaration Type (35.2.1.3) of the merged Listener Declaration.
+ * If the merged Listener Declaration is associated with a Stream that the Talker can supply,
+ * and the DeclarationType is either Ready or Ready Failed (i.e., one or more Listeners can receive the Stream),
+ * the Talker can start the transmission for this Stream immediately.
+ * If the merged Listener Declaration is an Asking Failed,
+ * the Talker shall stop the transmission for the Stream, if it is transmitting.
+ */
 void msrp_listener_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
   ESP_LOGW(TAG, "msrp_listener_join_indication not implemented yet");
@@ -113,6 +130,7 @@ void msrp_mad_leave_indication(struct mrp_application* app, struct mrp_attribute
     ESP_LOGW(TAG, "msrp_talker_failed_leave_indication not implemented yet");
     break;
   case MSRP_LISTENER:
+    // On receipt of a MAD_Leave.indication for a Listener Declaration, if the StreamID of the Declaration matches a Stream that the Talker is transmitting, then the Talker shall stop the transmission for this Stream, if it is transmitting.
     ESP_LOGW(TAG, "msrp_listener_leave_indication not implemented yet");
     break;
   case MSRP_DOMAIN:

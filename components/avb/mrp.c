@@ -126,6 +126,7 @@ void mrp_delete_attribute(struct mrp_attribute* attr)
 
 //region join timer
 /* Join timer per application */
+
 int mrp_start_join_timer(const struct mrp_application* app)
 {
   if (esp_timer_is_active(app->join_timer))
@@ -136,9 +137,21 @@ int mrp_start_join_timer(const struct mrp_application* app)
   return esp_timer_start_once(app->join_timer, MRP_JOIN_TIME_MS * 1000);
 }
 
+/*
+ * Request transmission of MRPDU
+ * alias of the mrp_start_join_timer
+ */
+int mrp_request_transmission(const struct mrp_application* app) { return mrp_start_join_timer(app); }
+
 int mrp_stop_join_timer(const struct mrp_attribute* attr)
 {
   return esp_timer_stop(attr->app->join_timer);
+}
+
+void mrp_tx(struct mrp_application* app)
+{
+  ESP_LOGI(TAG, "MRP tx triggered by Join Timer");
+  // TODO implement MRP transmission logic
 }
 
 /**
@@ -175,6 +188,8 @@ void mrp_join_timer_callback(void* arg)
       node = node->next;
     }
   }
+
+  mrp_tx(app);
 }
 
 int mrp_init_join_timer(const struct mrp_application* app)
@@ -288,7 +303,7 @@ void mrp_parse_vector_header(u16 vector_header, bool* leave_all_event, u16* numb
 /* IEEE 802.1Q-2022 Table 10-3 Note 6:
  * Request opportunity to transmit on entry to VN, AN, AA, LA, VP, AP, and LO states
  */
-bool mrp_request_state_transmit(const mrp_state_t state)
+bool is_state_requesting_transmit(const mrp_state_t state)
 {
   switch (state)
   {
@@ -565,9 +580,11 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
   /* IEEE 802.1Q-2022 Table 10-3 Note 6:
    * Request opportunity to transmit on entry to VN, AN, AA, LA, VP, AP, and LO states
    */
-  if (mrp_request_state_transmit(state))
+  if (is_state_requesting_transmit(state))
   {
-    mrp_start_join_timer(attr->app);
+    /* Whenever a state machine transitions to a state that requires transmission of a message,
+       a transmit opportunity is requested if one is not already pending */
+    mrp_request_transmission(attr->app);
   }
 
   applicant->state = state;
