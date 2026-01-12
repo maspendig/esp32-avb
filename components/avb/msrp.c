@@ -215,11 +215,10 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
     struct header_s header;
     u8 protocol_version;
   } __attribute__((packed));
-
+  bool leave_all_seen[4] = {false, false, false, false};
   u16 attribute_pointer = sizeof(struct msrp_packet_s); // header + protocol_version
-  u16 vector_pointer, vector_length = 0, vector_end, number_of_values;
+  u16 vector_length = 0, number_of_values;
   u8 three_packed[3];
-  u8* value;
   while (len > attribute_pointer + 1)
   {
     // check for end mark 0x0000
@@ -243,7 +242,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
              attrib->attribute_length,
              ntohs(attrib->attribute_list_length));
     bool next_vector = true;
-    vector_pointer = attribute_pointer + sizeof(msrp_attribute_t);
+    u16 vector_pointer = attribute_pointer + sizeof(msrp_attribute_t);
     do
     {
       u8* value = 0;
@@ -251,96 +250,122 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
       u16* vector_header = (u16*)(buf + vector_pointer);
       mrp_parse_vector_header(ntohs(*vector_header), &leave_all_event, &number_of_values);
 
-      if (leave_all_event == true)
+      //      if (leave_all_event == true)
+      //      {
+      // TODO process leave all event
+      // mrp_leaveall_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
+      // mrp_applicant_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
+      // mrp_registrar_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
+      //      }
+      //      else
+      //      {
+
+      if (!leave_all_event && !leave_all_seen[attrib->attribute_type])
       {
-        // TODO process leave all event
-        // mrp_leaveall_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
-        // mrp_applicant_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
-        // mrp_registrar_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
+        leave_all_seen[attrib->attribute_type] = true;
+        ESP_LOGI(TAG, "MSRP Leave All Event received for attribute type %s",
+                 msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type));
+
+        struct Node* head = state->msrp.app.attributes[attrib->attribute_type];
+        struct Node* node = head;
+        while (node->next != head)
+        {
+          struct mrp_attribute* list_entry = (struct mrp_attribute*)node->next;
+          // TODO add a function that takes the attribute directly, as we already have it here
+          mrp_process_attribute_event(&state->msrp.app, attrib->attribute_type,
+                                      list_entry->value,
+                                      MRP_ATTRIBUTE_EVENT_LV);
+          node = node->next;
+        }
+        mrp_leaveall_state_machine(&state->msrp.app, MRP_EVENT_R_LA);
+      }
+
+      if (number_of_values == 0)
+      {
+        // no values to process
+        break;
+      }
+
+      vector_length = attrib->attribute_length + sizeof(struct mrp_vector_header) + 1;
+      u16 first_value_pointer = vector_pointer + sizeof(mrp_vector_header_t);
+      u16 vector_end = vector_pointer + vector_length - 1;
+      switch (attrib->attribute_type)
+      {
+      case MSRP_TALKER_ADVERTISE:
+        msrpdu_talker_advertise_t* talker_adv = (msrpdu_talker_advertise_t*)(buf + first_value_pointer);
+        mrp_decode_four_packed_event(buf[vector_end], three_packed);
+        ESP_LOGI(TAG, "  Talker Stream ID: 0x%016llX", ntohll(talker_adv->stream_id));
+        ESP_LOGI(TAG, "  Dest MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+                 talker_adv->dest_mac[0], talker_adv->dest_mac[1], talker_adv->dest_mac[2],
+                 talker_adv->dest_mac[3], talker_adv->dest_mac[4], talker_adv->dest_mac[5]);
+        ESP_LOGI(TAG, "  VLAN ID: %d", ntohs(talker_adv->vlan_id));
+        ESP_LOGI(TAG, "  Max Frame Size: %d", ntohs(talker_adv->max_frame_size));
+        ESP_LOGI(TAG, "  Max Frame Interval: %d", ntohs(talker_adv->max_frame_interval));
+        ESP_LOGI(TAG, "  Priority and Rank: 0x%02X", talker_adv->priority_and_rank);
+        ESP_LOGI(TAG, "  Accumulated Latency: %lu", ntohl(talker_adv->accumulated_latency));
+        ESP_LOGI(TAG, "  Event: %s",
+                 mrp_attribute_event_to_str(three_packed[0]));
+        value = (u8*)talker_adv;
+
+        break;
+      case MSRP_TALKER_FAILED:
+        break;
+      case MSRP_DOMAIN:
+        struct msrpdu_domain* domain = (struct msrpdu_domain*)(buf + first_value_pointer);
+        mrp_decode_three_packed_event(buf[vector_end], three_packed);
+        //TODO use all three packed event values
+
+        ESP_LOGI(TAG, " SR Class: {id: %d, prio: %d, vid: %d}, event: %s",
+                 domain->sr_class_id,
+                 domain->sr_class_priority,
+                 ntohs(domain->sr_class_vid),
+                 mrp_attribute_event_to_str(three_packed[0]));
+        value = (u8*)domain;
+
+        domain->sr_class_vid = ntohs(domain->sr_class_vid);
+
+        break;
+      case MSRP_LISTENER:
+        vector_length = attrib->attribute_length + sizeof(struct mrp_vector_header) + 2;
+        msrpdu_listener_t* listener = (msrpdu_listener_t*)(buf + first_value_pointer);
+        vector_end = vector_pointer + vector_length - 1;
+
+        u8 declaration_type[4]; // four_packed
+        mrp_decode_three_packed_event(buf[vector_end - 1], three_packed);
+        mrp_decode_four_packed_event(buf[vector_end], declaration_type);
+        ESP_LOGI(TAG, "  Listener Stream ID: 0x%016llX", ntohll(listener->stream_id));
+        ESP_LOGI(TAG, "  Event: %s", mrp_attribute_event_to_str(three_packed[0]));
+        ESP_LOGI(TAG, "  Declaration Type: %d", declaration_type[0]);
+        value = (u8*)listener;
+        break;
+      default:
+        ESP_LOGW(TAG, "Unknown MSRP attribute type: %d", attrib->attribute_type);
+        break;
+      }
+
+      // check attribute list end mark
+      if (buf[vector_end + 1] == 0x00 && buf[vector_end + 2] == 0x00)
+      {
         next_vector = false;
       }
-      else
+
+      // safety check
+      if (len < vector_end + 1)
       {
-        vector_length = attrib->attribute_length + sizeof(struct mrp_vector_header) + 1;
-        u16 first_value_pointer = vector_pointer + sizeof(mrp_vector_header_t);
-        vector_end = vector_pointer + vector_length - 1;
-        switch (attrib->attribute_type)
-        {
-        case MSRP_TALKER_ADVERTISE:
-          msrpdu_talker_advertise_t* talker_adv = (msrpdu_talker_advertise_t*)(buf + first_value_pointer);
-          mrp_decode_four_packed_event(buf[vector_end], three_packed);
-          ESP_LOGI(TAG, "  Talker Stream ID: 0x%016llX", ntohll(talker_adv->stream_id));
-          ESP_LOGI(TAG, "  Dest MAC: %02X:%02X:%02X:%02X:%02X:%02X",
-                   talker_adv->dest_mac[0], talker_adv->dest_mac[1], talker_adv->dest_mac[2],
-                   talker_adv->dest_mac[3], talker_adv->dest_mac[4], talker_adv->dest_mac[5]);
-          ESP_LOGI(TAG, "  VLAN ID: %d", ntohs(talker_adv->vlan_id));
-          ESP_LOGI(TAG, "  Max Frame Size: %d", ntohs(talker_adv->max_frame_size));
-          ESP_LOGI(TAG, "  Max Frame Interval: %d", ntohs(talker_adv->max_frame_interval));
-          ESP_LOGI(TAG, "  Priority and Rank: 0x%02X", talker_adv->priority_and_rank);
-          ESP_LOGI(TAG, "  Accumulated Latency: %lu", ntohl(talker_adv->accumulated_latency));
-          ESP_LOGI(TAG, "  Event: %s",
-                   mrp_attribute_event_to_str(three_packed[0]));
-          value = (u8*)talker_adv;
-
-          break;
-        case MSRP_TALKER_FAILED:
-          break;
-        case MSRP_DOMAIN:
-          struct msrpdu_domain* domain = (struct msrpdu_domain*)(buf + first_value_pointer);
-          mrp_decode_three_packed_event(buf[vector_end], three_packed);
-          //TODO use all three packed event values
-
-          ESP_LOGI(TAG, " SR Class: {id: %d, prio: %d, vid: %d}, event: %s",
-                   domain->sr_class_id,
-                   domain->sr_class_priority,
-                   ntohs(domain->sr_class_vid),
-                   mrp_attribute_event_to_str(three_packed[0]));
-          value = (u8*)domain;
-
-          domain->sr_class_vid = ntohs(domain->sr_class_vid);
-
-          break;
-        case MSRP_LISTENER:
-          vector_length = attrib->attribute_length + sizeof(struct mrp_vector_header) + 2;
-          msrpdu_listener_t* listener = (msrpdu_listener_t*)(buf + first_value_pointer);
-          vector_end = vector_pointer + vector_length - 1;
-
-          u8 declaration_type[4]; // four_packed
-          mrp_decode_three_packed_event(buf[vector_end - 1], three_packed);
-          mrp_decode_four_packed_event(buf[vector_end], declaration_type);
-          ESP_LOGI(TAG, "  Listener Stream ID: 0x%016llX", ntohll(listener->stream_id));
-          ESP_LOGI(TAG, "  Event: %s", mrp_attribute_event_to_str(three_packed[0]));
-          ESP_LOGI(TAG, "  Declaration Type: %d", declaration_type[0]);
-          value = (u8*)listener;
-          break;
-        default:
-          ESP_LOGW(TAG, "Unknown MSRP attribute type: %d", attrib->attribute_type);
-          break;
-        }
-
-        // check attribute list end mark
-        if (buf[vector_end + 1] == 0x00 && buf[vector_end + 2] == 0x00)
-        {
-          next_vector = false;
-        }
-
-        // safety check
-        if (len < vector_end + 1)
-        {
-          next_vector = false;
-        }
-
-        vector_pointer = vector_end + 1;
-
-        ESP_LOGI(TAG, "Processing MSRP attribute event: type %s, event %s[%d],",
-                 msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type),
-                 mrp_attribute_event_to_str(three_packed[0])
-        );
-
-        mrp_process_attribute_event(&state->msrp.app, attrib->attribute_type,
-                                    value,
-                                    three_packed[0]);
+        next_vector = false;
       }
+
+      vector_pointer = vector_end + 1;
+
+      ESP_LOGI(TAG, "Processing MSRP attribute event: type %s, event %s[%d],",
+               msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type),
+               mrp_attribute_event_to_str(three_packed[0])
+      );
+
+      mrp_process_attribute_event(&state->msrp.app, attrib->attribute_type,
+                                  value,
+                                  three_packed[0]);
+      //      }
     }
     while (next_vector);
 
