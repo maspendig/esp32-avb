@@ -17,6 +17,12 @@ typedef int32_t s32;
 typedef int16_t s16;
 typedef int8_t s8;
 
+struct Node
+{
+  struct Node* next;
+  struct Node* prev;
+};
+
 struct header_s
 {
   u8 dst_mac[6];
@@ -41,5 +47,18 @@ struct header_s
 #define htonll(x) ((uint64_t)(x))
 #endif
 #endif
+
+
+inline void list_append(struct Node* head, struct Node* entry)
+{
+  struct Node* last_entry = head->prev;
+
+  // | head | <-> | ... | <-> | last_entry | <-> | entry |
+  entry->prev = last_entry;
+  last_entry->next = entry;
+
+  head->prev = entry;
+  entry->next = head;
+}
 
 #endif //ETHERNET_PTP_TYPES_H

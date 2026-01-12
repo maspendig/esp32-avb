@@ -114,11 +114,6 @@ struct mrp_leaveall
   esp_timer_handle_t timer;
 };
 
-struct Node
-{
-  struct Node* next;
-  struct Node* prev;
-};
 
 struct mrp_attribute;
 

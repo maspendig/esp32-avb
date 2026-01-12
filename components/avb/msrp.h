@@ -15,6 +15,7 @@
 struct avtp_state_s;
 
 #define MSRP_PROTOCOL_VERSION 0
+#define MSRP_DOMAINS_MAX 4
 
 typedef enum
 {
@@ -118,6 +119,12 @@ typedef struct msrpdu_domain
   u8 sr_class_priority;
   u16 sr_class_vid;
 } __attribute__((packed)) msrpdu_domain_t;
+
+typedef struct msrp_domain
+{
+  struct Node list;
+  msrpdu_domain_t domain;
+} msrp_domain_t;
 
 /**
  * Initialize the MSRP subsystem

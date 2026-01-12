@@ -338,14 +338,43 @@ void msrp_register_attach_request(struct mrp_application* app, u64 stream_id)
   mrp_mad_join_request(app, MSRP_LISTENER, (u8*)&stream_id, true);
 }
 
-
-void msrp_find_domain(struct mrp_application* app, msrpdu_domain_t* domain)
+struct msrp_domain* msrp_find_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain)
 {
+  struct Node* head = ctx->domains;
+  struct Node* node = head;
+  while (node->next != head)
+  {
+    msrpdu_domain_t* existing_domain = (msrpdu_domain_t*)node->next;
+    if (existing_domain->sr_class_id == domain->sr_class_id &&
+      existing_domain->sr_class_priority == domain->sr_class_priority &&
+      existing_domain->sr_class_vid == domain->sr_class_vid)
+    {
+      ESP_LOGI(TAG, "Found existing MSRP domain");
+      return (struct msrp_domain*)node->next;
+    }
+    node = node->next;
+  }
+  ESP_LOGI(TAG, "MSRP domain not found, adding new domain");
+  return NULL;
 }
 
-void msrp_declare_domain(struct mrp_application* app, msrpdu_domain_t* domain)
+void msrp_create_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain)
 {
-  mrp_mad_join_request(app, MSRP_DOMAIN, (u8*)domain, true);
+  struct msrp_domain* new_domain = calloc(1, sizeof(msrp_domain_t));
+  memcpy(&new_domain->domain, domain, sizeof(msrpdu_domain_t));
+  list_append(ctx->domains, &new_domain->list);
+}
+
+void msrp_declare_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain)
+{
+  if (msrp_find_domain(ctx, domain))
+  {
+    ESP_LOGI(TAG, "MSRP domain already declared");
+    return;
+  }
+  msrp_create_domain(ctx, domain);
+
+  mrp_mad_join_request(&ctx->app, MSRP_DOMAIN, (u8*)domain, true);
 }
 
 void msrp_state_init(struct avtp_state_s* state)
@@ -366,6 +395,11 @@ void msrp_state_init(struct avtp_state_s* state)
   msrp->app.get_attribute_value_length = &msrp_get_attribute_value_length;
   memcpy(msrp->app.src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
 
+  struct Node* head = calloc(1, sizeof(struct Node));
+  head->next = head;
+  head->prev = head;
+  msrp->domains = head;
+
   // register domains
 
   msrpdu_domain_t default_domain = {
@@ -375,7 +409,7 @@ void msrp_state_init(struct avtp_state_s* state)
     .sr_class_vid = htons(2)
   };
 
-  msrp_declare_domain(&msrp->app, &default_domain);
+  msrp_declare_domain(msrp, &default_domain);
 
   ESP_LOGI(TAG, "MSRP state initialized");
 }

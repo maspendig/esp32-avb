@@ -810,23 +810,6 @@ struct mrp_attribute* mrp_get_attribute(struct mrp_application* app, u8 attribut
 }
 
 
-void mrp_append_attributes_list(struct mrp_application* app, struct mrp_attribute* attr)
-{
-  struct Node* head = app->attributes[attr->type];
-  struct Node* entry = &attr->list;
-
-  ESP_LOGI(TAG, "Appending attribute type %d to application's attribute list", attr->type);
-
-  struct Node* last_entry = head->prev;
-
-  // | head | <-> | ... | <-> | last_entry | <-> | entry |
-  entry->prev = last_entry;
-  last_entry->next = entry;
-
-  head->prev = entry;
-  entry->next = head;
-}
-
 struct mrp_attribute* mrp_create_attribute(struct mrp_application* app, u8 attribute_type, u8* value)
 {
   ESP_LOGI(TAG, "Creating new attribute for type %d", attribute_type);
@@ -836,8 +819,7 @@ struct mrp_attribute* mrp_create_attribute(struct mrp_application* app, u8 attri
   attr->type = attribute_type;
   memcpy(attr->value, value, attribute_value_length);
 
-  mrp_append_attributes_list(app, attr);
-
+  list_append(app->attributes[attribute_type], &attr->list);
 
   // initialize leave timer
   mrp_init_leave_timer(attr);
