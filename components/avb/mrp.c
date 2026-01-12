@@ -16,6 +16,17 @@
 #define TAG "MRP"
 
 //region string conversion helpers
+
+char* mrp_application_type_to_str(mrp_application_type_t type)
+{
+  switch (type)
+  {
+  case MSRP: return "MSRP";
+  case MVRP: return "MVRP";
+  default: return "UNKNOWN";
+  }
+}
+
 char* mrp_state_to_str(mrp_state_t state)
 {
   switch (state)
@@ -261,6 +272,8 @@ int mrp_stop_leaveall_timer(const struct mrp_attribute* attr)
 void mrp_leaveall_timer_callback(void* arg)
 {
   const struct mrp_application* app = (struct mrp_application*)arg;
+  ESP_LOGI(TAG, "[app: %s] LeaveAll Timer expired, processing leavealltimer event",
+           mrp_application_type_to_str(app->type));
   mrp_leaveall_state_machine(app, MRP_EVENT_LEAVEALLTIMER);
 }
 
@@ -770,10 +783,18 @@ void mrp_leaveall_state_machine(const struct mrp_application* app, mrp_event_t e
 
 struct mrp_attribute* mrp_get_attribute(struct mrp_application* app, u8 attribute_type, u8* value)
 {
+  ESP_LOGI(TAG, "[app: %s] Searching for attribute type %d",
+           mrp_application_type_to_str(app->type),
+           attribute_type);
   const u8 length = app->get_attribute_value_length(attribute_type);
   const struct mrp_attribute* attribute;
   struct Node* head = app->attributes[attribute_type];
   struct Node* temp = head;
+  if (temp->next == head)
+  {
+    ESP_LOGI(TAG, "Attribute list for type %d is empty", attribute_type);
+    return NULL;
+  }
   // traverse the linked list, if next match the current node we reached the end
   while (temp->next != head)
   {
@@ -867,30 +888,29 @@ void mrp_process_attribute_event(struct mrp_application* app, u8 type, u8* value
   mrp_applicant_state_machine(attr, mrp_attribute_event_to_event_map[event]);
 }
 
-void mrp_begin(const struct mrp_attribute* attr)
+void mrp_enable(struct mrp_application* app)
 {
   // TODO check participant type
   // if(attr->app->participant_type == MRP_PARTICIPANT_FULL)
   {
-    mrp_leaveall_state_machine(attr->app, MRP_EVENT_BEGIN);
+    mrp_leaveall_state_machine(app, MRP_EVENT_BEGIN);
   }
-  if (attr->app->type != MSRP)
+  if (app->type != MSRP)
   {
-    // TODO implement periodic
+    // TODO implement periodic for MVRP
     // mrp_periodic_state_machine(attr, MRP_EVENT_BEGIN);
   }
+  app->enabled = true;
 }
 
-// TODO only app is to be initialized here, nothing about attributes
-int mrp_init(struct mrp_attribute* attr, mrp_application_type_t type)
+int mrp_init(struct mrp_application* app, mrp_application_type_t type)
 {
-  struct mrp_application* app = calloc(1, sizeof(struct mrp_application));
-  struct mrp_registrar* reg = calloc(1, sizeof(struct mrp_registrar));
-  struct mrp_applicant* applicant = calloc(1, sizeof(struct mrp_applicant));
-  attr->app = app;
-  attr->applicant = *applicant;
-  attr->registrar = *reg;
-  attr->app->type = type;
+  ESP_LOGI(TAG, "Initializing MRP-%s...", mrp_application_type_to_str(type));
+
+  app->enabled = false;
+  app->type = type;
+  memset(app->attributes, 0, sizeof(app->attributes));
+
   if (mrp_init_timers(app) > ESP_OK)
   {
     ESP_LOGE(TAG, "Failed to initialize MRP timers");
@@ -905,8 +925,9 @@ int mrp_init(struct mrp_attribute* attr, mrp_application_type_t type)
     app->attributes[i] = head;
   }
 
-  mrp_begin(attr);
+  mrp_enable(app);
 
+  ESP_LOGI(TAG, "Initialization of MRP-%s completed.", mrp_application_type_to_str(type));
   return ESP_OK;
 }
 

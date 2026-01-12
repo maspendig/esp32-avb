@@ -163,7 +163,7 @@ struct avtp_state_s
   struct talker_stream_info_s talker_stream_info;
 
   /* MSRP state for stream reservation */
-  msrp_state_t msrp;
+  msrp_ctx_t msrp;
 
   /* MVRP state for VLAN registration */
   mvrp_state_t mvrp;

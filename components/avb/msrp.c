@@ -299,7 +299,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
                  mrp_attribute_event_to_str(three_packed[0])
         );
 
-        mrp_process_attribute_event(state->msrp.mrp.app, attrib->attribute_type,
+        mrp_process_attribute_event(&state->msrp.app, attrib->attribute_type,
                                     value,
                                     three_packed[0]);
       }
@@ -350,7 +350,7 @@ void msrp_declare_domain(struct mrp_application* app, msrpdu_domain_t* domain)
 
 void msrp_state_init(struct avtp_state_s* state)
 {
-  msrp_state_t* msrp = &state->msrp;
+  msrp_ctx_t* msrp = &state->msrp;
   if (msrp == NULL)
   {
     ESP_LOGE(TAG, "MSRP state pointer is NULL");
@@ -358,13 +358,13 @@ void msrp_state_init(struct avtp_state_s* state)
   }
 
   /* Initialize the MRP attribute structure */
-  memset(msrp, 0, sizeof(msrp_state_t));
+  memset(msrp, 0, sizeof(msrp_ctx_t));
 
-  mrp_init(&msrp->mrp, MSRP);
-  msrp->mrp.app->mad_join_indication = &msrp_mad_join_indication;
-  msrp->mrp.app->mad_leave_indication = &msrp_mad_leave_indication;
-  msrp->mrp.app->get_attribute_value_length = &msrp_get_attribute_value_length;
-  memcpy(msrp->mrp.app->src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
+  mrp_init(&msrp->app, MSRP);
+  msrp->app.mad_join_indication = &msrp_mad_join_indication;
+  msrp->app.mad_leave_indication = &msrp_mad_leave_indication;
+  msrp->app.get_attribute_value_length = &msrp_get_attribute_value_length;
+  memcpy(msrp->app.src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
 
   // register domains
 
@@ -375,7 +375,7 @@ void msrp_state_init(struct avtp_state_s* state)
     .sr_class_vid = htons(2)
   };
 
-  msrp_declare_domain(msrp->mrp.app, &default_domain);
+  msrp_declare_domain(&msrp->app, &default_domain);
 
   ESP_LOGI(TAG, "MSRP state initialized");
 }

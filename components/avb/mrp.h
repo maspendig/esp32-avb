@@ -124,6 +124,7 @@ struct mrp_attribute;
 
 struct mrp_application
 {
+  bool enabled;
   mrp_application_type_t type;
 
   struct Node* attributes[MRP_MAX_ATTRIBUTE_TYPES];
@@ -219,6 +220,6 @@ void mrp_process_attribute_event(struct mrp_application* app, u8 type, u8* value
 int mrp_init_timers(struct mrp_application* app);
 void mrp_delete_timers(const struct mrp_application* app);
 void mrp_parse_vector_header(u16 vector_header, bool* leave_all_event, u16* number_of_values);
-int mrp_init(struct mrp_attribute* attr, mrp_application_type_t type);
+int mrp_init(struct mrp_application* app, mrp_application_type_t type);
 
 #endif //ETHERNET_PTP_MRP_H

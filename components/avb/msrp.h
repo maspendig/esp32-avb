@@ -73,10 +73,12 @@ typedef enum
 #define MSRP_MULTICAST_MAC (u8[6]){0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E}
 
 
-typedef struct msrp_state
+typedef struct msrp_ctx
 {
-  struct mrp_attribute mrp;
-} msrp_state_t;
+  struct mrp_application app;
+  struct Node* domains;
+  u8 domain_count;
+} msrp_ctx_t;
 
 typedef struct msrp_attribute
 {
