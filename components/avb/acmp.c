@@ -118,7 +118,7 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_com
     resp.sequence_id = htons(listenerInfo->sequence_id);
 
     /* Join the MSRP stream reservation as a listener */
-    // msrp_listener_join(state, listenerInfo->stream_id);
+    msrp_register_attach_request(state->msrp.mrp.app, listenerInfo->stream_id);
 
     ESP_LOGI(TAG, "Updated listener stream info [%u]: pending_connection=false (connection established)",
              listener_unique_id);

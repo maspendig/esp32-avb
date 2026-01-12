@@ -111,12 +111,6 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   state->mvrp_socket = mvrp_init(interface);
 
 
-  /* Initialize MSRP state machine */
-  msrp_state_init(&state->msrp);
-
-  /* Initialize MVRP state machine */
-  mvrp_state_init(&state->mvrp);
-
   // get HW address
   esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, &state->intf_hw_addr);
 
@@ -127,6 +121,12 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
     ((uint64_t)state->intf_hw_addr[3] << 16) |
     ((uint64_t)state->intf_hw_addr[4] << 8) |
     ((uint64_t)state->intf_hw_addr[5]);
+
+  /* Initialize MSRP state machine */
+  msrp_state_init(state);
+
+  /* Initialize MVRP state machine */
+  mvrp_state_init(&state->mvrp);
   state->entity_id = mac_to_entity_id(mac);
   state->entity_model_id = 0x0000000000000001ULL;
 

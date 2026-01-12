@@ -484,7 +484,7 @@ static int mvrp_send_vid_declaration(struct avtp_state_s* state, u16 vlan_id, u8
   struct mvrp_msg_s msg = {0};
 
   /* MVRP multicast destination MAC */
-  const u8 mvrp_multicast_mac[6] = MVRP_MULTICAST_MAC;
+  u8* mvrp_multicast_mac = MVRP_MULTICAST_MAC;
   memcpy(msg.header.dst_mac, mvrp_multicast_mac, sizeof(msg.header.dst_mac));
   memcpy(msg.header.src_mac, state->intf_hw_addr, sizeof(msg.header.src_mac));
 

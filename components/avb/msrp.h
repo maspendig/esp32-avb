@@ -14,6 +14,8 @@
 /* Forward declaration */
 struct avtp_state_s;
 
+#define MSRP_PROTOCOL_VERSION 0
+
 typedef enum
 {
   MSRP_TALKER_ADVERTISE = 1,
@@ -126,12 +128,13 @@ int msrp_init_socket(const char* interface);
  * Initialize MSRP state with default values
  * @param state Pointer to MSRP state structure
  */
-void msrp_state_init(msrp_state_t* state);
+void msrp_state_init(struct avtp_state_s* state);
 
 /**
  * Process incoming MSRP packets
  * @param state Pointer to AVTP state
  */
 void msrp_net_rx(struct avtp_state_s* state);
+void msrp_register_attach_request(struct mrp_application* app, u64 stream_id);
 
 #endif // ETHERNET_PTP_MSRP_H

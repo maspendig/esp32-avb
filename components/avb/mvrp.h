@@ -24,7 +24,7 @@ struct avtp_state_s;
 #define ETH_TYPE_MVRP 0x88F5
 
 /* MVRP multicast destination address */
-#define MVRP_MULTICAST_MAC {0x01, 0x80, 0xC2, 0x00, 0x00, 0x21}
+#define MVRP_MULTICAST_MAC (u8[6]){0x01, 0x80, 0xC2, 0x00, 0x00, 0x21}
 
 /* MVRP Attribute Types (IEEE 802.1Q-2022 Section 11.2.3) */
 #define MVRP_ATTRIBUTE_TYPE_VID 1

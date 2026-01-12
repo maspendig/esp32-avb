@@ -127,10 +127,11 @@ struct mrp_application
   mrp_application_type_t type;
 
   struct Node* attributes[MRP_MAX_ATTRIBUTE_TYPES];
+  /* registrar state machine triggered action */
   void (*mad_join_indication)(struct mrp_application* app, struct mrp_attribute* attr, bool new);
   void (*mad_leave_indication)(struct mrp_application* app, struct mrp_attribute* attr);
-  void (*mrp_send_action)(struct mrp_application* app, struct mrp_attribute* attr);
   u8 (*get_attribute_value_length)(u8 attribute_type);
+  u8 src_mac[6];
 
   struct mrp_leaveall leaveall;
   esp_timer_handle_t join_timer;

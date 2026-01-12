@@ -149,7 +149,7 @@ struct avtp_state_s
   struct maap_db_s maap_db;
 
   uint16_t acmp_sequence_id;
-  uint8_t intf_hw_addr[6];
+  u8 intf_hw_addr[6];
   uint64_t entity_id;
   uint64_t entity_model_id;
   struct timespec last_transmitted_adp;

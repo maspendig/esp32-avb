@@ -6,8 +6,10 @@
 #include "common.h"
 
 #include <esp_err.h>
+#include <esp_eth_spec.h>
 #include <esp_log.h>
 #include <msrp.h>
+#include <mvrp.h>
 #include <types.h>
 
 
@@ -124,6 +126,39 @@ void mrp_delete_attribute(struct mrp_attribute* attr)
   free(attr);
 }
 
+void mrp_set_packet_header(struct mrp_application* app, struct header_s* header)
+{
+  if (app->type == MSRP)
+  {
+    memcpy(header->dst_mac, MSRP_MULTICAST_MAC, 6);
+  }
+  else
+  {
+    memcpy(header->dst_mac, MVRP_MULTICAST_MAC, 6);
+  }
+
+  memcpy(header->src_mac, app->src_mac, ETH_ADDR_LEN);
+  header->eth_type[0] = (ETH_TYPE_MSRP >> 8) & 0xFF;
+  header->eth_type[1] = ETH_TYPE_MSRP & 0xFF;
+}
+
+void mrp_transmit(struct mrp_application* app)
+{
+  ESP_LOGI(TAG, "MRP Transmission triggered");
+  struct mrpdu_packet_s
+  {
+    struct header_s header;
+    u8 protocol_version;
+    u8 data[1500];
+  } __attribute__((packed));
+  struct mrpdu_packet_s packet = {0};
+
+  mrp_set_packet_header(app, &packet.header);
+  packet.protocol_version = 0;
+
+  u8* msg_buf = packet.data;
+}
+
 //region join timer
 /* Join timer per application */
 
@@ -138,8 +173,8 @@ int mrp_start_join_timer(const struct mrp_application* app)
 }
 
 /*
- * Request transmission of MRPDU
- * alias of the mrp_start_join_timer
+ Request transmission of MRPDU
+ alias of the mrp_start_join_timer
  */
 int mrp_request_transmission(const struct mrp_application* app) { return mrp_start_join_timer(app); }
 
@@ -148,11 +183,6 @@ int mrp_stop_join_timer(const struct mrp_attribute* attr)
   return esp_timer_stop(attr->app->join_timer);
 }
 
-void mrp_tx(struct mrp_application* app)
-{
-  ESP_LOGI(TAG, "MRP tx triggered by Join Timer");
-  // TODO implement MRP transmission logic
-}
 
 /**
  * Callback for join timer expiration
@@ -189,7 +219,7 @@ void mrp_join_timer_callback(void* arg)
     }
   }
 
-  mrp_tx(app);
+  mrp_transmit(app);
 }
 
 int mrp_init_join_timer(const struct mrp_application* app)
@@ -589,8 +619,6 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
 
   applicant->state = state;
   applicant->action = action;
-  if (action != MRP_ACTION_NONE)
-    attr->app->mrp_send_action(attr->app, attr);
 }
 
 void mrp_registrar_exec_action(struct mrp_attribute* attr)

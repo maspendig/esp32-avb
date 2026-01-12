@@ -95,6 +95,8 @@ void msrp_domain_join_indication(struct mrp_application* app, struct mrp_attribu
   ESP_LOGI(TAG, "  SR Class ID: 0x%02X", attr_value->sr_class_id);
   ESP_LOGI(TAG, "  SR Class Priority: %d", attr_value->sr_class_priority);
   ESP_LOGI(TAG, "  SR Class VID: %d", ntohs(attr_value->sr_class_vid));
+
+  // create and register MSRP domain
 }
 
 void msrp_mad_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
@@ -160,9 +162,14 @@ u8 msrp_get_attribute_value_length(u8 attribute_type)
   }
 }
 
-void msrp_send_action(struct mrp_application* app, struct mrp_attribute* attr)
+void create_msrp_header(struct header_s* header)
 {
-  ESP_LOGW(TAG, "msrp_send_action not implemented yet");
+  memcpy(header->dst_mac, MSRP_MULTICAST_MAC, 6);
+  // TODO use MAC address of the device
+  memcpy(header->src_mac, (u8[6]){0x30, 0xED, 0xA0, 0xE1, 0x83, 0x98}, ETH_ADDR_LEN);
+  header->eth_type[0] = (ETH_TYPE_MSRP >> 8) & 0xFF;
+  header->eth_type[1] = ETH_TYPE_MSRP & 0xFF;
+  memset(header, 0, sizeof(struct header_s));
 }
 
 void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
@@ -315,27 +322,49 @@ void msrp_net_rx(struct avtp_state_s* state)
   msrp_process_rx(state, buf, len);
 }
 
+/*
+  35.2.3.1.5 REGISTER_ATTACH.request
+  A Listener application entity shall issue a REGISTER_ATTACH.request
+  to the MSRP Participant to request attachment to the referenced Stream.
+ */
+void msrp_register_attach_request(struct mrp_application* app, u64 stream_id)
+{
+  /*
+   * On receipt of a REGISTER_ATTACH.request the MSRP Participant shall issue a MAD_Join.request service primitive (10.2, 10.3).
+   * The attribute_type parameter of the request shall carry the appropriate Listener Attribute Type (35.2.2.4),
+   * depending on neighborProtocolVersion. The attribute_value shall contain the StreamID and the Declaration Type.
+   */
+
+  mrp_mad_join_request(app, MSRP_LISTENER, (u8*)&stream_id, true);
+}
+
+
+void msrp_find_domain(struct mrp_application* app, msrpdu_domain_t* domain)
+{
+}
+
 void msrp_declare_domain(struct mrp_application* app, msrpdu_domain_t* domain)
 {
   mrp_mad_join_request(app, MSRP_DOMAIN, (u8*)domain, true);
 }
 
-void msrp_state_init(msrp_state_t* state)
+void msrp_state_init(struct avtp_state_s* state)
 {
-  if (state == NULL)
+  msrp_state_t* msrp = &state->msrp;
+  if (msrp == NULL)
   {
     ESP_LOGE(TAG, "MSRP state pointer is NULL");
     return;
   }
 
   /* Initialize the MRP attribute structure */
-  memset(state, 0, sizeof(msrp_state_t));
+  memset(msrp, 0, sizeof(msrp_state_t));
 
-  mrp_init(&state->mrp, MSRP);
-  state->mrp.app->mad_join_indication = &msrp_mad_join_indication;
-  state->mrp.app->mad_leave_indication = &msrp_mad_leave_indication;
-  state->mrp.app->get_attribute_value_length = &msrp_get_attribute_value_length;
-  state->mrp.app->mrp_send_action = &msrp_send_action;
+  mrp_init(&msrp->mrp, MSRP);
+  msrp->mrp.app->mad_join_indication = &msrp_mad_join_indication;
+  msrp->mrp.app->mad_leave_indication = &msrp_mad_leave_indication;
+  msrp->mrp.app->get_attribute_value_length = &msrp_get_attribute_value_length;
+  memcpy(msrp->mrp.app->src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
 
   // register domains
 
@@ -346,7 +375,7 @@ void msrp_state_init(msrp_state_t* state)
     .sr_class_vid = htons(2)
   };
 
-  msrp_declare_domain(state->mrp.app, &default_domain);
+  msrp_declare_domain(msrp->mrp.app, &default_domain);
 
   ESP_LOGI(TAG, "MSRP state initialized");
 }
