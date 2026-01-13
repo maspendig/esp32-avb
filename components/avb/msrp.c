@@ -245,7 +245,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
     struct header_s header;
     u8 protocol_version;
   } __attribute__((packed));
-  bool leave_all_seen[4] = {false, false, false, false};
+  bool leave_all_seen[5] = {false, false, false, false, false};
   u16 attribute_pointer = sizeof(struct msrp_packet_s); // header + protocol_version
   u16 vector_length = 0, number_of_values;
   u8 three_packed[3];
@@ -280,10 +280,10 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
       u16* vector_header = (u16*)(buf + vector_pointer);
       mrp_parse_vector_header(ntohs(*vector_header), &leave_all_event, &number_of_values);
 
-      if (!leave_all_event && !leave_all_seen[attrib->attribute_type])
+      if (leave_all_event == true && leave_all_seen[attrib->attribute_type] == false)
       {
         leave_all_seen[attrib->attribute_type] = true;
-        ESP_LOGI(TAG, "MSRP Leave All Event received for attribute type %s",
+        ESP_LOGI(TAG, "MSRP LeaveAll Event received for attribute type %s",
                  msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type));
 
         struct Node* head = state->msrp.app.attributes[attrib->attribute_type];
