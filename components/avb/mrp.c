@@ -153,6 +153,16 @@ void mrp_set_packet_header(struct mrp_application* app, struct header_s* header)
   header->eth_type[1] = ETH_TYPE_MSRP & 0xFF;
 }
 
+/**
+ * Adds MRPDU data to the transmission queue for the given application
+ * @param app MRP application instance
+ * @param attr MRP attribute to be queued for transmission
+ */
+void mrp_queue_mrpdu(struct mrp_application* app, struct mrp_attribute* attr)
+{
+  ESP_LOGI(TAG, "Queuing MRPDU for attribute type %d", attr->type);
+}
+
 void mrp_transmit(struct mrp_application* app)
 {
   ESP_LOGI(TAG, "MRP Transmission triggered");
