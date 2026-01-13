@@ -77,6 +77,7 @@ typedef enum
 typedef struct msrp_ctx
 {
   struct mrp_application app;
+  struct avtp_state_s* state;
   struct Node* domains;
   u8 domain_count;
 } msrp_ctx_t;

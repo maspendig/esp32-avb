@@ -19,6 +19,7 @@
 #include <sys/ioctl.h>
 #include <sys/unistd.h>
 #include <arpa/inet.h>
+#include <errno.h>
 
 #define TAG "msrp"
 
@@ -48,6 +49,10 @@ bool validate_attribute_length(const msrp_attribute_t* attrib)
 
 struct msrp_domain* msrp_find_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain)
 {
+  ESP_LOGI(TAG, "msrp_find_domain, searching for domain: { id: %d, prio: %d, vid: %d }",
+           domain->sr_class_id,
+           domain->sr_class_priority,
+           ntohs(domain->sr_class_vid));
   struct Node* head = ctx->domains;
   struct Node* node = head;
   while (node->next != head)
@@ -66,7 +71,7 @@ struct msrp_domain* msrp_find_domain(struct msrp_ctx* ctx, msrpdu_domain_t* doma
   return NULL;
 }
 
-void msrp_create_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain)
+msrp_domain_t* msrp_create_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain)
 {
   struct msrp_domain* new_domain = calloc(1, sizeof(msrp_domain_t));
   memcpy(&new_domain->domain, domain, sizeof(msrpdu_domain_t));
@@ -77,17 +82,24 @@ void msrp_create_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain)
            domain->sr_class_priority,
            domain->sr_class_vid,
            ctx->domain_count);
+
+  return new_domain;
 }
 
 void msrp_declare_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain, bool new)
 {
-  if (msrp_find_domain(ctx, domain))
-  {
-    ESP_LOGI(TAG, "MSRP domain already declared");
-    return;
-  }
-  msrp_create_domain(ctx, domain);
+  msrp_domain_t* existing_domain = msrp_find_domain(ctx, domain);
 
+  if (existing_domain == NULL)
+  {
+    existing_domain = msrp_create_domain(ctx, domain);
+  }
+
+  ESP_LOGI(TAG, "Declaring MSRP domain: { id: %d, prio: %d, vid: %d }, %s",
+           domain->sr_class_id,
+           domain->sr_class_priority,
+           ntohs(domain->sr_class_vid),
+           new ? "new" : "join");
   mrp_mad_join_request(&ctx->app, MSRP_DOMAIN, (u8*)domain, new);
 }
 
@@ -140,9 +152,9 @@ void msrp_domain_join_indication(struct mrp_application* app, struct mrp_attribu
   ESP_LOGI(TAG, "MSRP Domain Join Indication: { id: %d, prio: %d, vid: %d }, %s",
            attr_value->sr_class_id,
            attr_value->sr_class_priority,
-           attr_value->sr_class_vid,
+           ntohs(attr_value->sr_class_vid),
            new ? "new" : "join");
-  msrp_declare_domain((msrp_ctx_t*)app, attr_value, new);
+  msrp_declare_domain((msrp_ctx_t*)app->ctx, attr_value, new);
 }
 
 void msrp_mad_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
@@ -211,6 +223,19 @@ u8 msrp_get_attribute_value_length(u8 attribute_type)
 void mrsp_tx_mrpdu(struct mrp_application* app, u8* buf, size_t len)
 {
   ESP_LOGI(TAG, "Transmitting MSRP MRPDU");
+  ESP_LOG_BUFFER_HEX_LEVEL(TAG, buf, len, ESP_LOG_INFO);
+  msrp_ctx_t* ctx = app->ctx;
+  struct avtp_state_s* avtp_state = ctx->state;
+
+  int result = write(avtp_state->msrp_socket, buf, len);
+  if (result < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send MSRP MRPDU: %s (%d)", strerror(errno), errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "MSRP MRPDU sent successfully, %d bytes", result);
+  }
 }
 
 void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
@@ -254,16 +279,6 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
       bool leave_all_event = false;
       u16* vector_header = (u16*)(buf + vector_pointer);
       mrp_parse_vector_header(ntohs(*vector_header), &leave_all_event, &number_of_values);
-
-      //      if (leave_all_event == true)
-      //      {
-      // TODO process leave all event
-      // mrp_leaveall_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
-      // mrp_applicant_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
-      // mrp_registrar_state_machine(&state->msrp.mrp, MRP_EVENT_R_LA);
-      //      }
-      //      else
-      //      {
 
       if (!leave_all_event && !leave_all_seen[attrib->attribute_type])
       {
@@ -326,8 +341,6 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
                  ntohs(domain->sr_class_vid),
                  mrp_attribute_event_to_str(three_packed[0]));
         value = (u8*)domain;
-
-        domain->sr_class_vid = ntohs(domain->sr_class_vid);
 
         break;
       case MSRP_LISTENER:
@@ -424,6 +437,7 @@ void msrp_state_init(struct avtp_state_s* state)
   msrp->app.mad_leave_indication = &msrp_mad_leave_indication;
   msrp->app.get_attribute_value_length = &msrp_get_attribute_value_length;
   msrp->app.tx_mrpdu = &mrsp_tx_mrpdu;
+  msrp->app.ctx = msrp;
   memcpy(msrp->app.src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
 
   struct Node* head = calloc(1, sizeof(struct Node));
@@ -431,6 +445,7 @@ void msrp_state_init(struct avtp_state_s* state)
   head->prev = head;
   msrp->domains = head;
   msrp->domain_count = 0;
+  msrp->state = state;
 
   // register domains
 
@@ -438,7 +453,7 @@ void msrp_state_init(struct avtp_state_s* state)
     .sr_class_id = MSRP_SR_CLASS_A,
     .sr_class_priority = MSRP_SR_CLASS_A_PRIO,
     // TODO move to config
-    .sr_class_vid = 2
+    .sr_class_vid = htons(2)
   };
 
   msrp_declare_domain(msrp, &default_domain, true);

@@ -130,6 +130,8 @@ struct mrp_application
   void (*tx_mrpdu)(struct mrp_application* app, u8* buf, size_t len);
   u8 src_mac[6];
 
+  void* ctx;
+
   struct mrp_leaveall leaveall;
   esp_timer_handle_t join_timer;
 };
@@ -191,6 +193,11 @@ inline void mrp_decode_three_packed_event(u8 packed_event, u8* event)
   event[0] = packed_event / 36;
   event[1] = (packed_event % 36) / 6;
   event[2] = packed_event % 6;
+}
+
+inline u8 mrp_encode_three_packed_event(u8 event1, u8 event2, u8 event3)
+{
+  return ((event1 * 6) + event2) * 6 + event3;
 }
 
 /**

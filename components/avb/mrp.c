@@ -3,6 +3,9 @@
 //
 
 #include "mrp.h"
+
+#include <cc.h>
+
 #include "common.h"
 
 #include <esp_err.h>
@@ -163,6 +166,61 @@ void mrp_queue_mrpdu(struct mrp_application* app, struct mrp_attribute* attr)
   ESP_LOGI(TAG, "Queuing MRPDU for attribute type %d", attr->type);
 }
 
+s8 mrp_action2event(struct mrp_application* app, struct mrp_attribute* attr)
+{
+  struct mrp_applicant* applicant = &attr->applicant;
+  struct mrp_registrar* registrar = &attr->registrar;
+  int event;
+
+  switch (applicant->action)
+  {
+  case MRP_ACTION_S_N:
+    event = MRP_ATTRIBUTE_EVENT_NEW;
+    break;
+
+  case MRP_ACTION_S_J:
+    // if (app->participant_type & MRP_PARTICIPANT_TYPE_FULL)
+    //   {
+    //     if (registrar->state == MRP_STATE_IN)
+    //       event = MRP_ATTR_EVT_JOININ;
+    //     else
+    //       event = MRP_ATTR_EVT_JOINMT;
+    //   }
+    //   else
+    event = MRP_ATTRIBUTE_EVENT_JOIN_MT;
+    break;
+
+  case MRP_ACTION_S_L:
+    event = MRP_ATTRIBUTE_EVENT_LV;
+    break;
+
+  case MRP_ACTION_S:
+    // if (app->participant_type & MRP_PARTICIPANT_TYPE_FULL)
+    // {
+    //   if (registrar->state == MRP_STATE_IN)
+    //     event = MRP_ATTR_EVT_IN;
+    //   else
+    //     event = MRP_ATTR_EVT_MT;
+    // }
+    // else
+    event = MRP_ATTRIBUTE_EVENT_MT;
+
+    break;
+
+  default:
+    event = -1;
+    break;
+  }
+
+  ESP_LOGI(TAG, "Mapped applicant action %s[%d] to MRP attribute event %s[%d]",
+           mrp_action_to_str(applicant->action),
+           applicant->action,
+           mrp_attribute_event_to_str((mrp_attribute_event_t)event)
+           , event);
+
+  return event;
+}
+
 void mrp_transmit(struct mrp_application* app)
 {
   ESP_LOGI(TAG, "MRP Transmission triggered");
@@ -172,13 +230,63 @@ void mrp_transmit(struct mrp_application* app)
     u8 protocol_version;
     u8 data[1500];
   } __attribute__((packed));
-  struct mrpdu_packet_s packet = {0};
 
-  mrp_set_packet_header(app, &packet.header);
-  packet.protocol_version = 0;
+  struct mrp_message
+  {
+    u8 attribute_type;
+    u8 attribute_length;
+    u16 attribute_list_length;
+  };
 
-  u8* msg_buf = packet.data;
-  app->tx_mrpdu(app, msg_buf, sizeof(packet.data));
+  struct Node* head = app->attributes[MSRP_DOMAIN];
+  struct Node* node = head;
+  while (node->next != head)
+  {
+    struct mrp_attribute* attribute = (struct mrp_attribute*)node->next;
+    s8 event = mrp_action2event(app, attribute);
+    if (event <= 0)
+    {
+      goto next;
+    }
+    struct mrpdu_packet_s packet = {0};
+
+    mrp_set_packet_header(app, &packet.header);
+    packet.protocol_version = 0;
+
+    u8 attribute_value_length = app->get_attribute_value_length(attribute->type);
+    // number of values * value length + event byte + vector header + end mark
+    u8 attribute_list_length = attribute_value_length + sizeof(u16) + sizeof(u8) + sizeof(u16);
+    // value + vector header + packed events
+    ESP_LOGI(TAG, "Adding attribute type %d to MRPDU transmission, value length %d, list length %d",
+             attribute->type,
+             attribute_value_length,
+             attribute_list_length);
+    // fill packet.data
+    struct mrp_message* msg = (struct mrp_message*)packet.data;
+    msg->attribute_type = attribute->type;
+    msg->attribute_length = attribute_value_length;
+    msg->attribute_list_length = htons(attribute_list_length);
+
+    // vector header
+    u16* vector_header = (u16*)(packet.data + sizeof(struct mrp_message));
+    *vector_header = htons(0x0001); // no leave all, 1 value
+    // value
+    u8* value_pointer = packet.data + sizeof(struct mrp_message) + sizeof(u16);
+    memcpy(value_pointer, attribute->value, attribute_value_length);
+    // event byte
+    u8* event_pointer = value_pointer + attribute_value_length;
+
+    *event_pointer = mrp_encode_three_packed_event(event, 0, 0);
+    // end mark
+    u16* end_mark = (u16*)(event_pointer + sizeof(u8));
+    *end_mark = 0x0000;
+
+    app->tx_mrpdu(app, (u8*)&packet, sizeof(struct header_s) + 1 + sizeof(struct mrp_message) +
+                  sizeof(u16) + attribute_value_length + sizeof(u8) + sizeof(u16));
+  next:
+    node = node->next;
+  }
+  ESP_LOGI(TAG, "MRP Transmission completed");
 }
 
 //region join timer
@@ -236,7 +344,7 @@ void mrp_join_timer_callback(void* arg)
       struct mrp_attribute* attribute = (struct mrp_attribute*)node->next;
       ESP_LOGI(TAG, "Processing MRP Join Timer tx event [loop: %d] [attribute type: %d]", type, attribute->type);
       mrp_applicant_state_machine(attribute, event);
-      mrp_delete_attribute(attribute);
+      // mrp_delete_attribute(attribute);
       node = node->next;
     }
   }
@@ -846,13 +954,22 @@ struct mrp_attribute* mrp_get_or_create_attribute(struct mrp_application* app, u
   struct mrp_attribute* attr = mrp_get_attribute(app, attribute_type, value);
   if (attr == NULL)
   {
+    ESP_LOGI(TAG, "Attribute type %d not found, creating new one", attribute_type);
     attr = mrp_create_attribute(app, attribute_type, value);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Attribute type %d found", attribute_type);
   }
   return attr;
 }
 
 void mrp_mad_join_request(struct mrp_application* app, u8 attribute_type, u8* value, bool new)
 {
+  ESP_LOGI(TAG, "[app: %s] MAD Join Request for attribute type %d, new: %d",
+           mrp_application_type_to_str(app->type),
+           attribute_type,
+           new);
   struct mrp_attribute* attribute;
 
   attribute = mrp_get_or_create_attribute(app, attribute_type, value);
