@@ -168,6 +168,7 @@ void mrp_transmit(struct mrp_application* app)
   packet.protocol_version = 0;
 
   u8* msg_buf = packet.data;
+  app->tx_mrpdu(app, msg_buf, sizeof(packet.data));
 }
 
 //region join timer

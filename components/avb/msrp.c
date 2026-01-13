@@ -208,6 +208,11 @@ u8 msrp_get_attribute_value_length(u8 attribute_type)
   }
 }
 
+void mrsp_tx_mrpdu(struct mrp_application* app, u8* buf, size_t len)
+{
+  ESP_LOGI(TAG, "Transmitting MSRP MRPDU");
+}
+
 void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
 {
   struct msrp_packet_s
@@ -418,6 +423,7 @@ void msrp_state_init(struct avtp_state_s* state)
   msrp->app.mad_join_indication = &msrp_mad_join_indication;
   msrp->app.mad_leave_indication = &msrp_mad_leave_indication;
   msrp->app.get_attribute_value_length = &msrp_get_attribute_value_length;
+  msrp->app.tx_mrpdu = &mrsp_tx_mrpdu;
   memcpy(msrp->app.src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
 
   struct Node* head = calloc(1, sizeof(struct Node));
