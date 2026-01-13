@@ -179,15 +179,15 @@ s8 mrp_action2event(struct mrp_application* app, struct mrp_attribute* attr)
     break;
 
   case MRP_ACTION_S_J:
-    // if (app->participant_type & MRP_PARTICIPANT_TYPE_FULL)
-    //   {
-    //     if (registrar->state == MRP_STATE_IN)
-    //       event = MRP_ATTR_EVT_JOININ;
-    //     else
-    //       event = MRP_ATTR_EVT_JOINMT;
-    //   }
-    //   else
-    event = MRP_ATTRIBUTE_EVENT_JOIN_MT;
+    /*
+     * 802.1Q-2022 - 10.7.6.3 sJ
+     * If the registrar state is IN, send JoinIn
+     * else send JoinMt
+     */
+    if (registrar->state == MRP_IN_STATE)
+      event = MRP_ATTRIBUTE_EVENT_JOIN_IN;
+    else
+      event = MRP_ATTRIBUTE_EVENT_JOIN_MT;
     break;
 
   case MRP_ACTION_S_L:
@@ -211,12 +211,6 @@ s8 mrp_action2event(struct mrp_application* app, struct mrp_attribute* attr)
     event = -1;
     break;
   }
-
-  ESP_LOGI(TAG, "Mapped applicant action %s[%d] to MRP attribute event %s[%d]",
-           mrp_action_to_str(applicant->action),
-           applicant->action,
-           mrp_attribute_event_to_str((mrp_attribute_event_t)event)
-           , event);
 
   return event;
 }
@@ -283,6 +277,7 @@ void mrp_transmit(struct mrp_application* app)
 
     app->tx_mrpdu(app, (u8*)&packet, sizeof(struct header_s) + 1 + sizeof(struct mrp_message) +
                   sizeof(u16) + attribute_value_length + sizeof(u8) + sizeof(u16));
+
   next:
     node = node->next;
   }
