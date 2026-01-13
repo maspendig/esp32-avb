@@ -15,8 +15,7 @@
 #include <mvrp.h>
 #include <types.h>
 
-
-#define TAG "MRP"
+#define TAG "mrp"
 
 //region string conversion helpers
 
@@ -231,55 +230,62 @@ void mrp_transmit(struct mrp_application* app)
     u16 attribute_list_length;
   };
 
-  struct Node* head = app->attributes[MSRP_DOMAIN];
-  struct Node* node = head;
-  while (node->next != head)
+  for (u8 type = 1; type < MRP_MAX_ATTRIBUTE_TYPES; type++)
   {
-    struct mrp_attribute* attribute = (struct mrp_attribute*)node->next;
-    s8 event = mrp_action2event(app, attribute);
-    if (attribute->applicant.tx == false || event <= 0)
+    if (type == MSRP_LISTENER)
+      continue; // listener attributes are not transmitted by the talker
+
+    ESP_LOGI(TAG, "Processing MRP attribute type %d for transmission", type);
+    struct Node* head = app->attributes[type];
+    struct Node* node = head;
+    while (node->next != head)
     {
-      goto next;
+      struct mrp_attribute* attribute = (struct mrp_attribute*)node->next;
+      s8 event = mrp_action2event(app, attribute);
+      if (attribute->applicant.tx == false || event <= 0)
+      {
+        goto next;
+      }
+      struct mrpdu_packet_s packet = {0};
+
+      mrp_set_packet_header(app, &packet.header);
+      packet.protocol_version = 0;
+
+      u8 attribute_value_length = app->get_attribute_value_length(attribute->type);
+      // number of values * value length + event byte + vector header + end mark
+      u8 attribute_list_length = attribute_value_length + sizeof(u16) + sizeof(u8) + sizeof(u16);
+      // value + vector header + packed events
+      ESP_LOGI(TAG, "Adding attribute type %d to MRPDU transmission, value length %d, list length %d",
+               attribute->type,
+               attribute_value_length,
+               attribute_list_length);
+      // fill packet.data
+      struct mrp_message* msg = (struct mrp_message*)packet.data;
+      msg->attribute_type = attribute->type;
+      msg->attribute_length = attribute_value_length;
+      msg->attribute_list_length = htons(attribute_list_length);
+
+      // vector header
+      u16* vector_header = (u16*)(packet.data + sizeof(struct mrp_message));
+      *vector_header = htons(0x0001); // no leave all, 1 value
+      // value
+      u8* value_pointer = packet.data + sizeof(struct mrp_message) + sizeof(u16);
+      memcpy(value_pointer, attribute->value, attribute_value_length);
+      // event byte
+      u8* event_pointer = value_pointer + attribute_value_length;
+
+      *event_pointer = mrp_encode_three_packed_event(event, 0, 0);
+      // end mark
+      u16* end_mark = (u16*)(event_pointer + sizeof(u8));
+      *end_mark = 0x0000;
+
+      app->tx_mrpdu(app, (u8*)&packet, sizeof(struct header_s) + 1 + sizeof(struct mrp_message) +
+                    sizeof(u16) + attribute_value_length + sizeof(u8) + sizeof(u16));
+      attribute->applicant.tx = false;
+
+    next:
+      node = node->next;
     }
-    struct mrpdu_packet_s packet = {0};
-
-    mrp_set_packet_header(app, &packet.header);
-    packet.protocol_version = 0;
-
-    u8 attribute_value_length = app->get_attribute_value_length(attribute->type);
-    // number of values * value length + event byte + vector header + end mark
-    u8 attribute_list_length = attribute_value_length + sizeof(u16) + sizeof(u8) + sizeof(u16);
-    // value + vector header + packed events
-    ESP_LOGI(TAG, "Adding attribute type %d to MRPDU transmission, value length %d, list length %d",
-             attribute->type,
-             attribute_value_length,
-             attribute_list_length);
-    // fill packet.data
-    struct mrp_message* msg = (struct mrp_message*)packet.data;
-    msg->attribute_type = attribute->type;
-    msg->attribute_length = attribute_value_length;
-    msg->attribute_list_length = htons(attribute_list_length);
-
-    // vector header
-    u16* vector_header = (u16*)(packet.data + sizeof(struct mrp_message));
-    *vector_header = htons(0x0001); // no leave all, 1 value
-    // value
-    u8* value_pointer = packet.data + sizeof(struct mrp_message) + sizeof(u16);
-    memcpy(value_pointer, attribute->value, attribute_value_length);
-    // event byte
-    u8* event_pointer = value_pointer + attribute_value_length;
-
-    *event_pointer = mrp_encode_three_packed_event(event, 0, 0);
-    // end mark
-    u16* end_mark = (u16*)(event_pointer + sizeof(u8));
-    *end_mark = 0x0000;
-
-    app->tx_mrpdu(app, (u8*)&packet, sizeof(struct header_s) + 1 + sizeof(struct mrp_message) +
-                  sizeof(u16) + attribute_value_length + sizeof(u8) + sizeof(u16));
-    attribute->applicant.tx = false;
-
-  next:
-    node = node->next;
   }
   ESP_LOGI(TAG, "MRP Transmission completed");
 }
