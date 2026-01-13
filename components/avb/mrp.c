@@ -237,7 +237,7 @@ void mrp_transmit(struct mrp_application* app)
   {
     struct mrp_attribute* attribute = (struct mrp_attribute*)node->next;
     s8 event = mrp_action2event(app, attribute);
-    if (event <= 0)
+    if (attribute->applicant.tx == false || event <= 0)
     {
       goto next;
     }
@@ -276,6 +276,7 @@ void mrp_transmit(struct mrp_application* app)
 
     app->tx_mrpdu(app, (u8*)&packet, sizeof(struct header_s) + 1 + sizeof(struct mrp_message) +
                   sizeof(u16) + attribute_value_length + sizeof(u8) + sizeof(u16));
+    attribute->applicant.tx = false;
 
   next:
     node = node->next;
@@ -740,7 +741,7 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
   /* IEEE 802.1Q-2022 Table 10-3 Note 6:
    * Request opportunity to transmit on entry to VN, AN, AA, LA, VP, AP, and LO states
    */
-  if (is_state_requesting_transmit(state))
+  if (state != applicant->state && is_state_requesting_transmit(state))
   {
     /* Whenever a state machine transitions to a state that requires transmission of a message,
        a transmit opportunity is requested if one is not already pending */
@@ -749,6 +750,7 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
 
   applicant->state = state;
   applicant->action = action;
+  applicant->tx = action != MRP_ACTION_NONE;
 }
 
 void mrp_registrar_exec_action(struct mrp_attribute* attr)

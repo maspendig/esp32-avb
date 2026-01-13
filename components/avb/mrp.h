@@ -98,6 +98,7 @@ struct mrp_applicant
 {
   mrp_state_t state;
   mrp_action_t action;
+  char tx;
 };
 
 struct mrp_registrar
