@@ -195,16 +195,15 @@ s8 mrp_action2event(struct mrp_application* app, struct mrp_attribute* attr)
     break;
 
   case MRP_ACTION_S:
-    // if (app->participant_type & MRP_PARTICIPANT_TYPE_FULL)
-    // {
-    //   if (registrar->state == MRP_STATE_IN)
-    //     event = MRP_ATTR_EVT_IN;
-    //   else
-    //     event = MRP_ATTR_EVT_MT;
-    // }
-    // else
-    event = MRP_ATTRIBUTE_EVENT_MT;
-
+    /*
+     * 802.1Q-2022 - 10.7.6.5 s, [s]
+     * If the Registrar state is IN, then the AttributeEvent is In
+     * If the Registrar state is MT or LV, then the AttributeEvent value Mt is encoded
+     */
+    if (registrar->state == MRP_IN_STATE)
+      event = MRP_ATTRIBUTE_EVENT_IN;
+    else
+      event = MRP_ATTRIBUTE_EVENT_MT;
     break;
 
   default:
@@ -292,6 +291,7 @@ int mrp_start_join_timer(const struct mrp_application* app)
   if (esp_timer_is_active(app->join_timer))
     return ESP_OK;
 
+  ESP_LOGI(TAG, "Starting MRP Join Timer for application %s", mrp_application_type_to_str(app->type));
   // in order to fit the state machine definitions, we only use once timer here
   // the timer is restarted by the state machine
   return esp_timer_start_once(app->join_timer, MRP_JOIN_TIME_MS * 1000);
@@ -301,7 +301,10 @@ int mrp_start_join_timer(const struct mrp_application* app)
  Request transmission of MRPDU
  alias of the mrp_start_join_timer
  */
-int mrp_request_transmission(const struct mrp_application* app) { return mrp_start_join_timer(app); }
+int mrp_request_transmission(const struct mrp_application* app)
+{
+  return mrp_start_join_timer(app);
+}
 
 int mrp_stop_join_timer(const struct mrp_attribute* attr)
 {
@@ -845,6 +848,34 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
   mrp_registrar_exec_action(attr);
 }
 
+void mrp_leaveall_exec_action(struct mrp_application* app)
+{
+  /* IEEE 802.1Q-2022 - 10.7.9 LeaveAll state machine
+   * When the LeaveAll state machine signals LeaveAll (action S_LA),
+   * all applicant and registrar state machines of that participant are notified of the LeaveAll event.
+   */
+  if (app->leaveall.action == MRP_ACTION_S_LA)
+  {
+    ESP_LOGI(TAG, "[app: %s] LeaveAll action S_LA executed, notifying all applicant and registrar state machines",
+             mrp_application_type_to_str(app->type));
+    // loop through all attributes of all types
+    for (u8 type = 0; type < MRP_MAX_ATTRIBUTE_TYPES; type++)
+    {
+      struct Node* head = app->attributes[type];
+      struct Node* node = head;
+      while (node->next != head)
+      {
+        struct mrp_attribute* attribute = (struct mrp_attribute*)node->next;
+        ESP_LOGI(TAG, "Notifying applicant and registrar SMs of LeaveAll event [loop: %d] [attribute type: %d]", type,
+                 attribute->type);
+        mrp_applicant_state_machine(attribute, MRP_EVENT_R_LA);
+        mrp_registrar_state_machine(attribute, MRP_EVENT_R_LA);
+        node = node->next;
+      }
+    }
+  }
+}
+
 void mrp_leaveall_state_machine(const struct mrp_application* app, mrp_event_t event)
 {
   struct mrp_leaveall* leaveall = &app->leaveall;
@@ -871,6 +902,7 @@ void mrp_leaveall_state_machine(const struct mrp_application* app, mrp_event_t e
   case MRP_EVENT_LEAVEALLTIMER:
     state = MRP_ACTIVE;
     mrp_start_leaveall_timer(app);
+
     break;
   default:
     ESP_LOGW(TAG, "Unknown event %s for leave all state machine!", mrp_event_to_str(event));
@@ -886,11 +918,14 @@ void mrp_leaveall_state_machine(const struct mrp_application* app, mrp_event_t e
    */
   if (leaveall->state == MRP_PASSIVE && state == MRP_ACTIVE)
   {
-    mrp_start_join_timer(app);
+    mrp_request_transmission(app);
+    ESP_LOGI(TAG, "LeaveAll SM requesting transmission opportunity");
   }
 
   leaveall->state = state;
   leaveall->action = action;
+
+  mrp_leaveall_exec_action(app);
 }
 
 //endregion
@@ -912,13 +947,18 @@ struct mrp_attribute* mrp_get_attribute(struct mrp_application* app, u8 attribut
   // traverse the linked list, if next match the current node we reached the end
   while (temp->next != head)
   {
-    attribute = (struct mrp_attribute*)temp;
+    attribute = (struct mrp_attribute*)temp->next;
+    ESP_LOG_BUFFER_HEX_LEVEL(TAG, attribute->value, length, ESP_LOG_INFO);
+    ESP_LOGI(TAG, "vs");
+    ESP_LOG_BUFFER_HEX_LEVEL(TAG, value, length, ESP_LOG_INFO);
     if (memcmp(attribute->value, value, length) == 0)
     {
       return (struct mrp_attribute*)temp;
     }
     temp = temp->next;
   }
+
+  ESP_LOGD(TAG, "Attribute type %d with given value not found", attribute_type);
 
   return NULL;
 }

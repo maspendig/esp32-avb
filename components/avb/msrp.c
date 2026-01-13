@@ -80,7 +80,7 @@ msrp_domain_t* msrp_create_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain)
   ESP_LOGI(TAG, "Created new MSRP domain: { id: %d, prio: %d, vid: %d }, total domains: %d",
            domain->sr_class_id,
            domain->sr_class_priority,
-           domain->sr_class_vid,
+           ntohs(domain->sr_class_vid),
            ctx->domain_count);
 
   return new_domain;
@@ -267,7 +267,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
       break;
     }
 
-    ESP_LOGI(TAG, "Attribute Type: %s, Attribute Length: %d, List Length: %d",
+    ESP_LOGI(TAG, "rx -> Attribute Type: %s, Attribute Length: %d, List Length: %d",
              msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type),
              attrib->attribute_length,
              ntohs(attrib->attribute_list_length));
