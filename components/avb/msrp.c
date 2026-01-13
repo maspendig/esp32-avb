@@ -383,7 +383,6 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
       mrp_process_attribute_event(&state->msrp.app, attrib->attribute_type,
                                   value,
                                   three_packed[0]);
-      //      }
     }
     while (next_vector);
 

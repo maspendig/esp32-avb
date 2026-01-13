@@ -753,6 +753,9 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
 
 void mrp_registrar_exec_action(struct mrp_attribute* attr)
 {
+  ESP_LOGI(TAG, "Executing Registrar action %s for attribute type %d",
+           mrp_action_to_str(attr->registrar.action),
+           attr->type);
   switch (attr->registrar.action)
   {
   case MRP_ACTION_NEW:
@@ -936,7 +939,6 @@ struct mrp_attribute* mrp_get_attribute(struct mrp_application* app, u8 attribut
            mrp_application_type_to_str(app->type),
            attribute_type);
   const u8 length = app->get_attribute_value_length(attribute_type);
-  const struct mrp_attribute* attribute;
   struct Node* head = app->attributes[attribute_type];
   struct Node* temp = head;
   if (temp->next == head)
@@ -947,13 +949,10 @@ struct mrp_attribute* mrp_get_attribute(struct mrp_application* app, u8 attribut
   // traverse the linked list, if next match the current node we reached the end
   while (temp->next != head)
   {
-    attribute = (struct mrp_attribute*)temp->next;
-    ESP_LOG_BUFFER_HEX_LEVEL(TAG, attribute->value, length, ESP_LOG_INFO);
-    ESP_LOGI(TAG, "vs");
-    ESP_LOG_BUFFER_HEX_LEVEL(TAG, value, length, ESP_LOG_INFO);
+    const struct mrp_attribute* attribute = (struct mrp_attribute*)temp->next;
     if (memcmp(attribute->value, value, length) == 0)
     {
-      return (struct mrp_attribute*)temp;
+      return (struct mrp_attribute*)temp->next;
     }
     temp = temp->next;
   }
@@ -994,7 +993,7 @@ struct mrp_attribute* mrp_get_or_create_attribute(struct mrp_application* app, u
   }
   else
   {
-    ESP_LOGI(TAG, "Attribute type %d found", attribute_type);
+    ESP_LOGI(TAG, "Attribute type %d found", attr->type);
   }
   return attr;
 }
