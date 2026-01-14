@@ -31,10 +31,19 @@ typedef enum
 #define MSRP_ATTRIBUTE_LENGTH_DOMAIN           0x04 // (4)
 
 /* Listener Declaration Types - IEEE 802.1Qat Table 35-3 */
-#define MSRP_LISTENER_IGNORE       0
-#define MSRP_LISTENER_ASKING_FAILED 1
-#define MSRP_LISTENER_READY        2
-#define MSRP_LISTENER_READY_FAILED 3
+typedef enum
+{
+  MSRP_LISTENER_DECLARATION_ASKING = 1,
+  MSRP_LISTENER_DECLARATION_READY,
+  MSRP_LISTENER_DECLARATION_FAILED,
+} msrp_listener_declaration_type_t;
+
+typedef enum
+{
+  MSRP_TALKER_DECLARATION_ADVERTISE = 0,
+  MSRP_TALKER_DECLARATION_FAILED
+} msrp_listener_flags_mask_t;
+
 
 #define ETH_TYPE_MSRP 0x22EA
 
@@ -112,7 +121,8 @@ typedef struct msrpdu_talker_advertise
 typedef struct msrpdu_listener
 {
   u64 stream_id;
-} msrpdu_listener_t;
+  u8 declaration_type;
+} __attribute__((packed)) msrpdu_listener_t;
 
 typedef struct msrpdu_domain
 {

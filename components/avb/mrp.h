@@ -129,6 +129,7 @@ struct mrp_application
   void (*mad_leave_indication)(struct mrp_application* app, struct mrp_attribute* attr);
   u8 (*get_attribute_value_length)(u8 attribute_type);
   void (*tx_mrpdu)(struct mrp_application* app, u8* buf, size_t len);
+  bool uses_attribute_list_length;
   u8 src_mac[6];
 
   void* ctx;
@@ -184,11 +185,22 @@ typedef struct mrp_data_unit_header
   u16 attribute_list_length;
 } __attribute__((packed)) mrp_data_unit_header_t;
 
+typedef struct mvrp_data_unit_header
+{
+  u8 attribute_type;
+  u8 attribute_length;
+} __attribute__((packed)) mvrp_data_unit_header_t;
+
 /**
  * IEEE 802.1Q-2022 10.8.2.10.1 Encoding of Vector ThreePackedEvents
  *
  * (((((firstAttributeEvent) × 6) + secondAttributeEvent) × 6) + thirdAttributeEvent)
  */
+inline u8 mrp_encode_three_packed_event(u8 event1, u8 event2, u8 event3)
+{
+  return ((event1 * 6) + event2) * 6 + event3;
+}
+
 inline void mrp_decode_three_packed_event(u8 packed_event, u8* event)
 {
   event[0] = packed_event / 36;
@@ -196,16 +208,15 @@ inline void mrp_decode_three_packed_event(u8 packed_event, u8* event)
   event[2] = packed_event % 6;
 }
 
-inline u8 mrp_encode_three_packed_event(u8 event1, u8 event2, u8 event3)
-{
-  return ((event1 * 6) + event2) * 6 + event3;
-}
-
 /**
- * IEEE 802.1Q-2022 10.8.2.10.2 Encoding of Vector FourPackedEvents
- *
+ * IEEE 802.1Q-2022 - 10.8.2.10.2 Encoding of Vector FourPackedEvents
  * ((firstFourPackedType × 64) + (secondFourPackedType × 16) + (thirdFourPackedType × 4) + (fourthFourPackedType))
  */
+inline u8 mrp_encode_four_packed_event(u8 event1, u8 event2, u8 event3, u8 event4)
+{
+  return (event1 * 64) + (event2 * 16) + (event3 * 4) + event4;
+}
+
 inline void mrp_decode_four_packed_event(u8 packed_event, u8* event)
 {
   event[0] = packed_event / 64;
