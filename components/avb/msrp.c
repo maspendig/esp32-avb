@@ -112,21 +112,13 @@ void msrp_declare_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain, bool new
 void msrp_talker_advertise_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
   msrpdu_talker_advertise_t* attr_value = (msrpdu_talker_advertise_t*)attribute->value;
-  ESP_LOGI(TAG, "MSRP Talker Advertise Join Indication:");
-  ESP_LOGI(TAG, "  Stream ID: 0x%012llX", ntohll(attr_value->stream_id));
-  ESP_LOGI(TAG, "  Dest MAC: %02X:%02X:%02X:%02X:%02X:%02X",
-           attr_value->dest_mac[0], attr_value->dest_mac[1], attr_value->dest_mac[2],
-           attr_value->dest_mac[3], attr_value->dest_mac[4], attr_value->dest_mac[5]);
-  ESP_LOGI(TAG, "  VLAN ID: %d", ntohs(attr_value->vlan_id));
-  ESP_LOGI(TAG, "  Max Frame Size: %d", ntohs(attr_value->max_frame_size));
-  ESP_LOGI(TAG, "  Max Frame Interval: %d", ntohs(attr_value->max_frame_interval));
-  ESP_LOGI(TAG, "  Priority and Rank: 0x%02X", attr_value->priority_and_rank);
-  ESP_LOGI(TAG, "  Accumulated Latency: %d", ntohl(attr_value->accumulated_latency));
+  ESP_LOGW(TAG, "Talker Advertise Join Indication");
+  // TODO implement REGISTER_STREAM.indication to Listener application entity
 }
 
 void msrp_talker_failed_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
-  ESP_LOGW(TAG, "msrp_talker_failed_join_indication not implemented yet");
+  ESP_LOGW(TAG, "Talker Failed Join Indication");
 }
 
 /**
@@ -438,6 +430,7 @@ void msrp_state_init(struct avtp_state_s* state)
   msrp->app.get_attribute_value_length = &msrp_get_attribute_value_length;
   msrp->app.uses_attribute_list_length = true;
   msrp->app.tx_mrpdu = &mrsp_tx_mrpdu;
+  msrp->app.participant_type = FULL_P2P;
   msrp->app.ctx = msrp;
   memcpy(msrp->app.src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
 

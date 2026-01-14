@@ -116,12 +116,24 @@ struct mrp_leaveall
 };
 
 
+/* Participant Types defined in IEEE 802.1Q-2022 Section 10.6 */
+typedef enum
+{
+  FULL = 0,
+  FULL_P2P,
+  NEW_ONLY,
+  APPLICANT_ONLY,
+  APPLICANT_ONLY_P2P /* Simple-Applicant */
+} mrp_participant_type_t;
+
 struct mrp_attribute;
+
 
 struct mrp_application
 {
   bool enabled;
   mrp_application_type_t type;
+  mrp_participant_type_t participant_type;
 
   struct Node* attributes[MRP_MAX_ATTRIBUTE_TYPES];
   /* registrar state machine triggered action */
@@ -130,6 +142,7 @@ struct mrp_application
   u8 (*get_attribute_value_length)(u8 attribute_type);
   void (*tx_mrpdu)(struct mrp_application* app, u8* buf, size_t len);
   bool uses_attribute_list_length;
+  bool send_leave_all;
   u8 src_mac[6];
 
   void* ctx;
@@ -137,6 +150,7 @@ struct mrp_application
   struct mrp_leaveall leaveall;
   esp_timer_handle_t join_timer;
 };
+
 
 struct mrp_attribute
 {

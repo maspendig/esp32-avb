@@ -134,6 +134,8 @@ char* mrp_attribute_event_to_str(mrp_attribute_event_t event)
 void mrp_delete_attribute(struct mrp_attribute* attr)
 {
   struct Node* node = &attr->list;
+
+  esp_timer_delete(attr->app->leaveall.timer);
   node->prev->next = node->next;
   node->next->prev = node->prev;
   free(attr);
@@ -165,11 +167,21 @@ void mrp_queue_mrpdu(struct mrp_application* app, struct mrp_attribute* attr)
   ESP_LOGI(TAG, "Queuing MRPDU for attribute type %d", attr->type);
 }
 
+void mrp_free_attribute_check(struct mrp_application* app, struct mrp_attribute* attr)
+{
+  /* 802.1Q-2011, Table 10-3, Note 11 */
+  if (((attr->applicant.state == MRP_VO_STATE) ||
+      (attr->applicant.state == MRP_AO_STATE) ||
+      (attr->applicant.state == MRP_QO_STATE)) &&
+    (!(app->participant_type & FULL) || (attr->registrar.state == MRP_MT_STATE)))
+    mrp_delete_attribute(attr);
+}
+
 s8 mrp_action2event(struct mrp_application* app, struct mrp_attribute* attr)
 {
   struct mrp_applicant* applicant = &attr->applicant;
   struct mrp_registrar* registrar = &attr->registrar;
-  int event;
+  s8 event;
 
   switch (applicant->action)
   {
@@ -178,33 +190,34 @@ s8 mrp_action2event(struct mrp_application* app, struct mrp_attribute* attr)
     break;
 
   case MRP_ACTION_S_J:
+    event = MRP_ATTRIBUTE_EVENT_JOIN_MT;
+
     /*
      * 802.1Q-2022 - 10.7.6.3 sJ
      * If the registrar state is IN, send JoinIn
      * else send JoinMt
      */
-    if (registrar->state == MRP_IN_STATE)
+    if (app->participant_type == FULL && registrar->state == MRP_IN_STATE)
+    {
       event = MRP_ATTRIBUTE_EVENT_JOIN_IN;
-    else
-      event = MRP_ATTRIBUTE_EVENT_JOIN_MT;
+    }
     break;
-
   case MRP_ACTION_S_L:
     event = MRP_ATTRIBUTE_EVENT_LV;
     break;
 
   case MRP_ACTION_S:
+    event = MRP_ATTRIBUTE_EVENT_MT;
     /*
      * 802.1Q-2022 - 10.7.6.5 s, [s]
      * If the Registrar state is IN, then the AttributeEvent is In
      * If the Registrar state is MT or LV, then the AttributeEvent value Mt is encoded
      */
-    if (registrar->state == MRP_IN_STATE)
+    if (app->participant_type == FULL && registrar->state == MRP_IN_STATE)
+    {
       event = MRP_ATTRIBUTE_EVENT_IN;
-    else
-      event = MRP_ATTRIBUTE_EVENT_MT;
+    }
     break;
-
   default:
     event = -1;
     break;
@@ -215,7 +228,7 @@ s8 mrp_action2event(struct mrp_application* app, struct mrp_attribute* attr)
 
 void mrp_transmit(struct mrp_application* app)
 {
-  ESP_LOGI(TAG, "MRP Transmission triggered");
+  ESP_LOGI(TAG, "MRP Transmission triggered. leaveall: %s", app->send_leave_all ? "true" : "false");
   struct mrpdu_packet_s
   {
     struct header_s header;
@@ -227,38 +240,50 @@ void mrp_transmit(struct mrp_application* app)
   for (u8 type = 1; type < MRP_MAX_ATTRIBUTE_TYPES; type++)
   {
     ESP_LOGI(TAG, "Processing MRP attribute type %d for transmission", type);
+    u8 attribute_value_length = app->get_attribute_value_length(type);
+    // number of values * value length + event byte + vector header + end mark
+    u8 attribute_list_length = attribute_value_length + sizeof(u16) + sizeof(u8) + sizeof(u16);
+
     struct Node* head = app->attributes[type];
     struct Node* node = head;
-    while (node->next != head)
+
+    struct mrpdu_packet_s packet = {0};
+    u16 length = sizeof(struct header_s) + 1;
+    mrp_set_packet_header(app, &packet.header);
+    packet.protocol_version = 0;
+
+    u8 vector_count = 0;
+
+    while (node->next != head || (vector_count == 0 && app->send_leave_all))
     {
-      // TODO implement aggregation of multiple attributes into one MRPDU packet
-      struct mrp_attribute* attribute = (struct mrp_attribute*)node->next;
-      s8 event = mrp_action2event(app, attribute);
-      if (attribute->applicant.tx == false || event <= 0)
+      u8 value[attribute_list_length];
+      s8 event = 0;
+
+      if (node->next != head)
       {
-        goto next;
+        /* regular attribute sending */
+        struct mrp_attribute* attribute = (struct mrp_attribute*)node->next;
+        event = mrp_action2event(app, attribute);
+        if (attribute->applicant.tx == false || event <= 0)
+        {
+          goto next;
+        }
+
+        attribute->applicant.tx = false;
+        memcpy(value, attribute->value, attribute_value_length);
       }
-      struct mrpdu_packet_s packet = {0};
-
-      u16 length = sizeof(struct header_s) + 1;
-      mrp_set_packet_header(app, &packet.header);
-      packet.protocol_version = 0;
-
-      u8 attribute_value_length = app->get_attribute_value_length(attribute->type);
-      // number of values * value length + event byte + vector header + end mark
-      u8 attribute_list_length = attribute_value_length + sizeof(u16) + sizeof(u8) + sizeof(u16);
-      // value + vector header + packed events
-      ESP_LOGI(TAG, "Adding attribute type %d to MRPDU transmission, value length %d, list length %d",
-               attribute->type,
-               attribute_value_length,
-               attribute_list_length);
-      // fill packet.data
-
+      else if (app->send_leave_all)
+      {
+        attribute_list_length -= 1;
+        memset(value, 0, attribute_value_length);
+        // send leave all even if no attributes are present
+      }
+      // TODO implement aggregation of multiple attributes into one MRPDU packet
       u16* vector_header;
       if (app->uses_attribute_list_length == true)
       {
         struct mrp_data_unit_header* mrp_du_header = (struct mrp_data_unit_header*)packet.data;
-        mrp_du_header->attribute_type = attribute->type;
+        mrp_du_header->attribute_type = type;
         mrp_du_header->attribute_length = attribute_value_length;
         mrp_du_header->attribute_list_length = htons(attribute_list_length);
         vector_header = (u16*)(packet.data + sizeof(struct mrp_data_unit_header));
@@ -267,30 +292,37 @@ void mrp_transmit(struct mrp_application* app)
       else
       {
         struct mvrp_data_unit_header* mvrp_du_header = (struct mvrp_data_unit_header*)packet.data;
-        mvrp_du_header->attribute_type = attribute->type;
+        mvrp_du_header->attribute_type = type;
         mvrp_du_header->attribute_length = attribute_value_length;
         vector_header = (u16*)(packet.data + sizeof(struct mvrp_data_unit_header));
         length += sizeof(struct mrp_data_unit_header);
       }
 
+
       // vector header
-      // TODO support leave all
-      *vector_header = htons(0x0001); // no leave all, 1 value
+      *vector_header = htons(node->next != head); // no leave all, 1 value
+      if (vector_count == 0 && app->send_leave_all == true)
+      {
+        *vector_header |= htons(0x2000); // set leave all bit
+      }
+
       u8* value_pointer = (u8*)vector_header + sizeof(u16);
       length += sizeof(u16);
 
-      memcpy(value_pointer, attribute->value, attribute_value_length);
+      memcpy(value_pointer, value, attribute_value_length);
       length += attribute_value_length;
+      ESP_LOG_BUFFER_HEX_LEVEL(TAG, (u8*)&packet, length, ESP_LOG_INFO);
+      ESP_LOGI(TAG, "  Added attribute value for type %d, length %d", type, attribute_value_length);
 
       // event byte
       u8* event_pointer = value_pointer + attribute_value_length;
       *event_pointer = mrp_encode_three_packed_event(event, 0, 0);
 
       // TODO move this to app specific implementation
-      if (type == MSRP_LISTENER)
+      if (type == MSRP_LISTENER && !(app->send_leave_all && vector_count == 0))
       {
         // for listener attribute, we need to add declaration type (four packed)
-        struct msrpdu_listener listener = *(struct msrpdu_listener*)attribute->value;
+        struct msrpdu_listener listener = *(struct msrpdu_listener*)value;
         *(event_pointer + 1) = mrp_encode_four_packed_event(listener.declaration_type, 0, 0, 0);
         length += sizeof(u8);
       }
@@ -303,12 +335,13 @@ void mrp_transmit(struct mrp_application* app)
 
       // calc length
       app->tx_mrpdu(app, (u8*)&packet, length);
-      attribute->applicant.tx = false;
 
+      vector_count++;
     next:
       node = node->next;
     }
   }
+  app->send_leave_all = false;
   ESP_LOGI(TAG, "MRP Transmission completed");
 }
 
@@ -582,10 +615,20 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
     switch (state)
     {
     case MRP_VO_STATE:
-      state = MRP_AO_STATE;
+      /* IEEE 802.1Q-2022 10-3 Note 4 Ignored if point-to-point subset */
+      if (!(attr->app->participant_type & FULL_P2P ||
+        attr->app->participant_type & APPLICANT_ONLY_P2P))
+      {
+        state = MRP_AO_STATE;
+      }
       break;
     case MRP_VP_STATE:
-      state = MRP_AP_STATE;
+      /* IEEE 802.1Q-2022 10-3 Note 4 Ignored if point-to-point subset */
+      if (!(attr->app->participant_type & FULL_P2P ||
+        attr->app->participant_type & APPLICANT_ONLY_P2P))
+      {
+        state = MRP_AP_STATE;
+      }
       break;
     case MRP_AA_STATE:
       state = MRP_QA_STATE;
@@ -760,6 +803,23 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
     ESP_LOGI(TAG, "Unknown event %d", event);
   }
 
+  /* 802.1Q-2022 10-3 Note
+   * Point-to-point subset participants do not transition to AO, QO, AP, QP states
+   */
+  if ((attr->app->participant_type == FULL_P2P ||
+      attr->app->participant_type == APPLICANT_ONLY_P2P
+    )
+    &&
+    (state == MRP_AO_STATE ||
+      state == MRP_QO_STATE ||
+      state == MRP_AP_STATE ||
+      state == MRP_QP_STATE)
+  )
+  {
+    return;
+  }
+
+
   ESP_LOGI(TAG, "Applicant SM - event: %s, state [%s] => [%s], action %s",
            mrp_event_to_str(event),
            mrp_state_to_str(applicant->state),
@@ -906,6 +966,7 @@ void mrp_leaveall_exec_action(struct mrp_application* app)
         node = node->next;
       }
     }
+    app->send_leave_all = true;
   }
 }
 
@@ -1060,6 +1121,14 @@ void mrp_process_attribute_event(struct mrp_application* app, u8 type, u8* value
            _event);
   mrp_registrar_state_machine(attr, mrp_attribute_event_to_event_map[event]);
   mrp_applicant_state_machine(attr, mrp_attribute_event_to_event_map[event]);
+
+  /* IEEE 802.1Q-2022 -
+    * Table 10-3 Note 11:
+    * An attribute is deleted when both the applicant and registrar state machines
+    * reach one of the states VO, AO, or QO, and either the participant is not a Full Participant
+    * or the registrar state machine is in state MT.
+    */
+  mrp_free_attribute_check(app, attr);
 }
 
 void mrp_enable(struct mrp_application* app)
