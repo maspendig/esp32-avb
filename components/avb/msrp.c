@@ -103,6 +103,43 @@ void msrp_declare_domain(struct msrp_ctx* ctx, msrp_pdu_domain_first_value_t* do
   mrp_mad_join_request(&ctx->app, MSRP_DOMAIN, (u8*)domain, new);
 }
 
+static msrp_map_listener_t* msrp_map_find_listener(msrp_ctx_t* ctx, u64 stream_id)
+{
+  struct Node* head = ctx->map.listeners;
+  struct Node* node = head->next;
+  while (node != head)
+  {
+    msrp_map_listener_t* listener = (msrp_map_listener_t*)node;
+    if (listener->value.stream_id == stream_id)
+    {
+      return listener;
+    }
+    node = node->next;
+  }
+  return NULL;
+}
+
+static void msrp_map_add_listener(msrp_ctx_t* ctx, msrp_listener_attr_value_t* value)
+{
+  if (msrp_map_find_listener(ctx, value->stream_id)) return;
+
+  msrp_map_listener_t* node = calloc(1, sizeof(msrp_map_listener_t));
+  node->value = *value;
+  list_append(ctx->map.listeners, &node->list);
+  ESP_LOGI(TAG, "Added listener to map, StreamID: 0x%llx", value->stream_id);
+}
+
+static void msrp_map_remove_listener(msrp_ctx_t* ctx, u64 stream_id)
+{
+  msrp_map_listener_t* node = msrp_map_find_listener(ctx, stream_id);
+  if (node)
+  {
+    list_remove(&node->list);
+    free(node);
+    ESP_LOGI(TAG, "Removed listener from map, StreamID: 0x%llx", stream_id);
+  }
+}
+
 /**
  * IEEE 802.1Q-2022 - 35.2.3.1.2 REGISTER_STREAM.indication
  * On receipt of a MAD_Join.indication service primitive (10.2, 10.3)
@@ -134,7 +171,15 @@ void msrp_talker_failed_join_indication(struct mrp_application* app, struct mrp_
  */
 void msrp_listener_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
-  ESP_LOGW(TAG, "msrp_listener_join_indication not implemented yet");
+  msrp_ctx_t* msrp = (msrp_ctx_t*)app->ctx;
+  msrp_listener_attr_value_t* value = (msrp_listener_attr_value_t*)attribute->value;
+
+  ESP_LOGI(TAG, "MSRP Listener Join Indication: StreamID 0x%llx, DeclType %d, New: %d",
+           value->stream_id, value->declaration_type, new);
+
+  msrp_map_add_listener(msrp, value);
+
+  mrp_mad_join_request(app, MSRP_LISTENER, (u8*)value, new);
 }
 
 void msrp_domain_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
@@ -171,6 +216,7 @@ void msrp_mad_join_indication(struct mrp_application* app, struct mrp_attribute*
   }
 }
 
+
 void msrp_mad_leave_indication(struct mrp_application* app, struct mrp_attribute* attr)
 {
   switch (attr->type)
@@ -182,9 +228,12 @@ void msrp_mad_leave_indication(struct mrp_application* app, struct mrp_attribute
     ESP_LOGW(TAG, "msrp_talker_failed_leave_indication not implemented yet");
     break;
   case MSRP_LISTENER:
-    // On receipt of a MAD_Leave.indication for a Listener Declaration, if the StreamID of the Declaration matches a Stream that the Talker is transmitting, then the Talker shall stop the transmission for this Stream, if it is transmitting.
-    ESP_LOGW(TAG, "msrp_listener_leave_indication not implemented yet");
-    break;
+    {
+      msrp_listener_attr_value_t* val = (msrp_listener_attr_value_t*)attr->value;
+      ESP_LOGI(TAG, "MSRP Listener Leave Indication: StreamID 0x%llx", val->stream_id);
+      msrp_map_remove_listener((msrp_ctx_t*)app->ctx, val->stream_id);
+      break;
+    }
   case MSRP_DOMAIN:
     ESP_LOGW(TAG, "msrp_domain_leave_indication not implemented yet");
     break;
@@ -246,6 +295,14 @@ void mrsp_tx_mrpdu(struct mrp_application* app, u8* buf, size_t len)
   ESP_LOG_BUFFER_HEX_LEVEL(TAG, buf, len, ESP_LOG_INFO);
   msrp_ctx_t* ctx = app->ctx;
   struct avtp_state_s* avtp_state = ctx->state;
+
+  if (len < 64)
+  {
+    // MSRP frames must be at least 64 bytes (including FCS)
+    size_t padding = 64 - len;
+    memset(buf + len, 0, padding);
+    len += padding;
+  }
 
   int result = write(avtp_state->msrp_socket, buf, len);
   if (result < 0)
@@ -333,51 +390,57 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
       switch (attrib->attribute_type)
       {
       case MSRP_TALKER_ADVERTISE:
-        msrp_pdu_talker_advertise_first_value_t* talker_adv = (msrp_pdu_talker_advertise_first_value_t*)(buf +
-          first_value_pointer);
-        mrp_decode_four_packed_event(buf[vector_end], three_packed);
-        ESP_LOGI(TAG, "  Talker Stream ID: 0x%016llX", ntohll(talker_adv->stream_id));
-        ESP_LOGI(TAG, "  Dest MAC: %02X:%02X:%02X:%02X:%02X:%02X",
-                 talker_adv->dest_mac[0], talker_adv->dest_mac[1], talker_adv->dest_mac[2],
-                 talker_adv->dest_mac[3], talker_adv->dest_mac[4], talker_adv->dest_mac[5]);
-        ESP_LOGI(TAG, "  VLAN ID: %d", ntohs(talker_adv->vlan_id));
-        ESP_LOGI(TAG, "  Max Frame Size: %d", ntohs(talker_adv->max_frame_size));
-        ESP_LOGI(TAG, "  Max Frame Interval: %d", ntohs(talker_adv->max_frame_interval));
-        ESP_LOGI(TAG, "  Priority and Rank: 0x%02X", talker_adv->priority_and_rank);
-        ESP_LOGI(TAG, "  Accumulated Latency: %lu", ntohl(talker_adv->accumulated_latency));
-        ESP_LOGI(TAG, "  Event: %s",
-                 mrp_attribute_event_to_str(three_packed[0]));
-        value = (u8*)talker_adv;
+        {
+          msrp_pdu_talker_advertise_first_value_t* talker_adv = (msrp_pdu_talker_advertise_first_value_t*)(buf +
+            first_value_pointer);
+          mrp_decode_four_packed_event(buf[vector_end], three_packed);
+          ESP_LOGI(TAG, "  Talker Stream ID: 0x%016llX", ntohll(talker_adv->stream_id));
+          ESP_LOGI(TAG, "  Dest MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+                   talker_adv->dest_mac[0], talker_adv->dest_mac[1], talker_adv->dest_mac[2],
+                   talker_adv->dest_mac[3], talker_adv->dest_mac[4], talker_adv->dest_mac[5]);
+          ESP_LOGI(TAG, "  VLAN ID: %d", ntohs(talker_adv->vlan_id));
+          ESP_LOGI(TAG, "  Max Frame Size: %d", ntohs(talker_adv->max_frame_size));
+          ESP_LOGI(TAG, "  Max Frame Interval: %d", ntohs(talker_adv->max_frame_interval));
+          ESP_LOGI(TAG, "  Priority and Rank: 0x%02X", talker_adv->priority_and_rank);
+          ESP_LOGI(TAG, "  Accumulated Latency: %lu", ntohl(talker_adv->accumulated_latency));
+          ESP_LOGI(TAG, "  Event: %s",
+                   mrp_attribute_event_to_str(three_packed[0]));
+          value = (u8*)talker_adv;
 
-        break;
+          break;
+        }
       case MSRP_TALKER_FAILED:
         break;
       case MSRP_DOMAIN:
-        struct msrp_pdu_domain_first_value* domain = (struct msrp_pdu_domain_first_value*)(buf + first_value_pointer);
-        mrp_decode_three_packed_event(buf[vector_end], three_packed);
-        //TODO use all three packed event values
+        {
+          struct msrp_pdu_domain_first_value* domain = (struct msrp_pdu_domain_first_value*)(buf + first_value_pointer);
+          mrp_decode_three_packed_event(buf[vector_end], three_packed);
+          //TODO use all three packed event values
 
-        ESP_LOGI(TAG, " SR Class: {id: %d, prio: %d, vid: %d}, event: %s",
-                 domain->sr_class_id,
-                 domain->sr_class_priority,
-                 ntohs(domain->sr_class_vid),
-                 mrp_attribute_event_to_str(three_packed[0]));
-        value = (u8*)domain;
+          ESP_LOGI(TAG, " SR Class: {id: %d, prio: %d, vid: %d}, event: %s",
+                   domain->sr_class_id,
+                   domain->sr_class_priority,
+                   ntohs(domain->sr_class_vid),
+                   mrp_attribute_event_to_str(three_packed[0]));
+          value = (u8*)domain;
 
-        break;
+          break;
+        }
       case MSRP_LISTENER:
-        vector_length = attrib->attribute_length + sizeof(struct mrp_vector_header) + 2;
-        msrp_listener_attr_value_t* listener = (msrp_listener_attr_value_t*)(buf + first_value_pointer);
-        vector_end = vector_pointer + vector_length - 1;
+        {
+          vector_length = attrib->attribute_length + sizeof(struct mrp_vector_header) + 2;
+          msrp_listener_attr_value_t* listener = (msrp_listener_attr_value_t*)(buf + first_value_pointer);
+          vector_end = vector_pointer + vector_length - 1;
 
-        u8 declaration_type[4]; // four_packed
-        mrp_decode_three_packed_event(buf[vector_end - 1], three_packed);
-        mrp_decode_four_packed_event(buf[vector_end], declaration_type);
-        ESP_LOGI(TAG, "  Listener Stream ID: 0x%016llX", ntohll(listener->stream_id));
-        ESP_LOGI(TAG, "  Event: %s", mrp_attribute_event_to_str(three_packed[0]));
-        ESP_LOGI(TAG, "  Declaration Type: %d", declaration_type[0]);
-        value = (u8*)listener;
-        break;
+          u8 declaration_type[4]; // four_packed
+          mrp_decode_three_packed_event(buf[vector_end - 1], three_packed);
+          mrp_decode_four_packed_event(buf[vector_end], declaration_type);
+          ESP_LOGI(TAG, "  Listener Stream ID: 0x%016llX", ntohll(listener->stream_id));
+          ESP_LOGI(TAG, "  Event: %s", mrp_attribute_event_to_str(three_packed[0]));
+          ESP_LOGI(TAG, "  Declaration Type: %d", declaration_type[0]);
+          value = (u8*)listener;
+          break;
+        }
       default:
         ESP_LOGW(TAG, "Unknown MSRP attribute type: %d", attrib->attribute_type);
         break;
@@ -471,6 +534,12 @@ void msrp_state_init(struct avtp_state_s* state)
   head->next = head;
   head->prev = head;
   msrp->domains = head;
+
+  struct Node* map_head = calloc(1, sizeof(struct Node));
+  map_head->next = map_head;
+  map_head->prev = map_head;
+  msrp->map.listeners = map_head;
+
   msrp->domain_count = 0;
   msrp->state = state;
 

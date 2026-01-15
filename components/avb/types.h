@@ -61,4 +61,10 @@ inline void list_append(struct Node* head, struct Node* entry)
   entry->next = head;
 }
 
+inline void list_remove(struct Node* entry)
+{
+  entry->prev->next = entry->next;
+  entry->next->prev = entry->prev;
+}
+
 #endif //ETHERNET_PTP_TYPES_H

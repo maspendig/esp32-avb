@@ -83,6 +83,23 @@ typedef enum
 
 #define MSRP_MULTICAST_MAC (u8[6]){0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E}
 
+/* Listener Attribute Value Structure */
+typedef struct msrp_listener_attr_value
+{
+  u64 stream_id;
+  u8 declaration_type;
+} __attribute__((packed)) msrp_listener_attr_value_t;
+
+typedef struct msrp_map_listener
+{
+  struct Node list;
+  msrp_listener_attr_value_t value;
+} msrp_map_listener_t;
+
+typedef struct msrp_map
+{
+  struct Node* listeners;
+} msrp_map_t;
 
 typedef struct msrp_ctx
 {
@@ -90,6 +107,7 @@ typedef struct msrp_ctx
   struct avtp_state_s* state;
   struct Node* domains;
   u8 domain_count;
+  msrp_map_t map;
 } msrp_ctx_t;
 
 typedef struct msrp_attribute
@@ -139,13 +157,6 @@ typedef struct msrp_pdu_listener_first_value
 {
   u64 stream_id;
 } __attribute__((packed)) msrp_listener_first_value_t;
-
-/* Listener Attribute Value Structure */
-typedef struct msrp_listener_attr_value
-{
-  u64 stream_id;
-  u8 declaration_type;
-} __attribute__((packed)) msrp_listener_attr_value_t;
 
 typedef struct msrp_pdu_domain_first_value
 {

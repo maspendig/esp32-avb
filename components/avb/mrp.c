@@ -197,7 +197,7 @@ s8 mrp_action2event(struct mrp_application* app, struct mrp_attribute* attr)
      * If the registrar state is IN, send JoinIn
      * else send JoinMt
      */
-    if (app->participant_type == FULL && registrar->state == MRP_IN_STATE)
+    if ((app->participant_type == FULL || app->participant_type == FULL_P2P) && registrar->state == MRP_IN_STATE)
     {
       event = MRP_ATTRIBUTE_EVENT_JOIN_IN;
     }
@@ -213,7 +213,7 @@ s8 mrp_action2event(struct mrp_application* app, struct mrp_attribute* attr)
      * If the Registrar state is IN, then the AttributeEvent is In
      * If the Registrar state is MT or LV, then the AttributeEvent value Mt is encoded
      */
-    if (app->participant_type == FULL && registrar->state == MRP_IN_STATE)
+    if ((app->participant_type == FULL || app->participant_type == FULL_P2P) && registrar->state == MRP_IN_STATE)
     {
       event = MRP_ATTRIBUTE_EVENT_IN;
     }
@@ -320,7 +320,7 @@ void mrp_transmit(struct mrp_application* app)
 
       length += sizeof(u8);
       // TODO move this to app specific implementation
-      if (type == MSRP_LISTENER && !(app->send_leave_all && vector_count == 0))
+      if (type == MSRP_LISTENER && node->next != head)
       {
         // for listener attribute, we need to add declaration type (four packed)
         struct msrp_listener_attr_value listener = *(struct msrp_listener_attr_value*)value;
@@ -331,15 +331,19 @@ void mrp_transmit(struct mrp_application* app)
         struct mrp_data_unit_header* mrp_du_header = (struct mrp_data_unit_header*)packet.data;
         mrp_du_header->attribute_list_length = htons(++attribute_list_length);
       }
-      u16* end_mark = (u16*)(event_pointer);
-
       // attribute end mark
-      end_mark += sizeof(u16);
+      u8* end_mark_u8 = event_pointer + sizeof(u8);
+      if (type == MSRP_LISTENER && !(app->send_leave_all && vector_count == 0))
+      {
+        end_mark_u8 += sizeof(u8);
+      }
+
+      u16* end_mark = (u16*)(end_mark_u8);
       *end_mark = 0x0000;
       length += sizeof(u16);
 
       // message end mark
-      end_mark += sizeof(u16);
+      end_mark += 1; // Advance by 1 unit of u16 (2 bytes)
       *end_mark = 0x0000;
       length += sizeof(u16);
 
