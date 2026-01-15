@@ -33,7 +33,8 @@ typedef enum
 /* Listener Declaration Types - IEEE 802.1Qat Table 35-3 */
 typedef enum
 {
-  MSRP_LISTENER_DECLARATION_ASKING = 1,
+  MSRP_LISTENER_DECLARATION_IGNORE = 0,
+  MSRP_LISTENER_DECLARATION_ASKING,
   MSRP_LISTENER_DECLARATION_READY,
   MSRP_LISTENER_DECLARATION_FAILED,
 } msrp_listener_declaration_type_t;
@@ -107,7 +108,7 @@ typedef struct msrp_header
   msrp_attribute_t attribute[];
 } __attribute__((packed)) msrp_header_t;
 
-typedef struct msrpdu_talker_advertise
+typedef struct msrp_pdu_talker_advertise_first_value
 {
   u64 stream_id;
   u8 dest_mac[6];
@@ -116,25 +117,49 @@ typedef struct msrpdu_talker_advertise
   u16 max_frame_interval;
   u8 priority_and_rank;
   u32 accumulated_latency;
-} __attribute__((packed)) msrpdu_talker_advertise_t;
+} __attribute__((packed)) msrp_pdu_talker_advertise_first_value_t;
 
-typedef struct msrpdu_listener
+typedef msrp_pdu_talker_advertise_first_value_t msrp_talker_advertise_attr_value_t;
+
+typedef struct msrp_pdu_talker_failed_first_value
+{
+  u64 stream_id;
+  u8 dest_mac[6];
+  u16 vlan_id;
+  u16 max_frame_size;
+  u16 max_frame_interval;
+  u8 priority_and_rank;
+  u32 accumulated_latency;
+  u32 failure_code;
+} __attribute__((packed)) msrp_pdu_talker_failed_first_value_t;
+
+typedef msrp_pdu_talker_failed_first_value_t msrp_talker_failed_attr_value_t;
+
+typedef struct msrp_pdu_listener_first_value
+{
+  u64 stream_id;
+} __attribute__((packed)) msrp_listener_first_value_t;
+
+/* Listener Attribute Value Structure */
+typedef struct msrp_listener_attr_value
 {
   u64 stream_id;
   u8 declaration_type;
-} __attribute__((packed)) msrpdu_listener_t;
+} __attribute__((packed)) msrp_listener_attr_value_t;
 
-typedef struct msrpdu_domain
+typedef struct msrp_pdu_domain_first_value
 {
   u8 sr_class_id;
   u8 sr_class_priority;
   u16 sr_class_vid;
-} __attribute__((packed)) msrpdu_domain_t;
+} __attribute__((packed)) msrp_pdu_domain_first_value_t;
+
+typedef msrp_pdu_domain_first_value_t msrp_domain_attr_value_t;
 
 typedef struct msrp_domain
 {
   struct Node list;
-  msrpdu_domain_t domain;
+  msrp_pdu_domain_first_value_t domain;
 } msrp_domain_t;
 
 /**

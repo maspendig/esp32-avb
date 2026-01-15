@@ -47,7 +47,7 @@ bool validate_attribute_length(const msrp_attribute_t* attrib)
   }
 }
 
-struct msrp_domain* msrp_find_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain)
+struct msrp_domain* msrp_find_domain(struct msrp_ctx* ctx, msrp_pdu_domain_first_value_t* domain)
 {
   ESP_LOGI(TAG, "msrp_find_domain, searching for domain: { id: %d, prio: %d, vid: %d }",
            domain->sr_class_id,
@@ -58,7 +58,7 @@ struct msrp_domain* msrp_find_domain(struct msrp_ctx* ctx, msrpdu_domain_t* doma
   while (node->next != head)
   {
     struct msrp_domain* list_entry = (struct msrp_domain*)node->next;
-    msrpdu_domain_t* existing_domain = &list_entry->domain;
+    msrp_pdu_domain_first_value_t* existing_domain = &list_entry->domain;
     if (existing_domain->sr_class_id == domain->sr_class_id &&
       existing_domain->sr_class_priority == domain->sr_class_priority &&
       existing_domain->sr_class_vid == domain->sr_class_vid)
@@ -71,10 +71,10 @@ struct msrp_domain* msrp_find_domain(struct msrp_ctx* ctx, msrpdu_domain_t* doma
   return NULL;
 }
 
-msrp_domain_t* msrp_create_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain)
+msrp_domain_t* msrp_create_domain(struct msrp_ctx* ctx, msrp_pdu_domain_first_value_t* domain)
 {
   struct msrp_domain* new_domain = calloc(1, sizeof(msrp_domain_t));
-  memcpy(&new_domain->domain, domain, sizeof(msrpdu_domain_t));
+  memcpy(&new_domain->domain, domain, sizeof(msrp_pdu_domain_first_value_t));
   list_append(ctx->domains, &new_domain->list);
   ctx->domain_count++;
   ESP_LOGI(TAG, "Created new MSRP domain: { id: %d, prio: %d, vid: %d }, total domains: %d",
@@ -86,7 +86,7 @@ msrp_domain_t* msrp_create_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain)
   return new_domain;
 }
 
-void msrp_declare_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain, bool new)
+void msrp_declare_domain(struct msrp_ctx* ctx, msrp_pdu_domain_first_value_t* domain, bool new)
 {
   msrp_domain_t* existing_domain = msrp_find_domain(ctx, domain);
 
@@ -111,7 +111,7 @@ void msrp_declare_domain(struct msrp_ctx* ctx, msrpdu_domain_t* domain, bool new
  */
 void msrp_talker_advertise_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
-  msrpdu_talker_advertise_t* attr_value = (msrpdu_talker_advertise_t*)attribute->value;
+  msrp_pdu_talker_advertise_first_value_t* attr_value = (msrp_pdu_talker_advertise_first_value_t*)attribute->value;
   ESP_LOGW(TAG, "Talker Advertise Join Indication");
   // TODO implement REGISTER_STREAM.indication to Listener application entity
 }
@@ -139,7 +139,7 @@ void msrp_listener_join_indication(struct mrp_application* app, struct mrp_attri
 
 void msrp_domain_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
-  msrpdu_domain_t* attr_value = (msrpdu_domain_t*)attribute->value;
+  msrp_pdu_domain_first_value_t* attr_value = (msrp_pdu_domain_first_value_t*)attribute->value;
 
   ESP_LOGI(TAG, "MSRP Domain Join Indication: { id: %d, prio: %d, vid: %d }, %s",
            attr_value->sr_class_id,
@@ -194,7 +194,12 @@ void msrp_mad_leave_indication(struct mrp_application* app, struct mrp_attribute
   }
 }
 
-u8 msrp_get_attribute_value_length(u8 attribute_type)
+/**
+ * Get the length of the MSRP attribute value based on the attribute type
+ * differes from the attribute length field in the attribute header
+ * as some attributes carries additional fields (e.g., declaration type for listener attribute)
+ */
+u8 msrp_get_attribute_length(u8 attribute_type)
 {
   switch (attribute_type)
   {
@@ -206,6 +211,29 @@ u8 msrp_get_attribute_value_length(u8 attribute_type)
     return MSRP_ATTRIBUTE_LENGTH_LISTENER;
   case MSRP_DOMAIN:
     return MSRP_ATTRIBUTE_LENGTH_DOMAIN;
+  default:
+    ESP_LOGW(TAG, "Unknown MSRP attribute type %d for value length retrieval", attribute_type);
+    return 0;
+  }
+}
+
+/**
+ * Get the length of the MSRP attribute value based on the attribute type
+ * differes from the attribute length field in the attribute header
+ * as some attributes carries additional fields (e.g., declaration type for listener attribute)
+ */
+u8 msrp_get_attribute_value_length(u8 attribute_type)
+{
+  switch (attribute_type)
+  {
+  case MSRP_TALKER_ADVERTISE:
+    return sizeof(msrp_talker_advertise_attr_value_t);
+  case MSRP_TALKER_FAILED:
+    return sizeof(msrp_talker_failed_attr_value_t);
+  case MSRP_LISTENER:
+    return sizeof(msrp_listener_attr_value_t);
+  case MSRP_DOMAIN:
+    return sizeof(msrp_domain_attr_value_t);
   default:
     ESP_LOGW(TAG, "Unknown MSRP attribute type %d for value length retrieval", attribute_type);
     return 0;
@@ -305,7 +333,8 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
       switch (attrib->attribute_type)
       {
       case MSRP_TALKER_ADVERTISE:
-        msrpdu_talker_advertise_t* talker_adv = (msrpdu_talker_advertise_t*)(buf + first_value_pointer);
+        msrp_pdu_talker_advertise_first_value_t* talker_adv = (msrp_pdu_talker_advertise_first_value_t*)(buf +
+          first_value_pointer);
         mrp_decode_four_packed_event(buf[vector_end], three_packed);
         ESP_LOGI(TAG, "  Talker Stream ID: 0x%016llX", ntohll(talker_adv->stream_id));
         ESP_LOGI(TAG, "  Dest MAC: %02X:%02X:%02X:%02X:%02X:%02X",
@@ -324,7 +353,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
       case MSRP_TALKER_FAILED:
         break;
       case MSRP_DOMAIN:
-        struct msrpdu_domain* domain = (struct msrpdu_domain*)(buf + first_value_pointer);
+        struct msrp_pdu_domain_first_value* domain = (struct msrp_pdu_domain_first_value*)(buf + first_value_pointer);
         mrp_decode_three_packed_event(buf[vector_end], three_packed);
         //TODO use all three packed event values
 
@@ -338,7 +367,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
         break;
       case MSRP_LISTENER:
         vector_length = attrib->attribute_length + sizeof(struct mrp_vector_header) + 2;
-        msrpdu_listener_t* listener = (msrpdu_listener_t*)(buf + first_value_pointer);
+        msrp_listener_attr_value_t* listener = (msrp_listener_attr_value_t*)(buf + first_value_pointer);
         vector_end = vector_pointer + vector_length - 1;
 
         u8 declaration_type[4]; // four_packed
@@ -408,9 +437,12 @@ void msrp_register_attach_request(struct mrp_application* app, u64 stream_id)
    * depending on neighborProtocolVersion. The attribute_value shall contain the StreamID and the Declaration Type.
    */
 
-  mrp_mad_join_request(app, MSRP_LISTENER, (u8*)&stream_id, true);
+  msrp_listener_attr_value_t listener_attr = {
+    .stream_id = htonll(stream_id),
+    .declaration_type = MSRP_LISTENER_DECLARATION_READY
+  };
+  mrp_mad_join_request(app, MSRP_LISTENER, (u8*)&listener_attr, true);
 }
-
 
 void msrp_state_init(struct avtp_state_s* state)
 {
@@ -428,6 +460,7 @@ void msrp_state_init(struct avtp_state_s* state)
   msrp->app.mad_join_indication = &msrp_mad_join_indication;
   msrp->app.mad_leave_indication = &msrp_mad_leave_indication;
   msrp->app.get_attribute_value_length = &msrp_get_attribute_value_length;
+  msrp->app.get_attribute_length = &msrp_get_attribute_length;
   msrp->app.uses_attribute_list_length = true;
   msrp->app.tx_mrpdu = &mrsp_tx_mrpdu;
   msrp->app.participant_type = FULL_P2P;
@@ -443,7 +476,7 @@ void msrp_state_init(struct avtp_state_s* state)
 
   // register domains
 
-  msrpdu_domain_t default_domain = {
+  msrp_pdu_domain_first_value_t default_domain = {
     .sr_class_id = MSRP_SR_CLASS_A,
     .sr_class_priority = MSRP_SR_CLASS_A_PRIO,
     // TODO move to config

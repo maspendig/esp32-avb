@@ -226,6 +226,7 @@ s8 mrp_action2event(struct mrp_application* app, struct mrp_attribute* attr)
   return event;
 }
 
+// TODO implement aggregation of multiple attributes into one MRPDU packet
 void mrp_transmit(struct mrp_application* app)
 {
   ESP_LOGI(TAG, "MRP Transmission triggered. leaveall: %s", app->send_leave_all ? "true" : "false");
@@ -236,13 +237,14 @@ void mrp_transmit(struct mrp_application* app)
     u8 data[1500];
   } __attribute__((packed));
 
-
   for (u8 type = 1; type < MRP_MAX_ATTRIBUTE_TYPES; type++)
   {
     ESP_LOGI(TAG, "Processing MRP attribute type %d for transmission", type);
+    u8 attribute_length = app->get_attribute_length(type);
     u8 attribute_value_length = app->get_attribute_value_length(type);
+
     // number of values * value length + event byte + vector header + end mark
-    u8 attribute_list_length = attribute_value_length + sizeof(u16) + sizeof(u8) + sizeof(u16);
+    u8 attribute_list_length = attribute_length + sizeof(u16) + sizeof(u8) + sizeof(u16);
 
     struct Node* head = app->attributes[type];
     struct Node* node = head;
@@ -256,7 +258,7 @@ void mrp_transmit(struct mrp_application* app)
 
     while (node->next != head || (vector_count == 0 && app->send_leave_all))
     {
-      u8 value[attribute_list_length];
+      u8 value[attribute_value_length];
       s8 event = 0;
 
       if (node->next != head)
@@ -275,16 +277,15 @@ void mrp_transmit(struct mrp_application* app)
       else if (app->send_leave_all)
       {
         attribute_list_length -= 1;
-        memset(value, 0, attribute_value_length);
+        memset(value, 0, attribute_list_length);
         // send leave all even if no attributes are present
       }
-      // TODO implement aggregation of multiple attributes into one MRPDU packet
       u16* vector_header;
       if (app->uses_attribute_list_length == true)
       {
         struct mrp_data_unit_header* mrp_du_header = (struct mrp_data_unit_header*)packet.data;
         mrp_du_header->attribute_type = type;
-        mrp_du_header->attribute_length = attribute_value_length;
+        mrp_du_header->attribute_length = attribute_length;
         mrp_du_header->attribute_list_length = htons(attribute_list_length);
         vector_header = (u16*)(packet.data + sizeof(struct mrp_data_unit_header));
         length += sizeof(struct mrp_data_unit_header);
@@ -293,7 +294,7 @@ void mrp_transmit(struct mrp_application* app)
       {
         struct mvrp_data_unit_header* mvrp_du_header = (struct mvrp_data_unit_header*)packet.data;
         mvrp_du_header->attribute_type = type;
-        mvrp_du_header->attribute_length = attribute_value_length;
+        mvrp_du_header->attribute_length = attribute_length;
         vector_header = (u16*)(packet.data + sizeof(struct mvrp_data_unit_header));
         length += sizeof(struct mrp_data_unit_header);
       }
@@ -309,29 +310,39 @@ void mrp_transmit(struct mrp_application* app)
       u8* value_pointer = (u8*)vector_header + sizeof(u16);
       length += sizeof(u16);
 
-      memcpy(value_pointer, value, attribute_value_length);
-      length += attribute_value_length;
-      ESP_LOG_BUFFER_HEX_LEVEL(TAG, (u8*)&packet, length, ESP_LOG_INFO);
-      ESP_LOGI(TAG, "  Added attribute value for type %d, length %d", type, attribute_value_length);
+      memcpy(value_pointer, value, attribute_length);
+      length += attribute_length;
+      ESP_LOGI(TAG, "  Added attribute value for type %d, length %d", type, attribute_length);
 
       // event byte
-      u8* event_pointer = value_pointer + attribute_value_length;
+      u8* event_pointer = value_pointer + attribute_length;
       *event_pointer = mrp_encode_three_packed_event(event, 0, 0);
 
+      length += sizeof(u8);
       // TODO move this to app specific implementation
       if (type == MSRP_LISTENER && !(app->send_leave_all && vector_count == 0))
       {
         // for listener attribute, we need to add declaration type (four packed)
-        struct msrpdu_listener listener = *(struct msrpdu_listener*)value;
+        struct msrp_listener_attr_value listener = *(struct msrp_listener_attr_value*)value;
         *(event_pointer + 1) = mrp_encode_four_packed_event(listener.declaration_type, 0, 0, 0);
+        ESP_LOGI(TAG, "  Adding declaration type [%d] for listener attribute", listener.declaration_type);
         length += sizeof(u8);
+        event_pointer += sizeof(u8);
+        struct mrp_data_unit_header* mrp_du_header = (struct mrp_data_unit_header*)packet.data;
+        mrp_du_header->attribute_list_length = htons(++attribute_list_length);
       }
+      u16* end_mark = (u16*)(event_pointer);
 
-      length += sizeof(u8);
-      // end mark
-      u16* end_mark = (u16*)(event_pointer + sizeof(u8));
+      // attribute end mark
+      end_mark += sizeof(u16);
       *end_mark = 0x0000;
       length += sizeof(u16);
+
+      // message end mark
+      end_mark += sizeof(u16);
+      *end_mark = 0x0000;
+      length += sizeof(u16);
+
 
       // calc length
       app->tx_mrpdu(app, (u8*)&packet, length);
