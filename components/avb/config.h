@@ -58,8 +58,8 @@
 #define CONFIG_LISTENER_CAPABILITIES 0x4001
 
 // Talker configuration (stream source - sends audio)
-#define CONFIG_NUM_STREAM_OUTPUTS 1
-#define CONFIG_TALKER_STREAM_SOURCES 1
+#define CONFIG_NUM_STREAM_OUTPUTS 0
+#define CONFIG_TALKER_STREAM_SOURCES 0
 #define CONFIG_TALKER_CAPABILITIES 0x4001
 
 // Stream port configuration

@@ -266,7 +266,7 @@ void mrp_transmit(struct mrp_application* app)
         /* regular attribute sending */
         struct mrp_attribute* attribute = (struct mrp_attribute*)node->next;
         event = mrp_action2event(app, attribute);
-        if (attribute->applicant.tx == false || event <= 0)
+        if (attribute->applicant.tx == false || event < 0)
         {
           goto next;
         }
@@ -811,7 +811,7 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
     }
     break;
   default:
-    ESP_LOGI(TAG, "Unknown event %d", event);
+    ESP_LOGI(TAG, "applicant sm: Unknown event %d", event);
   }
 
   /* 802.1Q-2022 10-3 Note
@@ -936,7 +936,7 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
     }
     break;
   default:
-    ESP_LOGW(TAG, "Unknown event %d", event);
+    ESP_LOGW(TAG, "registrar sm: Unknown event %d", event);
     break;
   }
 
