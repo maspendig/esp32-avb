@@ -151,6 +151,7 @@ struct mrp_application
 
   struct mrp_leaveall leaveall;
   esp_timer_handle_t join_timer;
+  esp_timer_handle_t periodic_timer;
 };
 
 

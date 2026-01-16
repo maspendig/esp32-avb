@@ -518,18 +518,83 @@ int mrp_stop_leave_timer(const struct mrp_attribute* attr)
 
 //endregion
 
+//region periodic timer
+void mrp_periodic_timer_callback(void* arg)
+{
+  const struct mrp_application* app = (struct mrp_application*)arg;
+  for (u8 type = 1; type < MRP_MAX_ATTRIBUTE_TYPES; type++)
+  {
+    struct Node* head = app->attributes[type];
+    struct Node* node = head;
+    while (node->next != head)
+    {
+      struct mrp_attribute* attribute = (struct mrp_attribute*)node->next;
+      mrp_applicant_state_machine(attribute, MRP_EVENT_PERIODICTIMER);
+      node = node->next;
+    }
+  }
+}
+
+int mrp_init_periodic_timer(const struct mrp_application* app)
+{
+  const esp_timer_create_args_t timer_args = {
+    .callback = &mrp_periodic_timer_callback,
+    .arg = (void*)app,
+    .name = "mrp_periodic_timer"
+  };
+  return esp_timer_create(&timer_args, &app->periodic_timer);
+}
+
+void mrp_stop_periodic_timer(const struct mrp_application* app)
+{
+  esp_timer_stop(app->periodic_timer);
+}
+
+/* Restart or start periodic timer */
+void mrp_start_periodic_timer(const struct mrp_application* app)
+{
+  if (esp_timer_is_active(app->periodic_timer))
+  {
+    esp_timer_restart(app->periodic_timer, MRP_PERIODIC_TIME_MS * 1000); // us
+  }
+  else
+  {
+    esp_timer_start_periodic(app->periodic_timer, MRP_PERIODIC_TIME_MS * 1000); // us
+  }
+}
+
+bool mrp_is_periodic_timer_active(const struct mrp_application* app)
+{
+  return esp_timer_is_active(app->periodic_timer);
+}
+
+//endregion
+
 int mrp_init_timers(struct mrp_application* app)
 {
   int ret = ESP_OK;
   ret += mrp_init_leaveall_timer(app);
   ret += mrp_init_join_timer(app);
+
+  if (app->type != MSRP)
+  {
+    ret += mrp_init_periodic_timer(app);
+  }
   return ret;
+}
+
+void mrp_stop_timers(const struct mrp_application* app)
+{
+  esp_timer_stop(app->leaveall.timer);
+  esp_timer_stop(app->join_timer);
+  esp_timer_stop(app->periodic_timer);
 }
 
 void mrp_delete_timers(const struct mrp_application* app)
 {
   esp_timer_delete(app->leaveall.timer);
   esp_timer_delete(app->join_timer);
+  esp_timer_delete(app->periodic_timer);
 }
 
 void mrp_parse_vector_header(u16 vector_header, bool* leave_all_event, u16* number_of_values)
@@ -1157,8 +1222,7 @@ void mrp_enable(struct mrp_application* app)
   }
   if (app->type != MSRP)
   {
-    // TODO implement periodic for MVRP
-    // mrp_periodic_state_machine(attr, MRP_EVENT_BEGIN);
+    mrp_start_periodic_timer(app);
   }
   app->enabled = true;
 }
@@ -1193,6 +1257,7 @@ int mrp_init(struct mrp_application* app, mrp_application_type_t type)
 
 int mrp_exit(const struct mrp_application* app)
 {
+  mrp_stop_timers(app);
   mrp_delete_timers(app);
   return ESP_OK;
 }
