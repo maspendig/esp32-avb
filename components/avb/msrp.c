@@ -140,6 +140,42 @@ static void msrp_map_remove_listener(msrp_ctx_t* ctx, u64 stream_id)
   }
 }
 
+msrp_stream_t* msrp_find_stream(msrp_ctx_t* ctx, u64 stream_id)
+{
+  struct Node* head = ctx->map.streams;
+  struct Node* node = head;
+  while (node->next != head)
+  {
+    msrp_stream_t* stream = (msrp_stream_t*)node->next;
+    if (stream->first_value.stream_id == stream_id)
+    {
+      return stream;
+    }
+    node = node->next;
+  }
+  ESP_LOGI(TAG, "Stream 0x%016llX not found in map", ntohll(stream_id));
+  return NULL;
+}
+
+msrp_stream_t* msrp_create_stream(msrp_ctx_t* ctx, u64 stream_id)
+{
+  msrp_stream_t* stream = calloc(1, sizeof(msrp_stream_t));
+
+  stream = msrp_find_stream(ctx, stream_id);
+  if (stream != NULL)
+  {
+    ESP_LOGI(TAG, "Stream 0x%016llX already exists in map", ntohll(stream_id));
+    return stream;
+  }
+
+  stream = calloc(1, sizeof(msrp_stream_t));
+  stream->first_value.stream_id = stream_id;
+  ESP_LOGI(TAG, "Creating new stream in map: StreamID 0x%016llX", ntohll(stream->first_value.stream_id));
+  list_append(ctx->map.streams, &stream->list);
+
+  return stream;
+}
+
 /**
  * IEEE 802.1Q-2022 - 35.2.3.1.2 REGISTER_STREAM.indication
  * On receipt of a MAD_Join.indication service primitive (10.2, 10.3)
@@ -148,9 +184,12 @@ static void msrp_map_remove_listener(msrp_ctx_t* ctx, u64 stream_id)
  */
 void msrp_talker_advertise_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
-  msrp_pdu_talker_advertise_first_value_t* attr_value = (msrp_pdu_talker_advertise_first_value_t*)attribute->value;
-  ESP_LOGW(TAG, "Talker Advertise Join Indication");
-  // TODO implement REGISTER_STREAM.indication to Listener application entity
+  msrp_ctx_t* ctx = (msrp_ctx_t*)app->ctx;
+  msrp_talker_advertise_attr_value_t* attr_value = (msrp_talker_advertise_attr_value_t*)attribute->value;
+  ESP_LOGW(TAG, "MSRP Talker Advertise Join Indication: StreamID 0x%016llX, New: %d",
+           ntohll(attr_value->stream_id),
+           new);
+  msrp_stream_t* stream = msrp_create_stream(ctx, attr_value->stream_id);
 }
 
 void msrp_talker_failed_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
@@ -291,8 +330,6 @@ u8 msrp_get_attribute_value_length(u8 attribute_type)
 
 void mrsp_tx_mrpdu(struct mrp_application* app, u8* buf, size_t len)
 {
-  ESP_LOGI(TAG, "Transmitting MSRP MRPDU");
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, buf, len, ESP_LOG_INFO);
   msrp_ctx_t* ctx = app->ctx;
   struct avtp_state_s* avtp_state = ctx->state;
 
@@ -369,10 +406,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
         while (node->next != head)
         {
           struct mrp_attribute* list_entry = (struct mrp_attribute*)node->next;
-          // TODO add a function that takes the attribute directly, as we already have it here
-          mrp_process_attribute_event(&state->msrp.app, attrib->attribute_type,
-                                      list_entry->value,
-                                      MRP_ATTRIBUTE_EVENT_LV);
+          mrp_process_attribute(&state->msrp.app, list_entry, MRP_ATTRIBUTE_EVENT_LV);
           node = node->next;
         }
         mrp_leaveall_state_machine(&state->msrp.app, MRP_EVENT_R_LA);
@@ -406,6 +440,21 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
           ESP_LOGI(TAG, "  Event: %s",
                    mrp_attribute_event_to_str(three_packed[0]));
           value = (u8*)talker_adv;
+
+          struct Node* head = state->msrp.app.attributes[MSRP_LISTENER];
+          struct Node* node = head;
+          while (node->next != head)
+          {
+            struct mrp_attribute* list_entry = (struct mrp_attribute*)node->next;
+            msrp_listener_attr_value_t* listener = (msrp_listener_attr_value_t*)list_entry->value;
+            if (listener->stream_id == talker_adv->stream_id)
+            {
+              ESP_LOGI(TAG, "  Found Listener for StreamID 0x%016llX in map, sending REGISTER_STREAM.indication",
+                       ntohll(listener->stream_id));
+              mrp_process_attribute(&state->msrp.app, list_entry, three_packed[0]);
+            }
+            node = node->next;
+          }
 
           break;
         }
@@ -465,9 +514,9 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
                mrp_attribute_event_to_str(three_packed[0])
       );
 
-      mrp_process_attribute_event(&state->msrp.app, attrib->attribute_type,
-                                  value,
-                                  three_packed[0]);
+      mrp_find_and_process_attribute(&state->msrp.app, attrib->attribute_type,
+                                     value,
+                                     three_packed[0]);
     }
     while (next_vector);
 
@@ -539,6 +588,11 @@ void msrp_state_init(struct avtp_state_s* state)
   map_head->next = map_head;
   map_head->prev = map_head;
   msrp->map.listeners = map_head;
+
+  struct Node* stream_head = calloc(1, sizeof(struct Node));
+  stream_head->next = stream_head;
+  stream_head->prev = stream_head;
+  msrp->map.streams = stream_head;
 
   msrp->domain_count = 0;
   msrp->state = state;

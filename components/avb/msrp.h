@@ -99,6 +99,7 @@ typedef struct msrp_map_listener
 typedef struct msrp_map
 {
   struct Node* listeners;
+  struct Node* streams;
 } msrp_map_t;
 
 typedef struct msrp_ctx
@@ -172,6 +173,13 @@ typedef struct msrp_domain
   struct Node list;
   msrp_pdu_domain_first_value_t domain;
 } msrp_domain_t;
+
+typedef struct msrp_stream
+{
+  struct Node list;
+  msrp_pdu_talker_failed_first_value_t first_value;
+  msrp_ctx_t* ctx;
+} msrp_stream_t;
 
 /**
  * Initialize the MSRP subsystem

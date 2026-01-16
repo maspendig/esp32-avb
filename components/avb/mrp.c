@@ -197,6 +197,8 @@ s8 mrp_action2event(struct mrp_application* app, struct mrp_attribute* attr)
      * If the registrar state is IN, send JoinIn
      * else send JoinMt
      */
+    ESP_LOGI(TAG, "mrp_action2event: Checking for JoinIn condition. Registrar state: %s",
+             mrp_state_to_str(registrar->state));
     if ((app->participant_type == FULL || app->participant_type == FULL_P2P) && registrar->state == MRP_IN_STATE)
     {
       event = MRP_ATTRIBUTE_EVENT_JOIN_IN;
@@ -239,7 +241,6 @@ void mrp_transmit(struct mrp_application* app)
 
   for (u8 type = 1; type < MRP_MAX_ATTRIBUTE_TYPES; type++)
   {
-    ESP_LOGI(TAG, "Processing MRP attribute type %d for transmission", type);
     u8 attribute_length = app->get_attribute_length(type);
     u8 attribute_value_length = app->get_attribute_value_length(type);
 
@@ -858,9 +859,6 @@ void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event)
 
 void mrp_registrar_exec_action(struct mrp_attribute* attr)
 {
-  ESP_LOGI(TAG, "Executing Registrar action %s for attribute type %d",
-           mrp_action_to_str(attr->registrar.action),
-           attr->type);
   switch (attr->registrar.action)
   {
   case MRP_ACTION_NEW:
@@ -876,8 +874,12 @@ void mrp_registrar_exec_action(struct mrp_attribute* attr)
     attr->app->mad_leave_indication(attr->app, attr);
     break;
   default:
-    break;
+    return;
   }
+
+  ESP_LOGI(TAG, "Registrar action %s for attribute type %d",
+           mrp_action_to_str(attr->registrar.action),
+           attr->type);
 }
 
 void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
@@ -944,7 +946,8 @@ void mrp_registrar_state_machine(struct mrp_attribute* attr, mrp_event_t event)
     break;
   }
 
-  ESP_LOGI(TAG, "Registrar SM - event: %s, state [%s] => [%s], action %s",
+  if (attr->type == MSRP_LISTENER)
+    ESP_LOGI(TAG, "Registrar SM - event: %s, state [%s] => [%s], action %s",
            mrp_event_to_str(event),
            mrp_state_to_str(registrar->state),
            mrp_state_to_str(state),
@@ -1123,17 +1126,8 @@ void mrp_mad_join_request(struct mrp_application* app, u8 attribute_type, u8* va
   }
 }
 
-void mrp_process_attribute_event(struct mrp_application* app, u8 type, u8* value, mrp_attribute_event_t event)
+void mrp_process_attribute(struct mrp_application* app, struct mrp_attribute* attr, mrp_attribute_event_t event)
 {
-  struct mrp_attribute* attr;
-  attr = mrp_get_or_create_attribute(app, type, value);
-
-  const mrp_event_t _event = mrp_attribute_event_to_event_map[event];
-  ESP_LOGI(TAG, "Mapped attribute event %s[%d] to protocol event %s[%d]",
-           mrp_attribute_event_to_str(event),
-           event,
-           mrp_event_to_str(_event),
-           _event);
   mrp_registrar_state_machine(attr, mrp_attribute_event_to_event_map[event]);
   mrp_applicant_state_machine(attr, mrp_attribute_event_to_event_map[event]);
 
@@ -1144,6 +1138,14 @@ void mrp_process_attribute_event(struct mrp_application* app, u8 type, u8* value
     * or the registrar state machine is in state MT.
     */
   mrp_free_attribute_check(app, attr);
+}
+
+void mrp_find_and_process_attribute(struct mrp_application* app, u8 type, u8* value, mrp_attribute_event_t event)
+{
+  struct mrp_attribute* attr;
+  attr = mrp_get_or_create_attribute(app, type, value);
+
+  mrp_process_attribute(app, attr, event);
 }
 
 void mrp_enable(struct mrp_application* app)
