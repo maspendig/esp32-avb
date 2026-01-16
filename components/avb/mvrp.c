@@ -19,6 +19,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <esp_timer.h>
 
 #define TAG "mvrp"
 
@@ -45,6 +46,12 @@ struct mvrp_msg_s
  * Timer Helper Functions
  * ============================================================================
  */
+
+static void mvrp_periodic_timer_cb(void* arg)
+{
+  mvrp_state_t* state = (mvrp_state_t*)arg;
+  state->periodic_pending = true;
+}
 
 static void timer_reset(struct timespec* timer)
 {
@@ -304,6 +311,35 @@ static void applicant_rx_leave(mvrp_vlan_decl_t* decl)
   if (old_state != decl->applicant_state)
   {
     ESP_LOGD(TAG, "Applicant rLeave: %s -> %s",
+             applicant_state_string(old_state),
+             applicant_state_string(decl->applicant_state));
+  }
+}
+
+/**
+ * Process applicant state machine on periodic transmission event
+ */
+static void applicant_periodic(mvrp_vlan_decl_t* decl)
+{
+  mvrp_applicant_state_t old_state = decl->applicant_state;
+
+  switch (decl->applicant_state)
+  {
+  case MVRP_APPLICANT_QA:
+    decl->applicant_state = MVRP_APPLICANT_AA;
+    decl->tx_pending = true;
+    break;
+  case MVRP_APPLICANT_QP:
+    decl->applicant_state = MVRP_APPLICANT_AP;
+    decl->tx_pending = true;
+    break;
+  default:
+    break;
+  }
+
+  if (old_state != decl->applicant_state)
+  {
+    ESP_LOGD(TAG, "Applicant Periodic: %s -> %s",
              applicant_state_string(old_state),
              applicant_state_string(decl->applicant_state));
   }
@@ -697,7 +733,28 @@ void mvrp_state_init(mvrp_state_t* state)
   /* Initialize applicant state to VO (observer) */
   state->vlan_decl.applicant_state = MVRP_APPLICANT_VO;
 
+  /* Trigger Join! for default VLAN 2 to ensure we start sending declarations */
+  // Fix for "no package send out"
+  state->vlan_decl.active = true;
+  state->vlan_decl.vlan_id = 2; // Default VLAN
+  // applicant_join(&state->vlan_decl); // Cannot call static function easily if not forward declared, but it is above.
+  // Actually recursive calls or static ordering matters. applicant_join is defined as static above.
+  // But I am in mvrp_state_init which is below applicant_state_machine defs?
+  // Let's check... mvrp_state_init is at line 688, applicant_join is static.
+  // To avoid ordering issues, I'll essentially inline minimal join logic or just set state.
+  state->vlan_decl.applicant_state = MVRP_APPLICANT_VN;
+  state->vlan_decl.tx_pending = true;
+
   timer_reset(&state->last_tx_time);
+
+  const esp_timer_create_args_t periodic_timer_args = {
+    .callback = &mvrp_periodic_timer_cb,
+    .arg = state,
+    .name = "mvrp_periodic"
+  };
+
+  esp_timer_create(&periodic_timer_args, &state->periodic_timer);
+  esp_timer_start_periodic(state->periodic_timer, MRP_PERIODIC_TIME_MS * 1000); // us
 }
 
 void mvrp_net_rx(struct avtp_state_s* state)
@@ -745,6 +802,16 @@ void mvrp_periodic(struct avtp_state_s* state)
       {
         registrar_leave_timer_expired(&mvrp->vlan_registrations[i]);
       }
+    }
+  }
+
+  /* Process periodic timer event */
+  if (mvrp->periodic_pending)
+  {
+    mvrp->periodic_pending = false;
+    if (mvrp->vlan_decl.active)
+    {
+      applicant_periodic(&mvrp->vlan_decl);
     }
   }
 

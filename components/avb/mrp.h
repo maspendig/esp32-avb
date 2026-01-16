@@ -11,6 +11,7 @@
 #define MRP_JOIN_TIME_MS     200
 #define MRP_LEAVE_TIME_MS    1000
 #define MRP_LEAVEALL_TIME_MS 10000
+#define MRP_PERIODIC_TIME_MS 1000       /* Periodic transmission interval */
 
 /* Maximum number of attribute types supported */
 #define MRP_MAX_ATTRIBUTE_TYPES 5

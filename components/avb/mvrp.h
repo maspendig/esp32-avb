@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <time.h>
 #include "types.h"
+#include <esp_timer.h>
 
 /* Forward declaration */
 struct avtp_state_s;
@@ -119,6 +120,8 @@ typedef struct
   u32 join_timeout_ms; /* JoinTime in ms */
   u32 leave_timeout_ms; /* LeaveTime in ms */
   u32 leave_all_timeout_ms; /* LeaveAllTime in ms */
+  esp_timer_handle_t periodic_timer;
+  volatile bool periodic_pending;
 } mvrp_state_t;
 
 /* ============================================================================
