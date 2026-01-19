@@ -244,8 +244,6 @@ void mrp_transmit(struct mrp_application* app)
     u8 attribute_length = app->get_attribute_length(type);
     u8 attribute_value_length = app->get_attribute_value_length(type);
 
-    // number of values * value length + event byte + end mark
-    u8 attribute_list_length = attribute_length + sizeof(u16) + sizeof(u16);
 
     struct Node* head = app->attributes[type];
     struct Node* node = head;
@@ -260,6 +258,10 @@ void mrp_transmit(struct mrp_application* app)
     while (node->next != head || (vector_count == 0 && app->send_leave_all))
     {
       struct mrp_attribute* attribute = node->next != head ? (struct mrp_attribute*)node->next : NULL;
+
+      // number of values * value length + vector header + end mark
+      u8 attribute_list_length = attribute_length + sizeof(u16) + sizeof(u16);
+
       u8 value[attribute_value_length];
       s8 event = 0;
 
