@@ -262,7 +262,7 @@ void mrp_transmit(struct mrp_application* app)
       // number of values * value length + vector header + end mark
       u8 attribute_list_length = attribute_length + sizeof(u16) + sizeof(u16);
 
-      u8 value[attribute_value_length];
+      u8 value[attribute_length];
       s8 event = 0;
 
       if (attribute)
@@ -279,7 +279,7 @@ void mrp_transmit(struct mrp_application* app)
       }
       else if (app->send_leave_all)
       {
-        memset(value, 0, attribute_list_length);
+        memset(value, 0, attribute_length);
         // send leave all even if no attributes are present
       }
       u16* vector_header;
@@ -298,9 +298,8 @@ void mrp_transmit(struct mrp_application* app)
         mvrp_du_header->attribute_type = type;
         mvrp_du_header->attribute_length = attribute_length;
         vector_header = (u16*)(packet.data + sizeof(struct mvrp_data_unit_header));
-        length += sizeof(struct mrp_data_unit_header);
+        length += sizeof(struct mvrp_data_unit_header);
       }
-
 
       // vector header
       *vector_header = htons(attribute ? 1 : 0); // no leave all, 1 value
@@ -314,7 +313,6 @@ void mrp_transmit(struct mrp_application* app)
 
       memcpy(value_pointer, value, attribute_length);
       length += attribute_length;
-      ESP_LOGI(TAG, "  Added attribute value for type %d, length %d", type, attribute_length);
 
       u8* event_pointer = value_pointer + attribute_length;
 
@@ -332,24 +330,8 @@ void mrp_transmit(struct mrp_application* app)
         mrp_du_header->attribute_list_length = htons(attribute_list_length);
       }
 
-      // attribute end mark
-      u8* end_mark_u8 = event_pointer + sizeof(u8);
-      if (type == MSRP_LISTENER && !(app->send_leave_all && vector_count == 0))
-      {
-        end_mark_u8 += sizeof(u8);
-      }
+      length += 2 * sizeof(u16); // end marks
 
-      u16* end_mark = (u16*)(end_mark_u8);
-      *end_mark = 0x0000;
-      length += sizeof(u16);
-
-      // message end mark
-      end_mark += 1; // Advance by 1 unit of u16 (2 bytes)
-      *end_mark = 0x0000;
-      length += sizeof(u16);
-
-
-      // calc length
       app->tx_mrpdu(app, (u8*)&packet, length);
 
       vector_count++;
