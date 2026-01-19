@@ -259,13 +259,13 @@ void mrp_transmit(struct mrp_application* app)
 
     while (node->next != head || (vector_count == 0 && app->send_leave_all))
     {
+      struct mrp_attribute* attribute = node->next != head ? (struct mrp_attribute*)node->next : NULL;
       u8 value[attribute_value_length];
       s8 event = 0;
 
-      if (node->next != head)
+      if (attribute)
       {
         /* regular attribute sending */
-        struct mrp_attribute* attribute = (struct mrp_attribute*)node->next;
         event = mrp_action2event(app, attribute);
         if (attribute->applicant.tx == false || event < 0)
         {
