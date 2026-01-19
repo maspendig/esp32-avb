@@ -176,6 +176,36 @@ msrp_stream_t* msrp_create_stream(msrp_ctx_t* ctx, u64 stream_id)
   return stream;
 }
 
+ssize_t set_attribute_event(struct mrp_application* app, struct mrp_attribute* attr, u8 event, u8* buf)
+{
+  msrp_attribute_type_t type = attr->type;
+
+
+  switch (type)
+  {
+  case MSRP_TALKER_ADVERTISE:
+  case MSRP_DOMAIN:
+  case MSRP_TALKER_FAILED:
+    // write three packed attribute event to buffer
+    buf[0] = mrp_encode_three_packed_event(event, 0, 0);
+
+    return sizeof(u8);
+  case MSRP_LISTENER:
+
+    struct msrp_listener_attr_value listener = *(struct msrp_listener_attr_value*)attr->value;
+    // write three packed attribute event to buffer
+    buf[0] = mrp_encode_three_packed_event(event, 0, 0);
+    // write four packed declaration type to buffer
+    buf[1] = mrp_encode_four_packed_event(listener.declaration_type, 0, 0, 0);
+    return sizeof(u16);
+    break;
+
+  default:
+    ESP_LOGW(TAG, "set_attribute_event: unknown attribute type %d", type);
+    return 0;
+  }
+}
+
 /**
  * IEEE 802.1Q-2022 - 35.2.3.1.2 REGISTER_STREAM.indication
  * On receipt of a MAD_Join.indication service primitive (10.2, 10.3)
@@ -573,6 +603,7 @@ void msrp_state_init(struct avtp_state_s* state)
   msrp->app.mad_leave_indication = &msrp_mad_leave_indication;
   msrp->app.get_attribute_value_length = &msrp_get_attribute_value_length;
   msrp->app.get_attribute_length = &msrp_get_attribute_length;
+  msrp->app.set_attribute_event = &set_attribute_event;
   msrp->app.uses_attribute_list_length = true;
   msrp->app.tx_mrpdu = &mrsp_tx_mrpdu;
   msrp->app.participant_type = FULL_P2P;

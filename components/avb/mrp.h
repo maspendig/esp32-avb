@@ -142,6 +142,7 @@ struct mrp_application
   void (*mad_leave_indication)(struct mrp_application* app, struct mrp_attribute* attr);
   u8 (*get_attribute_value_length)(u8 attribute_type);
   u8 (*get_attribute_length)(u8 attribute_type);
+  ssize_t (*set_attribute_event)(struct mrp_application* app, struct mrp_attribute* attr, u8 event, u8* buf);
   void (*tx_mrpdu)(struct mrp_application* app, u8* buf, size_t len);
   bool uses_attribute_list_length;
   bool send_leave_all;

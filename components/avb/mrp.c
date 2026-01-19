@@ -320,22 +320,13 @@ void mrp_transmit(struct mrp_application* app)
       {
         *event_pointer = mrp_encode_three_packed_event(event, 0, 0);
 
-        event_pointer++;
-        attribute_list_length++;
-        length++;
+        const u8 event_len = app->set_attribute_event(app, attribute, event, event_pointer);
+        event_pointer += event_len;
+        attribute_list_length += event_len;
+        length += event_len;
 
         struct mrp_data_unit_header* mrp_du_header = (struct mrp_data_unit_header*)packet.data;
 
-        if (type == MSRP_LISTENER)
-        {
-          // for listener attribute, we need to add declaration type (four packed)
-          struct msrp_listener_attr_value listener = *(struct msrp_listener_attr_value*)value;
-          *event_pointer = mrp_encode_four_packed_event(listener.declaration_type, 0, 0, 0);
-          ESP_LOGI(TAG, "  Adding declaration type [%d] for listener attribute", listener.declaration_type);
-          length += sizeof(u8);
-          event_pointer += sizeof(u8);
-          attribute_list_length++;
-        }
         mrp_du_header->attribute_list_length = htons(attribute_list_length);
       }
 
