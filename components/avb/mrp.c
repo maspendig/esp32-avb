@@ -301,7 +301,7 @@ void mrp_transmit(struct mrp_application* app)
 
 
       // vector header
-      *vector_header = htons(node->next != head); // no leave all, 1 value
+      *vector_header = htons(attribute ? 1 : 0); // no leave all, 1 value
       if (vector_count == 0 && app->send_leave_all == true)
       {
         *vector_header |= htons(0x2000); // set leave all bit
@@ -318,23 +318,23 @@ void mrp_transmit(struct mrp_application* app)
 
       if (attribute)
       {
-        // event byte
         *event_pointer = mrp_encode_three_packed_event(event, 0, 0);
 
-        struct mrp_data_unit_header* mrp_du_header = (struct mrp_data_unit_header*)packet.data;
+        event_pointer++;
         attribute_list_length++;
+        length++;
 
-        length += sizeof(u8);
-        // TODO move this to app specific implementation
+        struct mrp_data_unit_header* mrp_du_header = (struct mrp_data_unit_header*)packet.data;
+
         if (type == MSRP_LISTENER)
         {
           // for listener attribute, we need to add declaration type (four packed)
           struct msrp_listener_attr_value listener = *(struct msrp_listener_attr_value*)value;
-          *(event_pointer + 1) = mrp_encode_four_packed_event(listener.declaration_type, 0, 0, 0);
+          *event_pointer = mrp_encode_four_packed_event(listener.declaration_type, 0, 0, 0);
           ESP_LOGI(TAG, "  Adding declaration type [%d] for listener attribute", listener.declaration_type);
           length += sizeof(u8);
           event_pointer += sizeof(u8);
-          attribute_list_length += sizeof(u8);
+          attribute_list_length++;
         }
         mrp_du_header->attribute_list_length = htons(attribute_list_length);
       }
