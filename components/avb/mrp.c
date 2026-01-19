@@ -318,16 +318,19 @@ void mrp_transmit(struct mrp_application* app)
 
       if (attribute)
       {
-        *event_pointer = mrp_encode_three_packed_event(event, 0, 0);
-
+        // let the application handle the event and declaration encoding
         const u8 event_len = app->set_attribute_event(app, attribute, event, event_pointer);
+
         event_pointer += event_len;
-        attribute_list_length += event_len;
         length += event_len;
 
-        struct mrp_data_unit_header* mrp_du_header = (struct mrp_data_unit_header*)packet.data;
-
-        mrp_du_header->attribute_list_length = htons(attribute_list_length);
+        // update attribute_list_length in MRPDU header
+        if (app->uses_attribute_list_length == true)
+        {
+          attribute_list_length += event_len;
+          struct mrp_data_unit_header* mrp_du_header = (struct mrp_data_unit_header*)packet.data;
+          mrp_du_header->attribute_list_length = htons(attribute_list_length);
+        }
       }
 
       length += 2 * sizeof(u16); // end marks
