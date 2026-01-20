@@ -31,13 +31,18 @@ struct avtp_state_s;
 #define MVRP_ATTRIBUTE_TYPE_VID 1
 #define MVRP_ATTRIBUTE_LENGTH_VID 2
 
-
 typedef struct mvrp_pdu_first_value
 {
   u16 vlan_id;
 } __attribute__((packed)) mvrp_pdu_first_value_t;
 
 typedef mvrp_pdu_first_value_t mvrp_attr_value_t;
+
+typedef struct mvrp_vlan
+{
+  struct Node list;
+  struct mvrp_pdu_first_value vlan;
+} mvrp_vlan_t;
 
 /* Maximum number of VLAN registrations to track */
 #define MVRP_MAX_VLAN_REGISTRATIONS 4
@@ -65,7 +70,7 @@ int mvrp_init_socket(const char* interface);
  * Initialize MVRP state with default values
  * @param state Pointer to MVRP state structure
  */
-void mvrp_init(struct avtp_state_s* state);
+void mvrp_state_init(struct avtp_state_s* state);
 
 /**
  * Process incoming MVRP packets

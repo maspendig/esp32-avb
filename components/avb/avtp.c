@@ -126,7 +126,7 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   msrp_state_init(state);
 
   /* Initialize MVRP state machine */
-  mvrp_init(state);
+  mvrp_state_init(state);
   state->entity_id = mac_to_entity_id(mac);
   state->entity_model_id = 0x0000000000000001ULL;
 

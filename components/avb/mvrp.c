@@ -23,17 +23,50 @@
 
 #define TAG "mvrp"
 
+mvrp_vlan_t* mvrp_find_vlan(struct mrp_application* app, u16 vlan_id)
+{
+  mvrp_ctx_t* ctx = app->ctx;
+  struct Node* head = ctx->vlans;
+  struct Node* node = head;
+  while (node->next != head)
+  {
+    mvrp_vlan_t* vlan_entry = (mvrp_vlan_t*)node->next;
+    if (ntohs(vlan_entry->vlan.vlan_id) == vlan_id)
+    {
+      ESP_LOGI(TAG, "VLAN ID %u found in MVRP registrations", ntohs(vlan_id));
+      return (mvrp_vlan_t*)node->next;
+    }
+    node = node->next;
+  }
+  ESP_LOGI(TAG, "VLAN ID %u not found in MVRP registrations", ntohs(vlan_id));
+  return NULL;
+}
+
+void mvrp_join_vlan(struct avtp_state_s* state, u16 vlan_id)
+{
+  mvrp_vlan_t* vlan = mvrp_find_vlan(&state->mvrp.app, vlan_id);
+  bool new = false;
+  if (vlan == NULL)
+  {
+    vlan = calloc(1, sizeof(mvrp_vlan_t));
+    vlan->vlan.vlan_id = htons(vlan_id);
+    list_append(state->mvrp.vlans, &vlan->list);
+    new = true;
+    ESP_LOGI(TAG, "Joining VLAN ID %u", ntohs(vlan_id));
+  }
+  mrp_mad_join_request(&state->mvrp.app, MVRP_ATTRIBUTE_TYPE_VID, (u8*)&vlan_id, new);
+}
+
 void mvrp_net_rx(struct avtp_state_s* state)
 {
-  u8 buf[128];
+  mvrp_ctx_t mvrp = state->mvrp;
+  u8 buf[64];
 
   ssize_t len = read(state->mvrp_socket, buf, sizeof(buf));
   if (len <= 0)
   {
     return;
   }
-
-  ESP_LOGD(TAG, "MVRP received %d bytes", (int)len);
 
   /* Minimum MVRP message: header(14) + version(1) + type(1) + length(1) + vector(5) + endmarks(4) = 26 */
   if (len < 26)
@@ -46,6 +79,36 @@ void mvrp_net_rx(struct avtp_state_s* state)
   u8 attr_type = buf[15];
   if (attr_type == MVRP_ATTRIBUTE_TYPE_VID)
   {
+    u16 vector_header = buf[17];
+    bool leave_all_event = false;
+    u16 number_of_values;
+    mrp_parse_vector_header(vector_header, &leave_all_event, &number_of_values);
+    if (leave_all_event)
+    {
+      const struct Node* head = mvrp.app.attributes[MVRP_ATTRIBUTE_TYPE_VID];
+      const struct Node* node = head;
+      while (node->next != head)
+      {
+        const struct mrp_attribute* list_entry = (const struct mrp_attribute*)node->next;
+        mrp_process_attribute(&mvrp.app, (struct mrp_attribute*)list_entry, MRP_ATTRIBUTE_EVENT_LV);
+        node = node->next;
+      }
+
+      mrp_leaveall_state_machine(&state->msrp.app, MRP_EVENT_R_LA);
+    }
+
+    if (number_of_values == 0)
+    {
+      return;
+    }
+
+    struct mvrp_pdu_first_value* value = (struct mvrp_pdu_first_value*)&buf[19];
+    u8 three_packed[3];
+    mrp_decode_three_packed_event(buf[21], three_packed);
+    ESP_LOGI(TAG, "Processing MRPDU { VLAN ID: %u, event: %s[%d] }", ntohs(value->vlan_id),
+             mrp_attribute_event_to_str(three_packed[0]), three_packed[0]);
+
+    mrp_find_and_process_attribute(&state->mvrp.app, attr_type, (u8*)value, three_packed[0]);
   }
   else
   {
@@ -55,22 +118,26 @@ void mvrp_net_rx(struct avtp_state_s* state)
 
 void mvrp_mad_join_indication(struct mrp_application* app, struct mrp_attribute* attr, bool new)
 {
-  ESP_LOGW(TAG, "MVRP MAD Join Indication received. (Not implemented)");
+  mvrp_attr_value_t* value = (mvrp_attr_value_t*)attr->value;
+
+  ESP_LOGI(TAG, "MAD Join Indication received for VLAN ID %u (%s)", ntohs(value->vlan_id), new ? "new" : "existing");
+  mrp_mad_join_request(app, MVRP_ATTRIBUTE_TYPE_VID, (u8*)&value->vlan_id, new);
 }
 
 void mvrp_mad_leave_indication(struct mrp_application* app, struct mrp_attribute* attr)
 {
-  ESP_LOGW(TAG, "MVRP MAD Leave Indication received. (Not implemented)");
+  ESP_LOGW(TAG, "MAD Leave Indication received. (Not implemented)");
 }
 
 void mvrp_tx_mrpdu(struct mrp_application* app, u8* buf, size_t len)
 {
+  ESP_LOGI(TAG, "Transmitting MRPDU, length: %zu bytes", len);
   mvrp_ctx_t* ctx = app->ctx;
   struct avtp_state_s* avtp_state = ctx->state;
 
   if (len < 64)
   {
-    // MSRP frames must be at least 64 bytes (including FCS)
+    // MVRP frames must be at least 64 bytes (including FCS)
     size_t padding = 64 - len;
     memset(buf + len, 0, padding);
     len += padding;
@@ -114,7 +181,7 @@ u8 mvrp_get_attribute_value_length(u8 attribute_type)
  * ============================================================================
  */
 
-void mvrp_init(struct avtp_state_s* avtp_state)
+void mvrp_state_init(struct avtp_state_s* avtp_state)
 {
   mvrp_ctx_t* mvrp = &avtp_state->mvrp;
 
@@ -134,12 +201,15 @@ void mvrp_init(struct avtp_state_s* avtp_state)
   mvrp->app.tx_mrpdu = &mvrp_tx_mrpdu;
   mvrp->app.participant_type = FULL_P2P;
   mvrp->app.ctx = mvrp;
+  mvrp->state = avtp_state;
   memcpy(mvrp->app.src_mac, avtp_state->intf_hw_addr, ETH_ADDR_LEN);
 
   struct Node* head = calloc(1, sizeof(struct Node));
   head->next = head;
   head->prev = head;
   mvrp->vlans = head;
+
+  mvrp_join_vlan(avtp_state, htons(2));
 }
 
 

@@ -456,7 +456,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
         {
           msrp_pdu_talker_advertise_first_value_t* talker_adv = (msrp_pdu_talker_advertise_first_value_t*)(buf +
             first_value_pointer);
-          mrp_decode_four_packed_event(buf[vector_end], three_packed);
+          mrp_decode_three_packed_event(buf[vector_end], three_packed);
           ESP_LOGI(TAG, "  Talker Stream ID: 0x%016llX", ntohll(talker_adv->stream_id));
           ESP_LOGI(TAG, "  Dest MAC: %02X:%02X:%02X:%02X:%02X:%02X",
                    talker_adv->dest_mac[0], talker_adv->dest_mac[1], talker_adv->dest_mac[2],
@@ -488,6 +488,7 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
           break;
         }
       case MSRP_TALKER_FAILED:
+        // TODO implement processing of Talker Failed attribute
         break;
       case MSRP_DOMAIN:
         {
