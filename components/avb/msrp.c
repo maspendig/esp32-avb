@@ -176,10 +176,9 @@ msrp_stream_t* msrp_create_stream(msrp_ctx_t* ctx, u64 stream_id)
   return stream;
 }
 
-ssize_t set_attribute_event(struct mrp_application* app, struct mrp_attribute* attr, u8 event, u8* buf)
+ssize_t msrp_set_attribute_event(struct mrp_application* app, struct mrp_attribute* attr, u8 event, u8* buf)
 {
   msrp_attribute_type_t type = attr->type;
-
 
   switch (type)
   {
@@ -358,7 +357,7 @@ u8 msrp_get_attribute_value_length(u8 attribute_type)
   }
 }
 
-void mrsp_tx_mrpdu(struct mrp_application* app, u8* buf, size_t len)
+void msrp_tx_mrpdu(struct mrp_application* app, u8* buf, size_t len)
 {
   msrp_ctx_t* ctx = app->ctx;
   struct avtp_state_s* avtp_state = ctx->state;
@@ -603,9 +602,9 @@ void msrp_state_init(struct avtp_state_s* state)
   msrp->app.mad_leave_indication = &msrp_mad_leave_indication;
   msrp->app.get_attribute_value_length = &msrp_get_attribute_value_length;
   msrp->app.get_attribute_length = &msrp_get_attribute_length;
-  msrp->app.set_attribute_event = &set_attribute_event;
+  msrp->app.set_attribute_event = &msrp_set_attribute_event;
   msrp->app.uses_attribute_list_length = true;
-  msrp->app.tx_mrpdu = &mrsp_tx_mrpdu;
+  msrp->app.tx_mrpdu = &msrp_tx_mrpdu;
   msrp->app.participant_type = FULL_P2P;
   msrp->app.ctx = msrp;
   memcpy(msrp->app.src_mac, state->intf_hw_addr, ETH_ADDR_LEN);

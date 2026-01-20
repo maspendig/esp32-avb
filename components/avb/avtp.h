@@ -166,7 +166,8 @@ struct avtp_state_s
   msrp_ctx_t msrp;
 
   /* MVRP state for VLAN registration */
-  mvrp_state_t mvrp;
+  mvrp_state_t mvrp_state;
+  mvrp_ctx_t mvrp;
 
   /* AECP entity acquisition state (IEEE 1722.1-2021, 7.4.1) */
   uint64_t acquired_by_controller_id; /* Entity ID of controller that acquired us (0 = not acquired) */

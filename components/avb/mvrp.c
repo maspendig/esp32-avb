@@ -603,7 +603,7 @@ static mvrp_vlan_reg_t* find_or_create_vlan_reg(mvrp_state_t* mvrp, u16 vlan_id)
  */
 static void handle_mvrp_vid_message(struct avtp_state_s* state, const u8* buf, size_t len)
 {
-  mvrp_state_t* mvrp = &state->mvrp;
+  mvrp_state_t* mvrp = &state->mvrp_state;
 
   /* Parse the message - skip header (14) + version (1) + type (1) + length (1) */
   if (len < 22)
@@ -716,14 +716,93 @@ static void handle_mvrp_vid_message(struct avtp_state_s* state, const u8* buf, s
   }
 }
 
+void mvrp_mad_join_indication(struct mrp_application* app, struct mrp_attribute* attr, bool new)
+{
+  ESP_LOGW(TAG, "MVRP MAD Join Indication received. (Not implemented)");
+}
+
+void mvrp_mad_leave_indication(struct mrp_application* app, struct mrp_attribute* attr)
+{
+  ESP_LOGW(TAG, "MVRP MAD Leave Indication received. (Not implemented)");
+}
+
+void mvrp_tx_mrpdu(struct mrp_application* app, u8* buf, size_t len)
+{
+  mvrp_ctx_t* ctx = app->ctx;
+  struct avtp_state_s* avtp_state = ctx->state;
+
+  if (len < 64)
+  {
+    // MSRP frames must be at least 64 bytes (including FCS)
+    size_t padding = 64 - len;
+    memset(buf + len, 0, padding);
+    len += padding;
+  }
+
+  int result = write(avtp_state->mvrp_socket, buf, len);
+  if (result < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send MRPDU: %s (%d)", strerror(errno), errno);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "MRPDU sent successfully, %d bytes", result);
+  }
+}
+
+ssize_t mvrp_set_attribute_event(struct mrp_application* app,
+                                 struct mrp_attribute* attr,
+                                 u8 event,
+                                 u8* buf)
+{
+  // write three packed attribute event to buffer
+  buf[0] = mrp_encode_three_packed_event(event, 0, 0);
+
+  return sizeof(u8);
+}
+
+
+u8 mvrp_get_attribute_length(u8 attribute_type)
+{
+  return MVRP_ATTRIBUTE_LENGTH_VID;
+}
+
+u8 mvrp_get_attribute_value_length(u8 attribute_type)
+{
+  return sizeof(mvrp_attr_value_t);
+}
+
 /* ============================================================================
  * MVRP Public API
  * ============================================================================
  */
 
-void mvrp_state_init(mvrp_state_t* state)
+void mvrp_state_init(struct avtp_state_s* avtp_state)
 {
+  mvrp_state_t* state = &avtp_state->mvrp_state;
   memset(state, 0, sizeof(*state));
+
+  mvrp_ctx_t* mvrp = &avtp_state->mvrp;
+
+  /* Initialize the MRP attribute structure */
+  memset(mvrp, 0, sizeof(mvrp_ctx_t));
+
+  mrp_init(&mvrp->app, MVRP);
+  mvrp->app.mad_join_indication = &mvrp_mad_join_indication;
+  mvrp->app.mad_leave_indication = &mvrp_mad_leave_indication;
+  mvrp->app.get_attribute_value_length = &mvrp_get_attribute_value_length;
+  mvrp->app.get_attribute_length = &mvrp_get_attribute_length;
+  mvrp->app.set_attribute_event = &mvrp_set_attribute_event;
+  mvrp->app.uses_attribute_list_length = true;
+  mvrp->app.tx_mrpdu = &mvrp_tx_mrpdu;
+  mvrp->app.participant_type = FULL_P2P;
+  mvrp->app.ctx = mvrp;
+  memcpy(mvrp->app.src_mac, avtp_state->intf_hw_addr, ETH_ADDR_LEN);
+
+  struct Node* head = calloc(1, sizeof(struct Node));
+  head->next = head;
+  head->prev = head;
+  mvrp->vlans = head;
 
   /* Initialize timer values */
   state->join_timeout_ms = MVRP_JOIN_TIME_MS;
@@ -790,7 +869,7 @@ void mvrp_net_rx(struct avtp_state_s* state)
 
 void mvrp_periodic(struct avtp_state_s* state)
 {
-  mvrp_state_t* mvrp = &state->mvrp;
+  mvrp_state_t* mvrp = &state->mvrp_state;
 
   /* Check registrar leave timers */
   for (int i = 0; i < MVRP_MAX_VLAN_REGISTRATIONS; i++)
@@ -857,7 +936,7 @@ void mvrp_periodic(struct avtp_state_s* state)
 
 int mvrp_vlan_join(struct avtp_state_s* state, u16 vlan_id)
 {
-  mvrp_state_t* mvrp = &state->mvrp;
+  mvrp_state_t* mvrp = &state->mvrp_state;
 
   ESP_LOGI(TAG, "Joining VLAN %u", vlan_id);
 
@@ -889,7 +968,7 @@ int mvrp_vlan_join(struct avtp_state_s* state, u16 vlan_id)
 
 int mvrp_vlan_leave(struct avtp_state_s* state, u16 vlan_id)
 {
-  mvrp_state_t* mvrp = &state->mvrp;
+  mvrp_state_t* mvrp = &state->mvrp_state;
 
   if (!mvrp->vlan_decl.active || mvrp->vlan_decl.vlan_id != vlan_id)
   {
@@ -913,7 +992,7 @@ int mvrp_vlan_leave(struct avtp_state_s* state, u16 vlan_id)
 
 bool mvrp_vlan_is_registered(const struct avtp_state_s* state, u16 vlan_id)
 {
-  const mvrp_state_t* mvrp = &state->mvrp;
+  const mvrp_state_t* mvrp = &state->mvrp_state;
 
   for (int i = 0; i < MVRP_MAX_VLAN_REGISTRATIONS; i++)
   {

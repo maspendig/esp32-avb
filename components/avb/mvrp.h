@@ -100,6 +100,14 @@ typedef struct
   struct timespec leave_timer; /* Leave timer for registrar state */
 } mvrp_vlan_reg_t;
 
+
+typedef struct mvrp_pdu_first_value
+{
+  u16 vlan_id;
+} __attribute__((packed)) mvrp_pdu_first_value_t;
+
+typedef mvrp_pdu_first_value_t mvrp_attr_value_t;
+
 /* Maximum number of VLAN registrations to track */
 #define MVRP_MAX_VLAN_REGISTRATIONS 4
 
@@ -124,6 +132,13 @@ typedef struct
   volatile bool periodic_pending;
 } mvrp_state_t;
 
+typedef struct mvrp_ctx
+{
+  struct mrp_application app;
+  struct avtp_state_s* state;
+  struct Node* vlans;
+} mvrp_ctx_t;
+
 /* ============================================================================
  * MVRP Initialization and Core Functions
  * ============================================================================
@@ -140,7 +155,7 @@ int mvrp_init(const char* interface);
  * Initialize MVRP state with default values
  * @param state Pointer to MVRP state structure
  */
-void mvrp_state_init(mvrp_state_t* state);
+void mvrp_state_init(struct avtp_state_s* state);
 
 /**
  * Process incoming MVRP packets
