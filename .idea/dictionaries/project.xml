@@ -2,6 +2,12 @@
   <dictionary name="project">
     <words>
       <w>aecp</w>
+      <w>leaveall</w>
+      <w>leavealltimer</w>
+      <w>leavetimer</w>
+      <w>mrpdu</w>
+      <w>mvrp</w>
+      <w>periodictimer</w>
     </words>
   </dictionary>
 </component>

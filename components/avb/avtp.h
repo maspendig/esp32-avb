@@ -149,7 +149,7 @@ struct avtp_state_s
   struct maap_db_s maap_db;
 
   uint16_t acmp_sequence_id;
-  uint8_t intf_hw_addr[6];
+  u8 intf_hw_addr[6];
   uint64_t entity_id;
   uint64_t entity_model_id;
   struct timespec last_transmitted_adp;
@@ -162,11 +162,8 @@ struct avtp_state_s
   /* Talker stream information for ACMP connections (supporting one stream) */
   struct talker_stream_info_s talker_stream_info;
 
-  /* MSRP state for stream reservation */
-  msrp_state_t msrp;
-
-  /* MVRP state for VLAN registration */
-  mvrp_state_t mvrp;
+  msrp_ctx_t msrp;
+  mvrp_ctx_t mvrp;
 
   /* AECP entity acquisition state (IEEE 1722.1-2021, 7.4.1) */
   uint64_t acquired_by_controller_id; /* Entity ID of controller that acquired us (0 = not acquired) */

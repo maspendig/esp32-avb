@@ -19,1307 +19,633 @@
 #include <sys/ioctl.h>
 #include <sys/unistd.h>
 #include <arpa/inet.h>
+#include <errno.h>
 
 #define TAG "msrp"
 
-/* Default MRP timer values per IEEE 802.1Q */
-#define MRP_JOIN_TIME_MS      200
-#define MRP_LEAVE_TIME_MS     600
-#define MRP_LEAVE_ALL_TIME_MS 10000
-
-/* ============================================================================
- * Helper Functions
- * ============================================================================
- */
-
-static const char* msrp_attribute_event_string(int s)
+char* msrp_attribute_type_to_str(msrp_attribute_type_t type)
 {
-  switch (s)
+  switch (type)
   {
-  case MSRP_ATTRIBUTE_EVENT_NEW:
-    return "NEW";
-  case MSRP_ATTRIBUTE_EVENT_JOININ:
-    return "JOININ";
-  case MSRP_ATTRIBUTE_EVENT_IN:
-    return "IN";
-  case MSRP_ATTRIBUTE_EVENT_JOINMT:
-    return "JOINMT";
-  case MSRP_ATTRIBUTE_EVENT_MT:
-    return "MT";
-  case MSRP_ATTRIBUTE_EVENT_LV:
-    return "LV";
+  case MSRP_TALKER_ADVERTISE: return "Talker Advertise";
+  case MSRP_TALKER_FAILED: return "Talker Failed";
+  case MSRP_LISTENER: return "Listener";
+  case MSRP_DOMAIN: return "Domain";
+  default: return "UNKNOWN";
+  }
+}
+
+bool validate_attribute_length(const msrp_attribute_t* attrib)
+{
+  switch (attrib->attribute_type)
+  {
+  case MSRP_TALKER_ADVERTISE: return attrib->attribute_length == MSRP_ATTRIBUTE_LENGTH_TALKER_ADVERTISE;
+  case MSRP_TALKER_FAILED: return attrib->attribute_length == MSRP_ATTRIBUTE_LENGTH_TALKER_FAILED;
+  case MSRP_LISTENER: return attrib->attribute_length == MSRP_ATTRIBUTE_LENGTH_LISTENER;
+  case MSRP_DOMAIN: return attrib->attribute_length == MSRP_ATTRIBUTE_LENGTH_DOMAIN;
+  default: return false;
+  }
+}
+
+struct msrp_domain* msrp_find_domain(struct msrp_ctx* ctx, msrp_pdu_domain_first_value_t* domain)
+{
+  ESP_LOGI(TAG, "msrp_find_domain, searching for domain: { id: %d, prio: %d, vid: %d }",
+           domain->sr_class_id,
+           domain->sr_class_priority,
+           ntohs(domain->sr_class_vid));
+  struct Node* head = ctx->domains;
+  struct Node* node = head;
+  while (node->next != head)
+  {
+    struct msrp_domain* list_entry = (struct msrp_domain*)node->next;
+    msrp_pdu_domain_first_value_t* existing_domain = &list_entry->domain;
+    if (existing_domain->sr_class_id == domain->sr_class_id &&
+      existing_domain->sr_class_priority == domain->sr_class_priority &&
+      existing_domain->sr_class_vid == domain->sr_class_vid)
+    {
+      return list_entry;
+    }
+    node = node->next;
+  }
+
+  return NULL;
+}
+
+msrp_domain_t* msrp_create_domain(struct msrp_ctx* ctx, msrp_pdu_domain_first_value_t* domain)
+{
+  struct msrp_domain* new_domain = calloc(1, sizeof(msrp_domain_t));
+  memcpy(&new_domain->domain, domain, sizeof(msrp_pdu_domain_first_value_t));
+  list_append(ctx->domains, &new_domain->list);
+  ctx->domain_count++;
+  ESP_LOGI(TAG, "Created new MSRP domain: { id: %d, prio: %d, vid: %d }, total domains: %d",
+           domain->sr_class_id,
+           domain->sr_class_priority,
+           ntohs(domain->sr_class_vid),
+           ctx->domain_count);
+
+  return new_domain;
+}
+
+void msrp_declare_domain(struct msrp_ctx* ctx, msrp_pdu_domain_first_value_t* domain, bool new)
+{
+  msrp_domain_t* existing_domain = msrp_find_domain(ctx, domain);
+
+  if (existing_domain == NULL)
+  {
+    existing_domain = msrp_create_domain(ctx, domain);
+  }
+
+  ESP_LOGI(TAG, "Declaring MSRP domain: { id: %d, prio: %d, vid: %d }, %s",
+           domain->sr_class_id,
+           domain->sr_class_priority,
+           ntohs(domain->sr_class_vid),
+           new ? "new" : "join");
+  mrp_mad_join_request(&ctx->app, MSRP_DOMAIN, (u8*)domain, new);
+}
+
+static msrp_map_listener_t* msrp_map_find_listener(msrp_ctx_t* ctx, u64 stream_id)
+{
+  struct Node* head = ctx->map.listeners;
+  struct Node* node = head->next;
+  while (node != head)
+  {
+    msrp_map_listener_t* listener = (msrp_map_listener_t*)node;
+    if (listener->value.stream_id == stream_id)
+    {
+      return listener;
+    }
+    node = node->next;
+  }
+  return NULL;
+}
+
+static void msrp_map_add_listener(msrp_ctx_t* ctx, msrp_listener_attr_value_t* value)
+{
+  if (msrp_map_find_listener(ctx, value->stream_id)) return;
+
+  msrp_map_listener_t* node = calloc(1, sizeof(msrp_map_listener_t));
+  node->value = *value;
+  list_append(ctx->map.listeners, &node->list);
+  ESP_LOGI(TAG, "Added listener to map, StreamID: 0x%llx", value->stream_id);
+}
+
+static void msrp_map_remove_listener(msrp_ctx_t* ctx, u64 stream_id)
+{
+  msrp_map_listener_t* node = msrp_map_find_listener(ctx, stream_id);
+  if (node)
+  {
+    list_remove(&node->list);
+    free(node);
+    ESP_LOGI(TAG, "Removed listener from map, StreamID: 0x%llx", stream_id);
+  }
+}
+
+msrp_stream_t* msrp_find_stream(msrp_ctx_t* ctx, u64 stream_id)
+{
+  struct Node* head = ctx->map.streams;
+  struct Node* node = head;
+  while (node->next != head)
+  {
+    msrp_stream_t* stream = (msrp_stream_t*)node->next;
+    if (stream->first_value.stream_id == stream_id)
+    {
+      return stream;
+    }
+    node = node->next;
+  }
+  ESP_LOGI(TAG, "Stream 0x%016llX not found in map", ntohll(stream_id));
+  return NULL;
+}
+
+msrp_stream_t* msrp_create_stream(msrp_ctx_t* ctx, u64 stream_id)
+{
+  msrp_stream_t* stream = calloc(1, sizeof(msrp_stream_t));
+
+  stream = msrp_find_stream(ctx, stream_id);
+  if (stream != NULL)
+  {
+    ESP_LOGI(TAG, "Stream 0x%016llX already exists in map", ntohll(stream_id));
+    return stream;
+  }
+
+  stream = calloc(1, sizeof(msrp_stream_t));
+  stream->first_value.stream_id = stream_id;
+  ESP_LOGI(TAG, "Creating new stream in map: StreamID 0x%016llX", ntohll(stream->first_value.stream_id));
+  list_append(ctx->map.streams, &stream->list);
+
+  return stream;
+}
+
+ssize_t msrp_set_attribute_event(struct mrp_application* app, struct mrp_attribute* attr, u8 event, u8* buf)
+{
+  msrp_attribute_type_t type = attr->type;
+
+  switch (type)
+  {
+  case MSRP_TALKER_ADVERTISE:
+  case MSRP_DOMAIN:
+  case MSRP_TALKER_FAILED:
+    // write three packed attribute event to buffer
+    buf[0] = mrp_encode_three_packed_event(event, 0, 0);
+
+    return sizeof(u8);
+  case MSRP_LISTENER:
+
+    struct msrp_listener_attr_value listener = *(struct msrp_listener_attr_value*)attr->value;
+    // write three packed attribute event to buffer
+    buf[0] = mrp_encode_three_packed_event(event, 0, 0);
+    // write four packed declaration type to buffer
+    buf[1] = mrp_encode_four_packed_event(listener.declaration_type, 0, 0, 0);
+    return sizeof(u16);
+    break;
+
   default:
-    return "??";
-  }
-}
-
-static const char* msrp_listener_decl_string(int d)
-{
-  switch (d)
-  {
-  case MSRP_LISTENER_IGNORE:
-    return "IGNORE";
-  case MSRP_LISTENER_ASKING_FAILED:
-    return "ASKING_FAILED";
-  case MSRP_LISTENER_READY:
-    return "READY";
-  case MSRP_LISTENER_READY_FAILED:
-    return "READY_FAILED";
-  default:
-    return "??";
-  }
-}
-
-static const char* mrp_applicant_state_string(mrp_applicant_state_t s)
-{
-  switch (s)
-  {
-  case MRP_APPLICANT_VO: return "VO";
-  case MRP_APPLICANT_VP: return "VP";
-  case MRP_APPLICANT_VN: return "VN";
-  case MRP_APPLICANT_AN: return "AN";
-  case MRP_APPLICANT_AA: return "AA";
-  case MRP_APPLICANT_QA: return "QA";
-  case MRP_APPLICANT_LA: return "LA";
-  case MRP_APPLICANT_AO: return "AO";
-  case MRP_APPLICANT_QO: return "QO";
-  case MRP_APPLICANT_AP: return "AP";
-  case MRP_APPLICANT_QP: return "QP";
-  case MRP_APPLICANT_LO: return "LO";
-  default: return "??";
-  }
-}
-
-static const char* mrp_registrar_state_string(mrp_registrar_state_t s)
-{
-  switch (s)
-  {
-  case MRP_REGISTRAR_MT: return "MT";
-  case MRP_REGISTRAR_IN: return "IN";
-  case MRP_REGISTRAR_LV: return "LV";
-  default: return "??";
+    ESP_LOGW(TAG, "set_attribute_event: unknown attribute type %d", type);
+    return 0;
   }
 }
 
 /**
- * Decode three-packed event value to get individual event
- * Per IEEE 802.1Q, events are packed as: a*36 + b*6 + c
+ * IEEE 802.1Q-2022 - 35.2.3.1.2 REGISTER_STREAM.indication
+ * On receipt of a MAD_Join.indication service primitive (10.2, 10.3)
+ * with an attribute_type of Talker Advertise, Talker Failed, or Talker Enhanced (35.2.2.4),
+ * the MSRP application shall issue a REGISTER_STREAM.indication to the Listener application entity.
  */
-static u8 decode_three_packed_event(u8 packed, int index)
+void msrp_talker_advertise_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
-  switch (index)
+  msrp_ctx_t* ctx = (msrp_ctx_t*)app->ctx;
+  msrp_talker_advertise_attr_value_t* attr_value = (msrp_talker_advertise_attr_value_t*)attribute->value;
+  ESP_LOGW(TAG, "MSRP Talker Advertise Join Indication: StreamID 0x%016llX, New: %d",
+           ntohll(attr_value->stream_id),
+           new);
+  msrp_stream_t* stream = msrp_create_stream(ctx, attr_value->stream_id);
+}
+
+void msrp_talker_failed_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
+{
+  ESP_LOGW(TAG, "Talker Failed Join Indication");
+}
+
+/**
+ * IEEE 802.1Q-2022 35.1.2.1
+ * On receipt of a MAD_Join.indication for a Listener Declaration,
+ * the Talker first merges (35.2.4.4.3) the Listener Declarations that it has registered for the same Stream.
+ * Then the Talker examines the StreamID (35.2.2.8.2) and Declaration Type (35.2.1.3) of the merged Listener Declaration.
+ * If the merged Listener Declaration is associated with a Stream that the Talker can supply,
+ * and the DeclarationType is either Ready or Ready Failed (i.e., one or more Listeners can receive the Stream),
+ * the Talker can start the transmission for this Stream immediately.
+ * If the merged Listener Declaration is an Asking Failed,
+ * the Talker shall stop the transmission for the Stream, if it is transmitting.
+ */
+void msrp_listener_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
+{
+  msrp_ctx_t* msrp = (msrp_ctx_t*)app->ctx;
+  msrp_listener_attr_value_t* value = (msrp_listener_attr_value_t*)attribute->value;
+
+  ESP_LOGI(TAG, "MSRP Listener Join Indication: StreamID 0x%llx, DeclType %d, New: %d",
+           value->stream_id, value->declaration_type, new);
+
+  msrp_map_add_listener(msrp, value);
+
+  mrp_mad_join_request(app, MSRP_LISTENER, (u8*)value, new);
+}
+
+void msrp_domain_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
+{
+  msrp_pdu_domain_first_value_t* attr_value = (msrp_pdu_domain_first_value_t*)attribute->value;
+
+  ESP_LOGI(TAG, "MSRP Domain Join Indication: { id: %d, prio: %d, vid: %d }, %s",
+           attr_value->sr_class_id,
+           attr_value->sr_class_priority,
+           ntohs(attr_value->sr_class_vid),
+           new ? "new" : "join");
+  msrp_declare_domain((msrp_ctx_t*)app->ctx, attr_value, new);
+}
+
+void msrp_mad_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
+{
+  switch (attribute->type)
   {
-  case 0: return packed / 36;
-  case 1: return (packed % 36) / 6;
-  case 2: return packed % 6;
-  default: return 0;
-  }
-}
-
-/**
- * Encode three-packed event value
- * Per IEEE 802.1Q, events are packed as: a*36 + b*6 + c
- */
-static u8 encode_three_packed_event(u8 a, u8 b, u8 c)
-{
-  return a * 36 + b * 6 + c;
-}
-
-/**
- * Decode four-packed declaration type
- * Per IEEE 802.1Qat, declarations are packed as: a*64 + b*16 + c*4 + d
- */
-static u8 decode_four_packed_decl(u8 packed, int index)
-{
-  switch (index)
-  {
-  case 0: return (packed >> 6) & 0x03;
-  case 1: return (packed >> 4) & 0x03;
-  case 2: return (packed >> 2) & 0x03;
-  case 3: return packed & 0x03;
-  default: return 0;
-  }
-}
-
-/**
- * Encode four-packed declaration type
- */
-static u8 encode_four_packed_decl(u8 a, u8 b, u8 c, u8 d)
-{
-  return (a << 6) | (b << 4) | (c << 2) | d;
-}
-
-/**
- * Get current time in milliseconds
- */
-__attribute__((unused))
-static u64 get_time_ms(void)
-{
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (u64)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-}
-
-/**
- * Check if timer has expired
- */
-static bool timer_expired(const struct timespec* timer, u32 timeout_ms)
-{
-  struct timespec now;
-  clock_gettime(CLOCK_MONOTONIC, &now);
-
-  u64 timer_ms = (u64)timer->tv_sec * 1000 + timer->tv_nsec / 1000000;
-  u64 now_ms = (u64)now.tv_sec * 1000 + now.tv_nsec / 1000000;
-
-  return (now_ms - timer_ms) >= timeout_ms;
-}
-
-/**
- * Reset timer to current time
- */
-static void timer_reset(struct timespec* timer)
-{
-  clock_gettime(CLOCK_MONOTONIC, timer);
-}
-
-/* ============================================================================
- * MRP Applicant State Machine - IEEE 802.1Q-2022 Section 10.7.4
- * ============================================================================
- * Simplified implementation for listener participation
- */
-
-/**
- * Process applicant state machine on Join! event (local application wants to join)
- */
-static void applicant_join(msrp_listener_decl_t* listener)
-{
-  mrp_applicant_state_t old_state = listener->applicant_state;
-
-  switch (listener->applicant_state)
-  {
-  case MRP_APPLICANT_VO:
-  case MRP_APPLICANT_LO:
-    listener->applicant_state = MRP_APPLICANT_VN;
-    listener->tx_pending = true;
+  case MSRP_TALKER_ADVERTISE:
+    msrp_talker_advertise_join_indication(app, attribute, new);
     break;
-  case MRP_APPLICANT_LA:
-    listener->applicant_state = MRP_APPLICANT_AA;
+  case MSRP_TALKER_FAILED:
+    msrp_talker_failed_join_indication(app, attribute, new);
     break;
-  case MRP_APPLICANT_AO:
-    listener->applicant_state = MRP_APPLICANT_AP;
+  case MSRP_LISTENER:
+    msrp_listener_join_indication(app, attribute, new);
     break;
-  case MRP_APPLICANT_QO:
-    listener->applicant_state = MRP_APPLICANT_QP;
-    break;
-  default:
-    /* Already in a joined state, no change */
-    break;
-  }
-
-  if (old_state != listener->applicant_state)
-  {
-    ESP_LOGI(TAG, "Applicant Join!: %s -> %s",
-             mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(listener->applicant_state));
-  }
-}
-
-/**
- * Process applicant state machine on Leave! event (local application wants to leave)
- */
-static void applicant_leave(msrp_listener_decl_t* listener)
-{
-  mrp_applicant_state_t old_state = listener->applicant_state;
-
-  switch (listener->applicant_state)
-  {
-  case MRP_APPLICANT_VN:
-  case MRP_APPLICANT_AN:
-  case MRP_APPLICANT_AA:
-  case MRP_APPLICANT_QA:
-    listener->applicant_state = MRP_APPLICANT_LA;
-    break;
-  case MRP_APPLICANT_VP:
-  case MRP_APPLICANT_AP:
-  case MRP_APPLICANT_QP:
-    listener->applicant_state = MRP_APPLICANT_VO;
-    break;
-  default:
-    break;
-  }
-
-  if (old_state != listener->applicant_state)
-  {
-    ESP_LOGI(TAG, "Applicant Leave!: %s -> %s",
-             mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(listener->applicant_state));
-  }
-}
-
-/**
- * Process applicant state machine when receiving rJoinIn event
- * (received JoinIn from another participant)
- */
-static void applicant_rx_joinin(msrp_listener_decl_t* listener)
-{
-  mrp_applicant_state_t old_state = listener->applicant_state;
-
-  switch (listener->applicant_state)
-  {
-  case MRP_APPLICANT_VO:
-    listener->applicant_state = MRP_APPLICANT_AO;
-    break;
-  case MRP_APPLICANT_VP:
-    listener->applicant_state = MRP_APPLICANT_AP;
-    break;
-  case MRP_APPLICANT_AA:
-    listener->applicant_state = MRP_APPLICANT_QA;
-    break;
-  case MRP_APPLICANT_AO:
-    listener->applicant_state = MRP_APPLICANT_QO;
-    break;
-  case MRP_APPLICANT_AP:
-    listener->applicant_state = MRP_APPLICANT_QP;
+  case MSRP_DOMAIN:
+    msrp_domain_join_indication(app, attribute, new);
     break;
   default:
+    ESP_LOGW(TAG, "MAD Join Indication: unknown attribute type %d", attribute->type);
     break;
-  }
-
-  if (old_state != listener->applicant_state)
-  {
-    ESP_LOGD(TAG, "Applicant rJoinIn: %s -> %s",
-             mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(listener->applicant_state));
   }
 }
 
-/**
- * Process applicant state machine when receiving rIn event
- */
-static void applicant_rx_in(msrp_listener_decl_t* listener)
-{
-  mrp_applicant_state_t old_state = listener->applicant_state;
 
-  switch (listener->applicant_state)
+void msrp_mad_leave_indication(struct mrp_application* app, struct mrp_attribute* attr)
+{
+  switch (attr->type)
   {
-  case MRP_APPLICANT_AA:
-    listener->applicant_state = MRP_APPLICANT_QA;
+  case MSRP_TALKER_ADVERTISE:
+    ESP_LOGW(TAG, "msrp_talker_advertise_leave_indication not implemented yet");
+    break;
+  case MSRP_TALKER_FAILED:
+    ESP_LOGW(TAG, "msrp_talker_failed_leave_indication not implemented yet");
+    break;
+  case MSRP_LISTENER:
+    {
+      msrp_listener_attr_value_t* val = (msrp_listener_attr_value_t*)attr->value;
+      ESP_LOGI(TAG, "MSRP Listener Leave Indication: StreamID 0x%llx", val->stream_id);
+      msrp_map_remove_listener((msrp_ctx_t*)app->ctx, val->stream_id);
+      break;
+    }
+  case MSRP_DOMAIN:
+    ESP_LOGW(TAG, "msrp_domain_leave_indication not implemented yet");
     break;
   default:
+    ESP_LOGW(TAG, "MAD Leave Indication: unknown attribute type %d", attr->type);
     break;
-  }
-
-  if (old_state != listener->applicant_state)
-  {
-    ESP_LOGD(TAG, "Applicant rIn: %s -> %s",
-             mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(listener->applicant_state));
   }
 }
 
 /**
- * Process applicant state machine when receiving rJoinMt or rMt event
+ * Get the length of the MSRP attribute value based on the attribute type
+ * differes from the attribute length field in the attribute header
+ * as some attributes carries additional fields (e.g., declaration type for listener attribute)
  */
-static void applicant_rx_empty(msrp_listener_decl_t* listener)
+u8 msrp_get_attribute_length(u8 attribute_type)
 {
-  mrp_applicant_state_t old_state = listener->applicant_state;
-
-  switch (listener->applicant_state)
+  switch (attribute_type)
   {
-  case MRP_APPLICANT_QA:
-    listener->applicant_state = MRP_APPLICANT_AA;
-    listener->tx_pending = true;
-    break;
-  case MRP_APPLICANT_QO:
-    listener->applicant_state = MRP_APPLICANT_AO;
-    break;
-  case MRP_APPLICANT_QP:
-    listener->applicant_state = MRP_APPLICANT_AP;
-    break;
+  case MSRP_TALKER_ADVERTISE:
+    return MSRP_ATTRIBUTE_LENGTH_TALKER_ADVERTISE;
+  case MSRP_TALKER_FAILED:
+    return MSRP_ATTRIBUTE_LENGTH_TALKER_FAILED;
+  case MSRP_LISTENER:
+    return MSRP_ATTRIBUTE_LENGTH_LISTENER;
+  case MSRP_DOMAIN:
+    return MSRP_ATTRIBUTE_LENGTH_DOMAIN;
   default:
-    break;
-  }
-
-  if (old_state != listener->applicant_state)
-  {
-    ESP_LOGD(TAG, "Applicant rEmpty: %s -> %s",
-             mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(listener->applicant_state));
+    ESP_LOGW(TAG, "Unknown MSRP attribute type %d for value length retrieval", attribute_type);
+    return 0;
   }
 }
 
 /**
- * Process applicant state machine when receiving rLeave event
+ * Get the length of the MSRP attribute value based on the attribute type
+ * differes from the attribute length field in the attribute header
+ * as some attributes carries additional fields (e.g., declaration type for listener attribute)
  */
-static void applicant_rx_leave(msrp_listener_decl_t* listener)
+u8 msrp_get_attribute_value_length(u8 attribute_type)
 {
-  mrp_applicant_state_t old_state = listener->applicant_state;
-
-  switch (listener->applicant_state)
+  switch (attribute_type)
   {
-  case MRP_APPLICANT_VO:
-  case MRP_APPLICANT_AO:
-  case MRP_APPLICANT_QO:
-    listener->applicant_state = MRP_APPLICANT_LO;
-    break;
-  case MRP_APPLICANT_VP:
-  case MRP_APPLICANT_AP:
-  case MRP_APPLICANT_QP:
-    listener->applicant_state = MRP_APPLICANT_VO;
-    break;
+  case MSRP_TALKER_ADVERTISE:
+    return sizeof(msrp_talker_advertise_attr_value_t);
+  case MSRP_TALKER_FAILED:
+    return sizeof(msrp_talker_failed_attr_value_t);
+  case MSRP_LISTENER:
+    return sizeof(msrp_listener_attr_value_t);
+  case MSRP_DOMAIN:
+    return sizeof(msrp_domain_attr_value_t);
   default:
-    break;
-  }
-
-  if (old_state != listener->applicant_state)
-  {
-    ESP_LOGD(TAG, "Applicant rLeave: %s -> %s",
-             mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(listener->applicant_state));
+    ESP_LOGW(TAG, "Unknown MSRP attribute type %d for value length retrieval", attribute_type);
+    return 0;
   }
 }
 
-/**
- * Process applicant state machine on tx opportunity
- * Returns the event to transmit, or -1 if no transmission needed
- * Per IEEE 802.1Q-2022 Table 10-3
- */
-static int applicant_tx(msrp_listener_decl_t* listener)
+void msrp_tx_mrpdu(struct mrp_application* app, u8* buf, size_t len)
 {
-  mrp_applicant_state_t old_state = listener->applicant_state;
-  int tx_event = -1;
+  msrp_ctx_t* ctx = app->ctx;
+  struct avtp_state_s* avtp_state = ctx->state;
 
-  switch (listener->applicant_state)
+  if (len < 64)
   {
-  case MRP_APPLICANT_VN:
-    /* VN + tx! -> AN, send sN (New) */
-    listener->applicant_state = MRP_APPLICANT_AN;
-    tx_event = MSRP_ATTRIBUTE_EVENT_NEW;
-    break;
-  case MRP_APPLICANT_AN:
-    /* AN + tx! -> QA, send sN (New) */
-    listener->applicant_state = MRP_APPLICANT_QA;
-    tx_event = MSRP_ATTRIBUTE_EVENT_NEW;
-    break;
-  case MRP_APPLICANT_AA:
-    /* AA + tx! -> QA, send sJ (JoinIn) */
-    listener->applicant_state = MRP_APPLICANT_QA;
-    tx_event = MSRP_ATTRIBUTE_EVENT_JOININ;
-    break;
-  case MRP_APPLICANT_QA:
-    /* QA is quiet - no transmission on tx! */
-    /* QA only transmits when stimulated to AA by rMt/rLv events */
-    break;
-  case MRP_APPLICANT_LA:
-    /* LA + tx! -> VO, send sL (Leave) */
-    listener->applicant_state = MRP_APPLICANT_VO;
-    tx_event = MSRP_ATTRIBUTE_EVENT_LV;
-    break;
-  case MRP_APPLICANT_VP:
-    /* VP + tx! -> AA, send sJ (JoinMt) */
-    listener->applicant_state = MRP_APPLICANT_AA;
-    tx_event = MSRP_ATTRIBUTE_EVENT_JOINMT;
-    break;
-  case MRP_APPLICANT_AP:
-    /* AP + tx! -> QA, send sJ (JoinIn) */
-    listener->applicant_state = MRP_APPLICANT_QA;
-    tx_event = MSRP_ATTRIBUTE_EVENT_JOININ;
-    break;
-  case MRP_APPLICANT_VO:
-  case MRP_APPLICANT_AO:
-  case MRP_APPLICANT_QO:
-  case MRP_APPLICANT_QP:
-    /* These states don't transmit on tx! */
-    break;
-  case MRP_APPLICANT_LO:
-    /* LO + tx! -> VO, no transmission */
-    listener->applicant_state = MRP_APPLICANT_VO;
-    break;
-  default:
-    break;
+    // MSRP frames must be at least 64 bytes (including FCS)
+    size_t padding = 64 - len;
+    memset(buf + len, 0, padding);
+    len += padding;
   }
 
-  listener->tx_pending = false;
-
-  if (old_state != listener->applicant_state)
+  int result = write(avtp_state->msrp_socket, buf, len);
+  if (result < 0)
   {
-    ESP_LOGI(TAG, "Applicant TX: %s -> %s (event: %s)",
-             mrp_applicant_state_string(old_state),
-             mrp_applicant_state_string(listener->applicant_state),
-             tx_event >= 0 ? msrp_attribute_event_string(tx_event) : "none");
-  }
-
-  return tx_event;
-}
-
-/* ============================================================================
- * MRP Registrar State Machine - IEEE 802.1Q-2022 Section 10.7.5
- * ============================================================================
- */
-
-/**
- * Process registrar state machine on rNew, rJoinIn, or rJoinMt event
- */
-static void registrar_rx_join(msrp_talker_info_t* talker)
-{
-  mrp_registrar_state_t old_state = talker->registrar_state;
-
-  switch (talker->registrar_state)
-  {
-  case MRP_REGISTRAR_MT:
-  case MRP_REGISTRAR_LV:
-    talker->registrar_state = MRP_REGISTRAR_IN;
-    ESP_LOGD(TAG, "Registrar: Stream 0x%016llX now IN (registered)",
-             (unsigned long long)talker->stream_id);
-    break;
-  case MRP_REGISTRAR_IN:
-    /* Already registered, refresh */
-    break;
-  }
-
-  if (old_state != talker->registrar_state)
-  {
-    ESP_LOGD(TAG, "Registrar Join: %s -> %s",
-             mrp_registrar_state_string(old_state),
-             mrp_registrar_state_string(talker->registrar_state));
-  }
-}
-
-/**
- * Process registrar state machine on rLeave event
- */
-static void registrar_rx_leave(msrp_talker_info_t* talker)
-{
-  mrp_registrar_state_t old_state = talker->registrar_state;
-
-  switch (talker->registrar_state)
-  {
-  case MRP_REGISTRAR_IN:
-    talker->registrar_state = MRP_REGISTRAR_LV;
-    timer_reset(&talker->leave_timer);
-    break;
-  default:
-    break;
-  }
-
-  if (old_state != talker->registrar_state)
-  {
-    ESP_LOGD(TAG, "Registrar Leave: %s -> %s",
-             mrp_registrar_state_string(old_state),
-             mrp_registrar_state_string(talker->registrar_state));
-  }
-}
-
-/**
- * Process registrar leave timer expiry
- */
-static void registrar_leave_timer_expired(msrp_talker_info_t* talker)
-{
-  if (talker->registrar_state == MRP_REGISTRAR_LV)
-  {
-    talker->registrar_state = MRP_REGISTRAR_MT;
-    talker->valid = false;
-    ESP_LOGD(TAG, "Registrar: Stream 0x%016llX leave timer expired, now MT",
-             (unsigned long long)talker->stream_id);
-  }
-}
-
-/* ============================================================================
- * MSRP Message Handlers
- * ============================================================================
- */
-
-static void handle_msrp_talker_advertise(struct avtp_state_s* state, void* buf, size_t len)
-{
-  struct talker_advertise_data_s
-  {
-    u16 leave_all_event_and_number_of_values;
-    u64 stream_id;
-    u8 stream_da[6];
-    u16 stream_vlan_id;
-    u16 max_frame_size;
-    u16 max_frame_interval;
-    u8 priority_and_rank;
-    u32 accumulated_latency;
-    u8 attribute_event;
-  } __attribute__((packed));
-
-  struct talker_advertise_data_s* talker_adv = (struct talker_advertise_data_s*)buf;
-
-  u16 leave_all = (ntohs(talker_adv->leave_all_event_and_number_of_values) >> 13) & 0x07;
-  u16 number_of_values = ntohs(talker_adv->leave_all_event_and_number_of_values) & 0x1FFF;
-  u8 event = decode_three_packed_event(talker_adv->attribute_event, 0);
-
-  (void)leave_all; /* Used for debugging */
-  (void)number_of_values; /* Used for debugging */
-
-  u64 stream_id = ntohll(talker_adv->stream_id);
-
-  if (stream_id == 0)
-  {
-    return;
-  }
-
-  ESP_LOGD(TAG, "  Talker Advertise: stream=0x%016llX event=%s",
-           (unsigned long long)stream_id, msrp_attribute_event_string(event));
-
-  ESP_LOGD(TAG, "    Leave All: %u, Number of Values: %u", leave_all, number_of_values);
-  ESP_LOGD(TAG, "    Stream DA: %02X:%02X:%02X:%02X:%02X:%02X",
-           talker_adv->stream_da[0], talker_adv->stream_da[1], talker_adv->stream_da[2],
-           talker_adv->stream_da[3], talker_adv->stream_da[4], talker_adv->stream_da[5]);
-  ESP_LOGD(TAG, "    VLAN: %u, MaxFrame: %u, MaxInterval: %u",
-           ntohs(talker_adv->stream_vlan_id), ntohs(talker_adv->max_frame_size),
-           ntohs(talker_adv->max_frame_interval));
-
-  msrp_state_t* msrp = &state->msrp;
-  msrp_talker_info_t* talker = &msrp->talker;
-
-  /* Update talker information */
-  if (!talker->valid || talker->stream_id == stream_id)
-  {
-    talker->valid = true;
-    talker->stream_id = stream_id;
-    memcpy(talker->dest_addr, talker_adv->stream_da, 6);
-    talker->vlan_id = ntohs(talker_adv->stream_vlan_id);
-    talker->max_frame_size = ntohs(talker_adv->max_frame_size);
-    talker->max_frame_interval = ntohs(talker_adv->max_frame_interval);
-    talker->priority = (talker_adv->priority_and_rank >> 5) & 0x07;
-    talker->rank = (talker_adv->priority_and_rank >> 4) & 0x01;
-    talker->accumulated_latency = ntohl(talker_adv->accumulated_latency);
-    talker->failed = false;
-
-    /* Process registrar state machine */
-    switch (event)
-    {
-    case MSRP_ATTRIBUTE_EVENT_NEW:
-    case MSRP_ATTRIBUTE_EVENT_JOININ:
-    case MSRP_ATTRIBUTE_EVENT_JOINMT:
-      registrar_rx_join(talker);
-      break;
-    case MSRP_ATTRIBUTE_EVENT_LV:
-      registrar_rx_leave(talker);
-      break;
-    case MSRP_ATTRIBUTE_EVENT_IN:
-      /* Per IEEE 802.1Q Table 10-4:
-       * rIn on LV state -> IN (cancels leave timer)
-       * rIn on MT state -> MT (no change, attribute not being declared)
-       * rIn on IN state -> IN (no change, refresh) */
-      if (talker->registrar_state == MRP_REGISTRAR_LV)
-      {
-        talker->registrar_state = MRP_REGISTRAR_IN;
-        ESP_LOGD(TAG, "Registrar: Stream 0x%016llX rIn cancelled leave",
-                 (unsigned long long)talker->stream_id);
-      }
-      break;
-    case MSRP_ATTRIBUTE_EVENT_MT:
-    default:
-      /* MT event doesn't refresh registration - per IEEE 802.1Q Table 10-4,
-       * rMt keeps MT/IN/LV in their current state */
-      break;
-    }
-
-    /* If we have an active listener for this stream, process applicant state */
-    if (msrp->listener.active && msrp->listener.stream_id == stream_id)
-    {
-      /* Upgrade from ASKING_FAILED to READY now that talker is available */
-      if (msrp->listener.declaration_type == MSRP_LISTENER_ASKING_FAILED &&
-        talker->registrar_state == MRP_REGISTRAR_IN)
-      {
-        msrp->listener.declaration_type = MSRP_LISTENER_READY;
-        msrp->listener.tx_pending = true;
-        ESP_LOGI(TAG, "Talker available for stream 0x%016llX, upgrading to READY",
-                 (unsigned long long)stream_id);
-      }
-
-      switch (event)
-      {
-      case MSRP_ATTRIBUTE_EVENT_JOININ:
-        applicant_rx_joinin(&msrp->listener);
-        break;
-      case MSRP_ATTRIBUTE_EVENT_IN:
-        applicant_rx_in(&msrp->listener);
-        break;
-      case MSRP_ATTRIBUTE_EVENT_LV:
-        applicant_rx_leave(&msrp->listener);
-        break;
-      case MSRP_ATTRIBUTE_EVENT_MT:
-      case MSRP_ATTRIBUTE_EVENT_JOINMT:
-        applicant_rx_empty(&msrp->listener);
-        break;
-      default:
-        break;
-      }
-    }
-  }
-}
-
-static void handle_msrp_talker_failed(struct avtp_state_s* state, void* buf, size_t len)
-{
-  struct talker_failed_data_s
-  {
-    u16 leave_all_event_and_number_of_values;
-    u64 stream_id;
-    u8 stream_da[6];
-    u16 stream_vlan_id;
-    u16 max_frame_size;
-    u16 max_frame_interval;
-    u8 priority_and_rank;
-    u32 accumulated_latency;
-    u64 failed_bridge_id;
-    u8 failure_code;
-    u8 attribute_event;
-  } __attribute__((packed));
-
-  struct talker_failed_data_s* msg = (struct talker_failed_data_s*)buf;
-
-  u16 leave_all = (ntohs(msg->leave_all_event_and_number_of_values) >> 13) & 0x07;
-  u16 number_of_values = ntohs(msg->leave_all_event_and_number_of_values) & 0x1FFF;
-
-  (void)leave_all; /* Used for debugging */
-  (void)number_of_values; /* Used for debugging */
-
-  u64 stream_id = ntohll(msg->stream_id);
-
-  if (stream_id == 0)
-  {
-    return;
-  }
-  ESP_LOGI(TAG, "  Talker Failed: stream=0x%016llX failure_code=%u",
-           (unsigned long long)stream_id, msg->failure_code);
-
-  msrp_state_t* msrp = &state->msrp;
-  msrp_talker_info_t* talker = &msrp->talker;
-
-  /* Update talker information as failed */
-  if (!talker->valid || talker->stream_id == stream_id)
-  {
-    talker->valid = true;
-    talker->stream_id = stream_id;
-    memcpy(talker->dest_addr, msg->stream_da, 6);
-    talker->vlan_id = ntohs(msg->stream_vlan_id);
-    talker->max_frame_size = ntohs(msg->max_frame_size);
-    talker->max_frame_interval = ntohs(msg->max_frame_interval);
-    talker->priority = (msg->priority_and_rank >> 5) & 0x07;
-    talker->rank = (msg->priority_and_rank >> 4) & 0x01;
-    talker->accumulated_latency = ntohl(msg->accumulated_latency);
-    talker->failed = true;
-    talker->failure_code = msg->failure_code;
-    talker->failure_bridge_id = ntohll(msg->failed_bridge_id);
-
-    registrar_rx_join(talker);
-
-    /* If we're listening to this stream, update declaration type */
-    if (msrp->listener.active && msrp->listener.stream_id == stream_id)
-    {
-      if (msrp->listener.declaration_type == MSRP_LISTENER_READY)
-      {
-        msrp->listener.declaration_type = MSRP_LISTENER_READY_FAILED;
-        msrp->listener.tx_pending = true;
-        ESP_LOGW(TAG, "Stream 0x%016llX failed, switching to READY_FAILED",
-                 (unsigned long long)stream_id);
-      }
-    }
-  }
-}
-
-static void handle_msrp_listener(struct avtp_state_s* state, void* buf, size_t len)
-{
-  struct listener_data_s
-  {
-    u16 leave_all_event_and_number_of_values;
-    u64 stream_id;
-    u8 attribute_event;
-    u8 declaration_type;
-  } __attribute__((packed));
-
-  struct listener_data_s* msg = (struct listener_data_s*)buf;
-
-  u16 number_of_values = ntohs(msg->leave_all_event_and_number_of_values) & 0x1FFF;
-  (void)number_of_values; /* Used for debugging */
-
-  u64 stream_id = ntohll(msg->stream_id);
-  u8 event = decode_three_packed_event(msg->attribute_event, 0);
-  u8 decl = decode_four_packed_decl(msg->declaration_type, 0);
-
-  ESP_LOGI(TAG, "  Listener: stream=0x%016llX event=%s decl=%s",
-           (unsigned long long)stream_id,
-           msrp_attribute_event_string(event),
-           msrp_listener_decl_string(decl));
-
-  /* Process applicant state machine if this is for our stream */
-  msrp_state_t* msrp = &state->msrp;
-  if (msrp->listener.active && msrp->listener.stream_id == stream_id)
-  {
-    switch (event)
-    {
-    case MSRP_ATTRIBUTE_EVENT_JOININ:
-      applicant_rx_joinin(&msrp->listener);
-      break;
-    case MSRP_ATTRIBUTE_EVENT_IN:
-      applicant_rx_in(&msrp->listener);
-      break;
-    case MSRP_ATTRIBUTE_EVENT_LV:
-      applicant_rx_leave(&msrp->listener);
-      break;
-    case MSRP_ATTRIBUTE_EVENT_MT:
-    case MSRP_ATTRIBUTE_EVENT_JOINMT:
-      applicant_rx_empty(&msrp->listener);
-      break;
-    default:
-      break;
-    }
-  }
-}
-
-static void handle_msrp_domain(struct avtp_state_s* state, void* buf, size_t len)
-{
-  struct domain_data_s
-  {
-    u16 leave_all_event_and_number_of_values;
-    u8 sr_class_id;
-    u8 sr_class_priority;
-    u16 sr_class_vid;
-    u8 attribute_event;
-  } __attribute__((packed));
-
-  struct domain_data_s* msg = (struct domain_data_s*)buf;
-
-  u8 event = decode_three_packed_event(msg->attribute_event, 0);
-
-  ESP_LOGI(TAG, "  Domain: class=%u prio=%u vid=%u event=%s",
-           msg->sr_class_id, msg->sr_class_priority,
-           ntohs(msg->sr_class_vid), msrp_attribute_event_string(event));
-
-  /* Update domain information */
-  msrp_state_t* msrp = &state->msrp;
-  int domain_idx = (msg->sr_class_id == MSRP_SR_CLASS_A) ? 0 : 1;
-
-  if (domain_idx < 2)
-  {
-    msrp->domains[domain_idx].valid = true;
-    msrp->domains[domain_idx].sr_class_id = msg->sr_class_id;
-    msrp->domains[domain_idx].sr_class_priority = msg->sr_class_priority;
-    msrp->domains[domain_idx].sr_class_vid = ntohs(msg->sr_class_vid);
-
-    if (event == MSRP_ATTRIBUTE_EVENT_NEW ||
-      event == MSRP_ATTRIBUTE_EVENT_JOININ ||
-      event == MSRP_ATTRIBUTE_EVENT_JOINMT)
-    {
-      msrp->domains[domain_idx].registrar_state = MRP_REGISTRAR_IN;
-    }
-    else if (event == MSRP_ATTRIBUTE_EVENT_LV)
-    {
-      msrp->domains[domain_idx].registrar_state = MRP_REGISTRAR_LV;
-    }
-  }
-}
-
-/* ============================================================================
- * MSRP Message Transmission
- * ============================================================================
- */
-
-int msrp_send_listener_declaration(struct avtp_state_s* state, u64 stream_id,
-                                   u8 declaration_type, u8 event)
-{
-  struct listener_msg_s
-  {
-    struct header_s header;
-    u8 protocol_version;
-    u8 attribute_type;
-    u8 attribute_length;
-    u16 attribute_list_length;
-    u16 leave_all_event_and_number_of_values;
-    u64 stream_id;
-    u8 attribute_event;
-    u8 declaration_type_packed;
-    u16 end_mark_list;
-    u16 end_mark;
-  } __attribute__((packed));
-
-  struct listener_msg_s msg = {0};
-
-  /* Ethernet header */
-  memcpy(msg.header.dst_mac, MSRP_MULTICAST_MAC, sizeof(msg.header.dst_mac));
-  memcpy(msg.header.src_mac, state->intf_hw_addr, sizeof(msg.header.src_mac));
-  msg.header.eth_type[0] = (ETH_TYPE_MSRP >> 8) & 0xFF;
-  msg.header.eth_type[1] = ETH_TYPE_MSRP & 0xFF;
-
-  /* MSRP header */
-  msg.protocol_version = 0;
-  msg.attribute_type = MSRP_ATTRIBUTE_TYPE_LISTENER;
-  msg.attribute_length = 8; /* StreamID (8 bytes) */
-  msg.attribute_list_length = htons(14); /* 2 + 8 + 1 + 1 + 2 = 14 bytes */
-
-  /* Vector header: leave_all=0, number_of_values=1 */
-  msg.leave_all_event_and_number_of_values = htons(1);
-
-  /* Stream ID (first value) */
-  msg.stream_id = htonll(stream_id);
-
-  /* Three-packed event (one event, padded with zeros) */
-  msg.attribute_event = encode_three_packed_event(event, 0, 0);
-
-  /* Four-packed declaration type (one declaration, padded with zeros) */
-  msg.declaration_type_packed = encode_four_packed_decl(declaration_type, 0, 0, 0);
-
-  /* End marks */
-  msg.end_mark_list = 0;
-  msg.end_mark = 0;
-
-  ESP_LOGI(TAG, "Sending Listener %s for stream 0x%016llX (event=%s)",
-           msrp_listener_decl_string(declaration_type),
-           (unsigned long long)stream_id,
-           msrp_attribute_event_string(event));
-
-  ssize_t written = write(state->msrp_socket, &msg, sizeof(msg));
-  if (written < 0)
-  {
-    ESP_LOGE(TAG, "Failed to send MSRP Listener: %d (errno: %d)", (int)written, errno);
-    return -1;
-  }
-
-  return 0;
-}
-
-int msrp_send_talker_advertise(struct avtp_state_s* state)
-{
-  struct talker_advertise_s msg = {0};
-
-  memcpy(msg.header.dst_mac, MSRP_MULTICAST_MAC, sizeof(msg.header.dst_mac));
-  memcpy(msg.header.src_mac, state->intf_hw_addr, sizeof(msg.header.src_mac));
-  msg.header.eth_type[0] = (ETH_TYPE_MSRP >> 8) & 0xFF;
-  msg.header.eth_type[1] = ETH_TYPE_MSRP & 0xFF;
-
-  msg.attribute_type = MSRP_ATTRIBUTE_TYPE_TALKER_ADVERTISE;
-  msg.attribute_length = 25;
-  msg.attribute_list_length = htons(30);
-
-  msg.number_of_values = htons(1);
-  msg.stream_id = htonll(state->talker_stream_info.stream_id);
-  memcpy(msg.stream_da, state->talker_stream_info.stream_dest_mac, sizeof(msg.stream_da));
-  msg.stream_vlan_id = htons(state->talker_stream_info.stream_vlan_id);
-  msg.max_frame_size = htons(224);
-  msg.max_frame_interval = htons(1);
-  msg.priority = MSRP_SR_CLASS_A_PRIO;
-  msg.rank = 1;
-  msg.accumulated_latency = htonl(100095);
-  msg.attribute_event = encode_three_packed_event(MSRP_ATTRIBUTE_EVENT_JOININ, 0, 0);
-
-  ESP_LOGI(TAG, "Sending Talker Advertise for stream 0x%016llX",
-           (unsigned long long)state->talker_stream_info.stream_id);
-
-  ssize_t written = write(state->msrp_socket, &msg, sizeof(msg));
-  if (written < 0)
-  {
-    ESP_LOGE(TAG, "Failed to send MSRP Talker Advertise: %d (errno: %d)", (int)written, errno);
-    return -1;
-  }
-
-  return 0;
-}
-
-/* ============================================================================
- * MSRP Packet Reception
- * ============================================================================
- */
-
-void msrp_net_rx(struct avtp_state_s* state)
-{
-  union
-  {
-    struct msrp_header_s header;
-    u8 raw[256];
-  } buf;
-
-  ssize_t len = read(state->msrp_socket, &buf, sizeof(buf));
-  if (len <= 0)
-  {
-    if (len < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
-    {
-      ESP_LOGE(TAG, "Failed to read MSRP message: %d (errno: %d)", (int)len, errno);
-    }
-    return;
-  }
-
-  ESP_LOGD(TAG, "MSRP packet received (%d bytes)", (int)len);
-
-  /* Parse MSRP message */
-  size_t offset = sizeof(struct header_s) + 1; /* header + protocol_version */
-
-  while (offset + 4 < (size_t)len)
-  {
-    u8 attribute_type = buf.raw[offset];
-    u8 attribute_length = buf.raw[offset + 1];
-    u16 attribute_list_length = ntohs(*(u16*)&buf.raw[offset + 2]);
-
-    if (attribute_list_length == 0 || offset + 4 + attribute_list_length > (size_t)len)
-    {
-      break;
-    }
-
-    void* attr_data = &buf.raw[offset + 4];
-    size_t attr_len = attribute_list_length;
-
-    switch (attribute_type)
-    {
-    case MSRP_ATTRIBUTE_TYPE_TALKER_ADVERTISE:
-      if (attribute_length == 25)
-      {
-        handle_msrp_talker_advertise(state, attr_data, attr_len);
-      }
-      break;
-
-    case MSRP_ATTRIBUTE_TYPE_TALKER_FAILED:
-      if (attribute_length == 34)
-      {
-        handle_msrp_talker_failed(state, attr_data, attr_len);
-      }
-      break;
-
-    case MSRP_ATTRIBUTE_TYPE_LISTENER:
-      if (attribute_length == 8)
-      {
-        handle_msrp_listener(state, attr_data, attr_len);
-      }
-      break;
-
-    case MSRP_ATTRIBUTE_TYPE_DOMAIN:
-      if (attribute_length == 4)
-      {
-        handle_msrp_domain(state, attr_data, attr_len);
-      }
-      break;
-
-    default:
-      ESP_LOGW(TAG, "Unknown MSRP attribute type: %u", attribute_type);
-      break;
-    }
-
-    offset += 4 + attribute_list_length;
-
-    /* Check for end mark */
-    if (offset + 2 <= (size_t)len)
-    {
-      u16 end_mark = ntohs(*(u16*)&buf.raw[offset]);
-      if (end_mark == 0x0000)
-      {
-        break;
-      }
-    }
-  }
-}
-
-/* ============================================================================
- * MSRP Periodic Processing
- * ============================================================================
- */
-
-/**
- * Check if applicant is in an "anxious" state that requires periodic transmission
- */
-static bool applicant_is_anxious(mrp_applicant_state_t state)
-{
-  switch (state)
-  {
-  case MRP_APPLICANT_VN:
-  case MRP_APPLICANT_AN:
-  case MRP_APPLICANT_AA:
-  case MRP_APPLICANT_LA:
-  case MRP_APPLICANT_VP:
-  case MRP_APPLICANT_AP:
-  case MRP_APPLICANT_AO:
-  case MRP_APPLICANT_LO:
-    return true;
-  case MRP_APPLICANT_QA:
-  case MRP_APPLICANT_QO:
-  case MRP_APPLICANT_QP:
-  case MRP_APPLICANT_VO:
-  default:
-    return false;
-  }
-}
-
-void msrp_periodic(struct avtp_state_s* state)
-{
-  msrp_state_t* msrp = &state->msrp;
-
-  /* Check registrar leave timer */
-  if (msrp->talker.valid && msrp->talker.registrar_state == MRP_REGISTRAR_LV)
-  {
-    if (timer_expired(&msrp->talker.leave_timer, msrp->leave_timeout_ms))
-    {
-      registrar_leave_timer_expired(&msrp->talker);
-    }
-  }
-
-  /* Check if we need to transmit listener declaration */
-  if (msrp->listener.active)
-  {
-    bool should_tx = false;
-
-    /* Only transmit on timer if in an anxious state or tx_pending is set */
-    if (timer_expired(&msrp->last_tx_time, msrp->join_timeout_ms))
-    {
-      /* In anxious states, transmit on timer expiry */
-      if (applicant_is_anxious(msrp->listener.applicant_state))
-      {
-        should_tx = true;
-      }
-      /* Reset timer even if not transmitting to avoid immediate trigger next time */
-      timer_reset(&msrp->last_tx_time);
-    }
-
-    /* Always transmit if tx_pending is explicitly set */
-    if (msrp->listener.tx_pending)
-    {
-      should_tx = true;
-    }
-
-    if (should_tx)
-    {
-      int tx_event = applicant_tx(&msrp->listener);
-      if (tx_event >= 0)
-      {
-        msrp_send_listener_declaration(state,
-                                       msrp->listener.stream_id,
-                                       msrp->listener.declaration_type,
-                                       tx_event);
-        timer_reset(&msrp->listener.join_timer);
-      }
-
-      /* Check if leave process is complete:
-       * Per IEEE 802.1Q, after LA state sends sL (Leave), it transitions to VO.
-       * When we're leaving and have reached VO, the leave process is complete. */
-      if (msrp->listener.leaving &&
-        msrp->listener.applicant_state == MRP_APPLICANT_VO)
-      {
-        ESP_LOGD(TAG, "Leave process complete for stream 0x%016llX",
-                 (unsigned long long)msrp->listener.stream_id);
-        msrp->listener.active = false;
-        msrp->listener.leaving = false;
-      }
-    }
-  }
-}
-
-/* ============================================================================
- * MSRP Listener Join/Leave API
- * ============================================================================
- */
-
-int msrp_listener_join(struct avtp_state_s* state, u64 stream_id)
-{
-  msrp_state_t* msrp = &state->msrp;
-
-  /* Check if already active for a different stream */
-  if (msrp->listener.active && !msrp->listener.leaving &&
-    msrp->listener.stream_id != stream_id)
-  {
-    ESP_LOGE(TAG, "Already listening to stream 0x%016llX, cannot join 0x%016llX",
-             (unsigned long long)msrp->listener.stream_id,
-             (unsigned long long)stream_id);
-    return -1;
-  }
-
-  /* If we're rejoining after leave completed (active=false),
-   * reset the applicant state machine to initial state.
-   * If we're still in the process of leaving (leaving=true, active=true),
-   * let applicant_join() handle the state transition (LA→AA per IEEE 802.1Q). */
-  if (!msrp->listener.active)
-  {
-    msrp->listener.applicant_state = MRP_APPLICANT_VO;
-    msrp->listener.tx_pending = false;
-    timer_reset(&msrp->listener.join_timer);
-  }
-
-  /* Clear leaving flag since we're now (re)joining */
-  msrp->listener.leaving = false;
-
-  ESP_LOGI(TAG, "Joining stream 0x%016llX as listener", (unsigned long long)stream_id);
-
-  msrp->listener.active = true;
-  msrp->listener.stream_id = stream_id;
-
-  /* If we know the talker's stream destination MAC, add it to the MAC filter
-   * so we can receive the multicast stream packets */
-  if (msrp->talker.valid && msrp->talker.stream_id == stream_id)
-  {
-    /* Get ethernet handle to add MAC filter */
-    esp_eth_handle_t eth_handle;
-    if (ioctl(state->socket, L2TAP_G_DEVICE_DRV_HNDL, &eth_handle) == 0)
-    {
-      esp_err_t err = esp_eth_ioctl(eth_handle, ETH_CMD_ADD_MAC_FILTER, msrp->talker.dest_addr);
-      if (err == ESP_OK)
-      {
-        ESP_LOGI(TAG, "Added MAC filter for stream dest: %02X:%02X:%02X:%02X:%02X:%02X",
-                 msrp->talker.dest_addr[0], msrp->talker.dest_addr[1],
-                 msrp->talker.dest_addr[2], msrp->talker.dest_addr[3],
-                 msrp->talker.dest_addr[4], msrp->talker.dest_addr[5]);
-      }
-      else
-      {
-        ESP_LOGW(TAG, "Failed to add MAC filter for stream: %s", esp_err_to_name(err));
-      }
-    }
-  }
-
-  /* Determine declaration type based on talker state */
-  /* Check if we have valid talker info for THIS specific stream */
-  bool talker_known = msrp->talker.valid && msrp->talker.stream_id == stream_id;
-
-  if (talker_known)
-  {
-    if (msrp->talker.failed)
-    {
-      msrp->listener.declaration_type = MSRP_LISTENER_READY_FAILED;
-    }
-    else if (msrp->talker.registrar_state == MRP_REGISTRAR_IN ||
-      msrp->talker.registrar_state == MRP_REGISTRAR_LV)
-    {
-      /* If talker is IN or LV (recently active, leave timer running),
-       * we can declare READY. In the LV case, the talker was recently
-       * active and is likely still there - our join will prompt it to
-       * resume advertising. Per IEEE 802.1Q, a new Join should cause
-       * the talker to come back if it's still available. */
-      if (msrp->talker.registrar_state == MRP_REGISTRAR_LV)
-      {
-        ESP_LOGD(TAG, "Talker in LV state, assuming still available");
-        /* Cancel the leave timer by transitioning back to IN */
-        msrp->talker.registrar_state = MRP_REGISTRAR_IN;
-      }
-      msrp->listener.declaration_type = MSRP_LISTENER_READY;
-    }
-    else
-    {
-      /* Talker registrar is MT (empty) - talker has left */
-      msrp->listener.declaration_type = MSRP_LISTENER_ASKING_FAILED;
-    }
+    ESP_LOGE(TAG, "Failed to send MSRP MRPDU: %s (%d)", strerror(errno), errno);
   }
   else
   {
-    /* Talker not known for this stream - could be stale info from different stream
-     * or no talker info at all. Start with ASKING_FAILED. */
-    msrp->listener.declaration_type = MSRP_LISTENER_ASKING_FAILED;
+    ESP_LOGI(TAG, "MSRP MRPDU sent successfully, %d bytes", result);
   }
-
-  ESP_LOGD(TAG, "Declaration type: %s",
-           msrp_listener_decl_string(msrp->listener.declaration_type));
-
-  /* Trigger Join! event on applicant state machine */
-  applicant_join(&msrp->listener);
-
-  return 0;
 }
 
-int msrp_listener_leave(struct avtp_state_s* state, u64 stream_id)
+void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
 {
-  msrp_state_t* msrp = &state->msrp;
-
-  if (!msrp->listener.active || msrp->listener.stream_id != stream_id)
-  {
-    ESP_LOGW(TAG, "Not listening to stream 0x%016llX", (unsigned long long)stream_id);
-    return -1;
-  }
-
-  ESP_LOGI(TAG, "Leaving stream 0x%016llX as listener", (unsigned long long)stream_id);
-
-  /* Trigger Leave! event on applicant state machine */
-  applicant_leave(&msrp->listener);
-
-  /* Mark as leaving - the periodic handler will complete the leave process
-   * and send the Leave message when the tx opportunity occurs.
-   * Per IEEE 802.1Q, we should not immediately deactivate; instead let the
-   * state machine transition LA -> VO via tx! which sends sL (Leave).
-   * The listener will be marked inactive after the state machine completes. */
-  msrp->listener.leaving = true;
-  msrp->listener.tx_pending = true;
-
-  return 0;
-}
-
-/* ============================================================================
- * MSRP Initialization
- * ============================================================================
- */
-
-void msrp_state_init(msrp_state_t* state)
-{
-  memset(state, 0, sizeof(*state));
-
-  /* Initialize timer values */
-  state->join_timeout_ms = MRP_JOIN_TIME_MS;
-  state->leave_timeout_ms = MRP_LEAVE_TIME_MS;
-  state->leave_all_timeout_ms = MRP_LEAVE_ALL_TIME_MS;
-
-  /* Initialize applicant state to VO (observer) */
-  state->listener.applicant_state = MRP_APPLICANT_VO;
-
-  /* Initialize registrar state to MT (empty) */
-  state->talker.registrar_state = MRP_REGISTRAR_MT;
-  state->domains[0].registrar_state = MRP_REGISTRAR_MT;
-  state->domains[1].registrar_state = MRP_REGISTRAR_MT;
-
-  timer_reset(&state->last_tx_time);
-}
-
-void msrp_send_domain_request(const struct avtp_state_s* state)
-{
-  struct domain_msg_s
+  /* TODO check if receiving packages are of interest for this application */
+  struct msrp_packet_s
   {
     struct header_s header;
     u8 protocol_version;
-    u8 attribute_type;
-    u8 attribute_length;
-    u16 attribute_list_length;
-    u16 leave_all_event_and_number_of_values;
-    u8 sr_class_id;
-    u8 sr_class_priority;
-    u16 sr_class_vid;
-    u8 attribute_event;
-    u16 end_mark_list;
-    u16 end_mark;
   } __attribute__((packed));
-
-  struct domain_msg_s msg = {0};
-
-  /* Ethernet header */
-  memcpy(msg.header.dst_mac, MSRP_MULTICAST_MAC, sizeof(msg.header.dst_mac));
-  memcpy(msg.header.src_mac, state->intf_hw_addr, sizeof(msg.header.src_mac));
-  msg.header.eth_type[0] = (ETH_TYPE_MSRP >> 8) & 0xFF;
-  msg.header.eth_type[1] = ETH_TYPE_MSRP & 0xFF;
-
-  /* MSRP header */
-  msg.protocol_version = 0;
-  msg.attribute_type = MSRP_ATTRIBUTE_TYPE_DOMAIN;
-  msg.attribute_length = 4; /* SRclassID(1) + SRclassPriority(1) + SRclassVID(2) */
-  msg.attribute_list_length = htons(9); /* 2 + 4 + 1 + 2 = 9 bytes */
-
-  /* Vector header: leave_all=0, number_of_values=1 */
-  msg.leave_all_event_and_number_of_values = htons(1);
-
-  /* Domain first value - Class A */
-  msg.sr_class_id = MSRP_SR_CLASS_A;
-  msg.sr_class_priority = MSRP_SR_CLASS_A_PRIO;
-  msg.sr_class_vid = htons(2); /* Default VLAN */
-
-  /* Three-packed event (JoinMt to discover domain) */
-  msg.attribute_event = encode_three_packed_event(MSRP_ATTRIBUTE_EVENT_JOINMT, 0, 0);
-
-  /* End marks */
-  msg.end_mark_list = 0;
-  msg.end_mark = 0;
-
-  ESP_LOGI(TAG, "Sending Domain Discovery for Class A");
-
-  ssize_t written = write(state->msrp_socket, &msg, sizeof(msg));
-  if (written < 0)
+  bool leave_all_seen[5] = {false, false, false, false, false};
+  u16 attribute_pointer = sizeof(struct msrp_packet_s); // header + protocol_version
+  u16 vector_length = 0, number_of_values;
+  u8 three_packed[3];
+  while (len > attribute_pointer + 1)
   {
-    ESP_LOGE(TAG, "Failed to send MSRP Domain Request: %d (errno: %d)", (int)written, errno);
+    // check for end mark 0x0000
+    if (buf[attribute_pointer] == 0x00 && buf[attribute_pointer + 1] == 0x00)
+    {
+      break;
+    }
+
+    const msrp_attribute_t* attrib = (msrp_attribute_t*)(buf + attribute_pointer);
+    if (validate_attribute_length(attrib) == false)
+    {
+      ESP_LOGW(TAG, "Invalid MSRP attribute length: type %s[%d], length %d",
+               msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type),
+               attrib->attribute_type,
+               attrib->attribute_length);
+      break;
+    }
+
+    ESP_LOGI(TAG, "rx -> Attribute Type: %s, Attribute Length: %d, List Length: %d",
+             msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type),
+             attrib->attribute_length,
+             ntohs(attrib->attribute_list_length));
+    bool next_vector = true;
+    u16 vector_pointer = attribute_pointer + sizeof(msrp_attribute_t);
+    do
+    {
+      u8* value = 0;
+      bool leave_all_event = false;
+      u16* vector_header = (u16*)(buf + vector_pointer);
+      mrp_parse_vector_header(ntohs(*vector_header), &leave_all_event, &number_of_values);
+
+      if (leave_all_event == true && leave_all_seen[attrib->attribute_type] == false)
+      {
+        leave_all_seen[attrib->attribute_type] = true;
+        ESP_LOGI(TAG, "MSRP LeaveAll Event received for attribute type %s",
+                 msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type));
+
+        struct Node* head = state->msrp.app.attributes[attrib->attribute_type];
+        struct Node* node = head;
+        while (node->next != head)
+        {
+          struct mrp_attribute* list_entry = (struct mrp_attribute*)node->next;
+          mrp_process_attribute(&state->msrp.app, list_entry, MRP_ATTRIBUTE_EVENT_LV);
+          node = node->next;
+        }
+        mrp_leaveall_state_machine(&state->msrp.app, MRP_EVENT_R_LA);
+      }
+
+      if (number_of_values == 0)
+      {
+        // no values to process
+        break;
+      }
+
+      vector_length = attrib->attribute_length + sizeof(struct mrp_vector_header) + 1;
+      u16 first_value_pointer = vector_pointer + sizeof(mrp_vector_header_t);
+      u16 vector_end = vector_pointer + vector_length - 1;
+      switch (attrib->attribute_type)
+      {
+      case MSRP_TALKER_ADVERTISE:
+        {
+          msrp_pdu_talker_advertise_first_value_t* talker_adv = (msrp_pdu_talker_advertise_first_value_t*)(buf +
+            first_value_pointer);
+          mrp_decode_three_packed_event(buf[vector_end], three_packed);
+          ESP_LOGI(TAG, "  Talker Stream ID: 0x%016llX", ntohll(talker_adv->stream_id));
+          ESP_LOGI(TAG, "  Dest MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+                   talker_adv->dest_mac[0], talker_adv->dest_mac[1], talker_adv->dest_mac[2],
+                   talker_adv->dest_mac[3], talker_adv->dest_mac[4], talker_adv->dest_mac[5]);
+          ESP_LOGI(TAG, "  VLAN ID: %d", ntohs(talker_adv->vlan_id));
+          ESP_LOGI(TAG, "  Max Frame Size: %d", ntohs(talker_adv->max_frame_size));
+          ESP_LOGI(TAG, "  Max Frame Interval: %d", ntohs(talker_adv->max_frame_interval));
+          ESP_LOGI(TAG, "  Priority and Rank: 0x%02X", talker_adv->priority_and_rank);
+          ESP_LOGI(TAG, "  Accumulated Latency: %lu", ntohl(talker_adv->accumulated_latency));
+          ESP_LOGI(TAG, "  Event: %s",
+                   mrp_attribute_event_to_str(three_packed[0]));
+          value = (u8*)talker_adv;
+
+          struct Node* head = state->msrp.app.attributes[MSRP_LISTENER];
+          struct Node* node = head;
+          while (node->next != head)
+          {
+            struct mrp_attribute* list_entry = (struct mrp_attribute*)node->next;
+            msrp_listener_attr_value_t* listener = (msrp_listener_attr_value_t*)list_entry->value;
+            if (listener->stream_id == talker_adv->stream_id)
+            {
+              ESP_LOGI(TAG, "  Found Listener for StreamID 0x%016llX in map, sending REGISTER_STREAM.indication",
+                       ntohll(listener->stream_id));
+              mrp_process_attribute(&state->msrp.app, list_entry, three_packed[0]);
+            }
+            node = node->next;
+          }
+
+          break;
+        }
+      case MSRP_TALKER_FAILED:
+        // TODO implement processing of Talker Failed attribute
+        break;
+      case MSRP_DOMAIN:
+        {
+          struct msrp_pdu_domain_first_value* domain = (struct msrp_pdu_domain_first_value*)(buf + first_value_pointer);
+          mrp_decode_three_packed_event(buf[vector_end], three_packed);
+          //TODO use all three packed event values
+
+          ESP_LOGI(TAG, " SR Class: {id: %d, prio: %d, vid: %d}, event: %s",
+                   domain->sr_class_id,
+                   domain->sr_class_priority,
+                   ntohs(domain->sr_class_vid),
+                   mrp_attribute_event_to_str(three_packed[0]));
+          value = (u8*)domain;
+
+          break;
+        }
+      case MSRP_LISTENER:
+        {
+          vector_length = attrib->attribute_length + sizeof(struct mrp_vector_header) + 2;
+          msrp_listener_attr_value_t* listener = (msrp_listener_attr_value_t*)(buf + first_value_pointer);
+          vector_end = vector_pointer + vector_length - 1;
+
+          u8 declaration_type[4]; // four_packed
+          mrp_decode_three_packed_event(buf[vector_end - 1], three_packed);
+          mrp_decode_four_packed_event(buf[vector_end], declaration_type);
+          ESP_LOGI(TAG, "  Listener Stream ID: 0x%016llX", ntohll(listener->stream_id));
+          ESP_LOGI(TAG, "  Event: %s", mrp_attribute_event_to_str(three_packed[0]));
+          ESP_LOGI(TAG, "  Declaration Type: %d", declaration_type[0]);
+          value = (u8*)listener;
+          break;
+        }
+      default:
+        ESP_LOGW(TAG, "Unknown MSRP attribute type: %d", attrib->attribute_type);
+        break;
+      }
+
+      // check attribute list end mark
+      if (buf[vector_end + 1] == 0x00 && buf[vector_end + 2] == 0x00)
+      {
+        next_vector = false;
+      }
+
+      // safety check
+      if (len < vector_end + 1)
+      {
+        next_vector = false;
+      }
+
+      vector_pointer = vector_end + 1;
+
+      ESP_LOGI(TAG, "Processing MSRP attribute event: type %s, event %s[%d],",
+               msrp_attribute_type_to_str((msrp_attribute_type_t)attrib->attribute_type),
+               mrp_attribute_event_to_str(three_packed[0])
+      );
+
+      mrp_find_and_process_attribute(&state->msrp.app, attrib->attribute_type,
+                                     value,
+                                     three_packed[0]);
+    }
+    while (next_vector);
+
+    attribute_pointer += sizeof(msrp_attribute_t) + ntohs(attrib->attribute_list_length);
   }
 }
 
-int msrp_init(const char* interface)
+void msrp_net_rx(struct avtp_state_s* state)
+{
+  u8 buf[128];
+
+  ssize_t len = read(state->msrp_socket, buf, sizeof(buf));
+  if (len <= 0)
+  {
+    return;
+  }
+  msrp_process_rx(state, buf, len);
+}
+
+/*
+  35.2.3.1.5 REGISTER_ATTACH.request
+  A Listener application entity shall issue a REGISTER_ATTACH.request
+  to the MSRP Participant to request attachment to the referenced Stream.
+ */
+void msrp_register_attach_request(struct mrp_application* app, u64 stream_id)
+{
+  /*
+   * On receipt of a REGISTER_ATTACH.request the MSRP Participant shall issue a MAD_Join.request service primitive (10.2, 10.3).
+   * The attribute_type parameter of the request shall carry the appropriate Listener Attribute Type (35.2.2.4),
+   * depending on neighborProtocolVersion. The attribute_value shall contain the StreamID and the Declaration Type.
+   */
+
+  msrp_listener_attr_value_t listener_attr = {
+    .stream_id = htonll(stream_id),
+    .declaration_type = MSRP_LISTENER_DECLARATION_READY
+  };
+  mrp_mad_join_request(app, MSRP_LISTENER, (u8*)&listener_attr, true);
+}
+
+void msrp_state_init(struct avtp_state_s* state)
+{
+  msrp_ctx_t* msrp = &state->msrp;
+  if (msrp == NULL)
+  {
+    ESP_LOGE(TAG, "MSRP state pointer is NULL");
+    return;
+  }
+
+  /* Initialize the MRP attribute structure */
+  memset(msrp, 0, sizeof(msrp_ctx_t));
+
+  msrp->app.min_attribute_type = MSRP_TALKER_ADVERTISE;
+  msrp->app.max_attribute_type = MSRP_DOMAIN;
+  mrp_init(&msrp->app, MSRP);
+  msrp->app.mad_join_indication = &msrp_mad_join_indication;
+  msrp->app.mad_leave_indication = &msrp_mad_leave_indication;
+  msrp->app.get_attribute_value_length = &msrp_get_attribute_value_length;
+  msrp->app.get_attribute_length = &msrp_get_attribute_length;
+  msrp->app.set_attribute_event = &msrp_set_attribute_event;
+  msrp->app.uses_attribute_list_length = true;
+  msrp->app.eth_type = ETH_TYPE_MSRP;
+  msrp->app.tx_mrpdu = &msrp_tx_mrpdu;
+  msrp->app.participant_type = FULL_P2P;
+  msrp->app.ctx = msrp;
+  memcpy(msrp->app.src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
+
+  struct Node* head = calloc(1, sizeof(struct Node));
+  head->next = head;
+  head->prev = head;
+  msrp->domains = head;
+
+  struct Node* map_head = calloc(1, sizeof(struct Node));
+  map_head->next = map_head;
+  map_head->prev = map_head;
+  msrp->map.listeners = map_head;
+
+  struct Node* stream_head = calloc(1, sizeof(struct Node));
+  stream_head->next = stream_head;
+  stream_head->prev = stream_head;
+  msrp->map.streams = stream_head;
+
+  msrp->domain_count = 0;
+  msrp->state = state;
+
+  // register domains
+
+  msrp_pdu_domain_first_value_t default_domain = {
+    .sr_class_id = MSRP_SR_CLASS_A,
+    .sr_class_priority = MSRP_SR_CLASS_A_PRIO,
+    // TODO move to config
+    .sr_class_vid = htons(2)
+  };
+
+  msrp_declare_domain(msrp, &default_domain, true);
+
+  ESP_LOGI(TAG, "MSRP state initialized");
+}
+
+int msrp_init_socket(const char* interface)
 {
   /* Initialize MSRP socket */
   int socket = open("/dev/net/tap", 0);

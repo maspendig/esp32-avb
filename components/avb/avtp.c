@@ -107,15 +107,9 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   }
 
   state->acmp_sequence_id = 0;
-  state->msrp_socket = msrp_init(interface);
-  state->mvrp_socket = mvrp_init(interface);
+  state->msrp_socket = msrp_init_socket(interface);
+  state->mvrp_socket = mvrp_init_socket(interface);
 
-
-  /* Initialize MSRP state machine */
-  msrp_state_init(&state->msrp);
-
-  /* Initialize MVRP state machine */
-  mvrp_state_init(&state->mvrp);
 
   // get HW address
   esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, &state->intf_hw_addr);
@@ -127,6 +121,12 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
     ((uint64_t)state->intf_hw_addr[3] << 16) |
     ((uint64_t)state->intf_hw_addr[4] << 8) |
     ((uint64_t)state->intf_hw_addr[5]);
+
+  /* Initialize MSRP state machine */
+  msrp_state_init(state);
+
+  /* Initialize MVRP state machine */
+  mvrp_state_init(state);
   state->entity_id = mac_to_entity_id(mac);
   state->entity_model_id = 0x0000000000000001ULL;
 
@@ -468,9 +468,6 @@ static void avtp_control_task(void* arg)
   ESP_LOGI(TAG, "Control task started on core %d (priority %d)",
            xPortGetCoreID(), uxTaskPriorityGet(NULL));
 
-  msrp_send_domain_request(state);
-  mvrp_vlan_join(state, 2);
-
   while (!state->stop)
   {
     fd_set readfds;
@@ -532,10 +529,6 @@ static void avtp_control_task(void* arg)
     {
       msrp_net_rx(state);
     }
-
-    /* Process periodic tasks */
-    msrp_periodic(state);
-    mvrp_periodic(state);
 
     /* Send periodic ADP announcements */
     struct timespec time_now;

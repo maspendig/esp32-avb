@@ -1,4 +1,5 @@
 #include "maap.h"
+#include "common.h"
 
 #include <avtp.h>
 #include <cc.h>
@@ -105,14 +106,6 @@ void maap_send_probe(struct avtp_state_s* state)
              state->maap_db.start_mac[0], state->maap_db.start_mac[1], state->maap_db.start_mac[2],
              state->maap_db.start_mac[3], state->maap_db.start_mac[4], state->maap_db.start_mac[5]);
   }
-}
-
-
-u32 random_in_range(const u32 min, const u32 max)
-{
-  u32 r = esp_random();
-  u32 span = (max - min + 1);
-  return (u32)(r % span) + min;
 }
 
 void dec_maap_probe_count(struct avtp_state_s* state)
