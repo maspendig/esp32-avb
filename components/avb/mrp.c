@@ -506,7 +506,7 @@ int mrp_stop_leave_timer(const struct mrp_attribute* attr)
 //region periodic timer
 void mrp_periodic_timer_callback(void* arg)
 {
-  ESP_LOGI(TAG, "[app: %s] Periodic Timer expired, processing periodictimer event",
+  ESP_LOGD(TAG, "[app: %s] Periodic Timer expired, processing periodictimer event",
            mrp_application_type_to_str(((struct mrp_application*)arg)->type));
   const struct mrp_application* app = (struct mrp_application*)arg;
   for (u8 type = app->min_attribute_type; type <= app->max_attribute_type; type++)
