@@ -6,25 +6,18 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <math.h>
 #include "audio_output.h"
 #include "config.h"
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "driver/i2s_std.h"
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
-#include "esp_system.h"
 #include "esp_codec_dev_defaults.h"
 #include "esp_codec_dev.h"
 #include "esp_codec_dev_vol.h"
 #include "esp_check.h"
 #include "esp_log.h"
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 static const char* TAG = "audio_output";
 
@@ -35,7 +28,6 @@ static i2s_chan_handle_t rx_handle = NULL;
 #define AUDIO_SAMPLE_RATE       CONFIG_SAMPLING_RATE
 #define AUDIO_MCLK_MULTIPLE     384  // For 24-bit compatibility
 #define AUDIO_VOICE_VOLUME      60   // 0-100
-#define AUDIO_RECV_BUF_SIZE     2400
 
 /* I2C configuration for ESP32-P4-Function-EV-Board */
 #define I2C_NUM                 0
@@ -52,16 +44,6 @@ static i2s_chan_handle_t rx_handle = NULL;
 
 /* PA control GPIO */
 #define PA_CTRL_IO              GPIO_NUM_53
-
-/* Sine wave generation parameters */
-#define BASE_FREQ_HZ            440.0f  // Base frequency (A4)
-#define SINE_AMPLITUDE          16000   // Amplitude for 16-bit audio
-#define BUFFER_SIZE             1024    // Buffer size in samples
-#define NOTE_DURATION_MS        300     // Duration of each note in milliseconds
-
-/* Musical scale frequencies (using equal temperament, 440Hz as A)
- * C, D, E, F, G, A, B, C then back down */
-#define SCALE_LENGTH (sizeof(scale_frequencies) / sizeof(scale_frequencies[0]))
 
 static esp_err_t es8311_codec_init(void)
 {
