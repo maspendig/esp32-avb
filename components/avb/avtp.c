@@ -547,23 +547,31 @@ static void avtp_control_task(void* arg)
   vTaskDelete(NULL);
 }
 
-static void avtp_listener_task(void* arg)
+int start_avtp_listener(const char* interface)
 {
-  const char* interface = "ETH_0";
+  if (s_state != NULL)
+  {
+    ESP_LOGE(TAG, "Other instance of AVTP is already running");
+    return ESP_FAIL;
+  }
+
+  if (interface == NULL)
+  {
+    interface = "ETH_0";
+  }
 
   struct avtp_state_s* state = calloc(1, sizeof(struct avtp_state_s));
-
-  if (arg != NULL)
+  if (!state)
   {
-    interface = arg;
+    ESP_LOGE(TAG, "Failed to allocate memory for AVTP state");
+    return ESP_ERR_NO_MEM;
   }
 
   if (avtp_init_state(state, interface) != ESP_OK)
   {
-    ESP_LOGE(TAG, "Failed to initialize AVTP state, exiting\n");
+    ESP_LOGE(TAG, "Failed to initialize AVTP state");
     free(state);
-    vTaskDelete(NULL);
-    return;
+    return ESP_FAIL;
   }
 
   ESP_LOGI(TAG, "AVTP listener initialized on interface: %s", interface);
@@ -583,9 +591,9 @@ static void avtp_listener_task(void* arg)
   if (ret != pdPASS)
   {
     ESP_LOGE(TAG, "Failed to create stream task");
+    s_state = NULL;
     free(state);
-    vTaskDelete(NULL);
-    return;
+    return ESP_FAIL;
   }
 
   /* Create control task on Core 0 */
@@ -605,30 +613,15 @@ static void avtp_listener_task(void* arg)
     ESP_LOGE(TAG, "Failed to create control task");
     state->stop = true;
     vTaskDelay(pdMS_TO_TICKS(100)); /* Give stream task time to exit */
+    s_state = NULL;
     free(state);
-    vTaskDelete(NULL);
-    return;
+    return ESP_FAIL;
   }
 
   ESP_LOGI(TAG, "AVTP dual-core architecture started: Stream on Core %d, Control on Core %d",
            STREAM_TASK_CORE, CONTROL_TASK_CORE);
 
-  /* This task can exit now, the stream and control tasks will run independently */
-  vTaskDelete(NULL);
-}
-
-
-int start_avtp_listener(const char* interface)
-{
-  if (s_state == NULL)
-  {
-    /* Use higher priority for real-time packet processing */
-    xTaskCreate(avtp_listener_task, "AVTP", 8192,
-                (void*)interface, 10, NULL);
-    return ESP_OK;
-  }
-  ESP_LOGE(TAG, "Other instance of AVTP is already running");
-  return ESP_FAIL;
+  return ESP_OK;
 }
 
 int stop_avtp_listener(int pid)
