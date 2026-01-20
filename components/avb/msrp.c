@@ -597,6 +597,8 @@ void msrp_state_init(struct avtp_state_s* state)
   /* Initialize the MRP attribute structure */
   memset(msrp, 0, sizeof(msrp_ctx_t));
 
+  msrp->app.min_attribute_type = MSRP_TALKER_ADVERTISE;
+  msrp->app.max_attribute_type = MSRP_DOMAIN;
   mrp_init(&msrp->app, MSRP);
   msrp->app.mad_join_indication = &msrp_mad_join_indication;
   msrp->app.mad_leave_indication = &msrp_mad_leave_indication;
@@ -604,6 +606,7 @@ void msrp_state_init(struct avtp_state_s* state)
   msrp->app.get_attribute_length = &msrp_get_attribute_length;
   msrp->app.set_attribute_event = &msrp_set_attribute_event;
   msrp->app.uses_attribute_list_length = true;
+  msrp->app.eth_type = ETH_TYPE_MSRP;
   msrp->app.tx_mrpdu = &msrp_tx_mrpdu;
   msrp->app.participant_type = FULL_P2P;
   msrp->app.ctx = msrp;

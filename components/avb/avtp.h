@@ -162,11 +162,7 @@ struct avtp_state_s
   /* Talker stream information for ACMP connections (supporting one stream) */
   struct talker_stream_info_s talker_stream_info;
 
-  /* MSRP state for stream reservation */
   msrp_ctx_t msrp;
-
-  /* MVRP state for VLAN registration */
-  mvrp_state_t mvrp_state;
   mvrp_ctx_t mvrp;
 
   /* AECP entity acquisition state (IEEE 1722.1-2021, 7.4.1) */

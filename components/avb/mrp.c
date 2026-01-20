@@ -153,8 +153,8 @@ void mrp_set_packet_header(struct mrp_application* app, struct header_s* header)
   }
 
   memcpy(header->src_mac, app->src_mac, ETH_ADDR_LEN);
-  header->eth_type[0] = (ETH_TYPE_MSRP >> 8) & 0xFF;
-  header->eth_type[1] = ETH_TYPE_MSRP & 0xFF;
+  header->eth_type[0] = (app->eth_type >> 8) & 0xFF;
+  header->eth_type[1] = app->eth_type & 0xFF;
 }
 
 /**
@@ -239,7 +239,7 @@ void mrp_transmit(struct mrp_application* app)
     u8 data[1500];
   } __attribute__((packed));
 
-  for (u8 type = 1; type < MRP_MAX_ATTRIBUTE_TYPES; type++)
+  for (u8 type = app->min_attribute_type; type < app->max_attribute_type; type++)
   {
     u8 attribute_length = app->get_attribute_length(type);
     u8 attribute_value_length = app->get_attribute_value_length(type);
@@ -396,7 +396,7 @@ void mrp_join_timer_callback(void* arg)
   }
 
   // loop through all attributes of all types
-  for (u8 type = 0; type < MRP_MAX_ATTRIBUTE_TYPES; type++)
+  for (u8 type = app->min_attribute_type; type < app->max_attribute_type; type++)
   {
     struct Node* head = app->attributes[type];
     struct Node* node = head;
@@ -507,7 +507,7 @@ int mrp_stop_leave_timer(const struct mrp_attribute* attr)
 void mrp_periodic_timer_callback(void* arg)
 {
   const struct mrp_application* app = (struct mrp_application*)arg;
-  for (u8 type = 1; type < MRP_MAX_ATTRIBUTE_TYPES; type++)
+  for (u8 type = app->min_attribute_type; type < app->max_attribute_type; type++)
   {
     struct Node* head = app->attributes[type];
     struct Node* node = head;
@@ -1020,7 +1020,7 @@ void mrp_leaveall_exec_action(struct mrp_application* app)
     ESP_LOGI(TAG, "[app: %s] LeaveAll action S_LA executed, notifying all applicant and registrar state machines",
              mrp_application_type_to_str(app->type));
     // loop through all attributes of all types
-    for (u8 type = 0; type < MRP_MAX_ATTRIBUTE_TYPES; type++)
+    for (u8 type = app->min_attribute_type; type < app->max_attribute_type; type++)
     {
       struct Node* head = app->attributes[type];
       struct Node* node = head;
@@ -1226,8 +1226,11 @@ int mrp_init(struct mrp_application* app, mrp_application_type_t type)
     return ESP_FAIL;
   }
 
-  for (int i = 0; i < MRP_MAX_ATTRIBUTE_TYPES; i++)
+  ESP_LOGI(TAG, "[app: %s] Initializing MRP attribute lists [0->%d]...", mrp_application_type_to_str(app->type),
+           app->max_attribute_type);
+  for (int i = 0; i <= app->max_attribute_type; i++)
   {
+    ESP_LOGI(TAG, "[app: %s] Initializing MRP attribute type %d.", mrp_application_type_to_str(app->type), i);
     struct Node* head = calloc(1, sizeof(struct Node));
     head->next = head;
     head->prev = head;
