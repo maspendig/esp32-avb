@@ -1,4 +1,10 @@
 dependencies:
+  audio:
+    dependencies: []
+    source:
+      path: /home/max/Projects/fh/thesis/esp32-avb/components/audio
+      type: local
+    version: '*'
   avb:
     dependencies: []
     source:
@@ -89,6 +95,7 @@ dependencies:
       type: local
     version: '*'
 direct_dependencies:
+- audio
 - avb
 - esp_eth_time
 - espressif/ch390
@@ -100,6 +107,6 @@ direct_dependencies:
 - espressif/lan86xx_common
 - idf
 - ptpd
-manifest_hash: 5bb8f5280f36a686f485d9f7615b16723fdc8fe9858febf35e859a30314f65f5
+manifest_hash: e9ac82739dffdc269fa73b9bc3c5cc0e8f4a9113e49887923b54e9c4fe5ecd30
 target: esp32p4
 version: 2.0.0

@@ -14,7 +14,7 @@
 #include "driver/gpio.h"
 #include "ptpd.h"
 #include "avtp.h"
-#include "audio_output.h"
+#include "audio.h"
 
 #include "esp_eth_time.h"
 
@@ -95,15 +95,7 @@ void app_main(void)
 
   /* Initialize audio output system for AVB stream playback */
   ESP_LOGI(TAG, "Initializing audio output for AVB stream");
-  if (audio_output_init() == ESP_OK)
-  {
-    ESP_LOGI(TAG, "Audio output initialized - ready for AVB stream playback");
-    /* Note: Not starting the sinewave task - audio will come from AVB 61883-IIDC stream */
-  }
-  else
-  {
-    ESP_LOGE(TAG, "Failed to initialize audio output");
-  }
+  CODEC_INIT();
 
   struct timespec cur_time;
   // wait for the clock to be available

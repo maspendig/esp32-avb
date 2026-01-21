@@ -29,5 +29,5 @@
 #define AUDIO_MCLK_MULTIPLE     384  // For 24-bit compatibility
 #define AUDIO_VOICE_VOLUME      60   // 0-100
 
-esp_err_t es8311_codec_init(i2s_chan_handle_t* tx_handle, i2s_chan_handle_t* rx_handle);
+void es8311_init();
 #endif //ETHERNET_PTP_ES8311_H

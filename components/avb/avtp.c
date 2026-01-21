@@ -22,7 +22,7 @@
 #include <time.h>
 #include <sys/select.h>
 
-#include "audio_output.h"
+#include "audio.h"
 
 #define CONFIG_ADP_SEND_INTERVAL_MSEC 5800
 
@@ -421,7 +421,8 @@ static void avtp_stream_task(void* arg)
                 if (num_samples > 0)
                 {
                   size_t bytes_to_write = num_samples * 2 * sizeof(int16_t);
-                  audio_output_write(audio_samples, bytes_to_write);
+                  size_t* bytes_written = 0;
+                  CODEC_I2S_WRITE(audio_samples, bytes_to_write, bytes_written);
                 }
                 seq_number++;
               }
