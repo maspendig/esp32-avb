@@ -29,5 +29,18 @@
 #define AUDIO_MCLK_MULTIPLE     384  // For 24-bit compatibility
 #define AUDIO_VOICE_VOLUME      60   // 0-100
 
+/**
+ * @brief Initialize ES8311 codec and I2S driver
+ */
 void es8311_init();
+
+/**
+ * @brief Write audio data to I2S
+ *
+ * @param data Buffer containing audio data
+ * @param size Size of buffer in bytes
+ * @param bytes_written Pointer to store number of bytes written
+ */
+void es8311_i2s_write(const void* data, size_t size, size_t* bytes_written);
+
 #endif //ETHERNET_PTP_ES8311_H
