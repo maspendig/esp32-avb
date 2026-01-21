@@ -95,7 +95,7 @@ void app_main(void)
 
   /* Initialize audio output system for AVB stream playback */
   ESP_LOGI(TAG, "Initializing audio output for AVB stream");
-  CODEC_INIT();
+  init_audio_codec();
 
   struct timespec cur_time;
   // wait for the clock to be available

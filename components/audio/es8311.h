@@ -41,6 +41,6 @@ void es8311_init();
  * @param size Size of buffer in bytes
  * @param bytes_written Pointer to store number of bytes written
  */
-void es8311_i2s_write(const void* data, size_t size, size_t* bytes_written);
+void es8311_i2s_write(const void* data, size_t size, uint32_t* bytes_written);
 
 #endif //ETHERNET_PTP_ES8311_H

@@ -6,11 +6,7 @@
 #define ETHERNET_PTP_AUDIO_H
 #include <sys/types.h>
 
-// Define the codec to use (this could also come from Kconfig)
-#ifndef CONFIG_CODEC_ES8311
 #define CONFIG_CODEC_ES8311 1
-#endif
-
 
 #ifdef CONFIG_CODEC_ES8311
 #include "es8311.h"
@@ -32,4 +28,5 @@
 #error "No codec selected in menuconfig"
 #endif
 
+void init_audio_codec();
 #endif //ETHERNET_PTP_AUDIO_H

@@ -175,9 +175,9 @@ static esp_err_t es8311_codec_init()
   return ESP_OK;
 }
 
-void es8311_i2s_write(const void* data, size_t size, size_t* bytes_written)
+void es8311_i2s_write(const void* data, size_t size, u32* bytes_written)
 {
-  ESP_ERROR_CHECK(i2s_channel_write(tx_handle, data, size, bytes_written, 0));
+  ESP_ERROR_CHECK(i2s_channel_write(tx_handle, data, size, (size_t*)bytes_written, 0));
 }
 
 void es8311_init()

@@ -8,5 +8,44 @@
  */
 
 #include "audio.h"
+#include <esp_ldo_regulator.h>
+#include <esp_log.h>
+#include <driver/gpio.h>
+
+#define TAG "audio"
+
+void init_audio_codec()
+{
+#ifndef CONFIG_CODEC_ES8311
+  gpio_config_t io_conf;
+  io_conf.intr_type = GPIO_INTR_DISABLE;
+  io_conf.mode = GPIO_MODE_INPUT;
+  io_conf.pin_bit_mask = (1ULL << GPIO_NUM_35);
+  io_conf.pull_down_en = 0;
+  io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+  gpio_config(&io_conf);
+  // Configure LDO 4 to 3.3V
+  ESP_LOGI(TAG, "Configuring LDO 4 to 3.3V");
+  esp_ldo_channel_handle_t ldo4_chan = NULL;
+  esp_ldo_channel_config_t ldo_config = {
+    .chan_id = 4, // LDO channel 4
+    .voltage_mv = 3300, // 3.3V in millivolts
+    .flags = {
+      .adjustable = false, // Not adjustable after acquisition
+    }
+  };
+  esp_err_t ret = esp_ldo_acquire_channel(&ldo_config, &ldo4_chan);
+  if (ret == ESP_OK)
+  {
+    ESP_LOGI(TAG, "LDO 4 configured to 3.3V successfully");
+  }
+  else
+  {
+    ESP_LOGE(TAG, "Failed to configure LDO 4: %s", esp_err_to_name(ret));
+  }
+#endif // CONFIG_AUDIO_CODEC_ES8311
+
+  CODEC_INIT();
+}
 
 #define TAG "audio"

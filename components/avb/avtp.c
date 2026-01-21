@@ -421,7 +421,7 @@ static void avtp_stream_task(void* arg)
                 if (num_samples > 0)
                 {
                   size_t bytes_to_write = num_samples * 2 * sizeof(int16_t);
-                  size_t* bytes_written = 0;
+                  u32* bytes_written = 0;
                   CODEC_I2S_WRITE(audio_samples, bytes_to_write, bytes_written);
                 }
                 seq_number++;
