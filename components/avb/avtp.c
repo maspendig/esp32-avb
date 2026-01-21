@@ -355,6 +355,8 @@ static void avtp_stream_task(void* arg)
   u8 raw_buf[1518]; /* Max Ethernet frame size */
   u8 seq_number = 0;
 
+  init_audio_codec();
+
   ESP_LOGI(TAG, "Stream task started on core %d (priority %d)",
            xPortGetCoreID(), uxTaskPriorityGet(NULL));
 
@@ -421,8 +423,8 @@ static void avtp_stream_task(void* arg)
                 if (num_samples > 0)
                 {
                   size_t bytes_to_write = num_samples * 2 * sizeof(int16_t);
-                  u32* bytes_written = 0;
-                  CODEC_I2S_WRITE(audio_samples, bytes_to_write, bytes_written);
+                  u32 bytes_written = 0;
+                  CODEC_I2S_WRITE(audio_samples, bytes_to_write, &bytes_written);
                 }
                 seq_number++;
               }

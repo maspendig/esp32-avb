@@ -14,7 +14,6 @@
 #include "driver/gpio.h"
 #include "ptpd.h"
 #include "avtp.h"
-#include "audio.h"
 
 #include "esp_eth_time.h"
 
@@ -95,7 +94,6 @@ void app_main(void)
 
   /* Initialize audio output system for AVB stream playback */
   ESP_LOGI(TAG, "Initializing audio output for AVB stream");
-  init_audio_codec();
 
   struct timespec cur_time;
   // wait for the clock to be available
