@@ -35,6 +35,21 @@
 #define AVTP_VERSION_MASK  0x70 /* bits 7..5 */
 #define AVTP_MSGTYPE_MASK  0x0F /* bits 4..0 */
 
+/* IEEE 1722-2016 5.4.3 IEC 61883 CIP header encapsulation */
+typedef struct iec61883_cip_header
+{
+  u8 qi_1 : 2; /* quadlet indicator */
+  u8 sid : 6; /* source id */
+  u8 dbs; /* data block size */
+  u8 fn : 1; /* fraction number */
+  u8 qpc : 3; /* quadlet per channel */
+  u8 sph : 1; /* source packet header */
+  u8 dbc; /* data block count */
+  u8 qi_2 : 2; /* quadlet indicator */
+  u8 fmt : 6; /* format */
+  u8 cip_fmt_specific_data[3]; /* format specific data */
+  u8 cip_data_payload[];
+} __attribute__((packed)) iec61883_cip_header_t;
 
 struct avtp_discovery_msg_s
 {
