@@ -36,7 +36,6 @@ const char* TAG = "avtp";
 
 /* Forward declarations */
 static uint64_t mac_to_entity_id(uint64_t mac);
-static void extract_am824_audio(const u8* packet, size_t packet_len, int16_t* output_buffer, size_t* output_samples);
 
 static struct avtp_state_s* s_state;
 
@@ -186,155 +185,53 @@ static uint64_t mac_to_entity_id(uint64_t mac)
   return ((mac & 0xffffff000000) << 16) | (0xfffe000000) | (mac & 0xffffff);
 }
 
-/**
- * @brief Extract AM824 audio samples from 61883-IIDC packet
- *
- * IEC 61883-6 AM824 format:
- * - Each audio sample is 32 bits (4 bytes)
- * - Label (8 bits) + PCM data (24 bits, MSB aligned)
- * - For 48kHz stereo, typically 6 samples per channel per packet
- *
- * Packet structure (with VLAN):
- * - Ethernet header (14 bytes)
- * - VLAN tag (4 bytes)
- * - AVTP header (~24 bytes for 61883-IIDC)
- * - CIP header (8 bytes)
- * - Audio data (AM824 format)
- *
- * @param packet Raw packet buffer starting from Ethernet header
- * @param packet_len Total packet length
- * @param output_buffer Output buffer for 16-bit stereo PCM samples
- * @param output_samples Number of stereo sample pairs extracted
- */
-static void extract_am824_audio(const u8* packet, size_t packet_len, int16_t* output_buffer, size_t* output_samples)
+
+typedef struct iec61883
 {
-  *output_samples = 0;
+  u8 subtype;
+  u8 sv : 1;
+  u8 version : 3;
+  u8 media_clock_restart : 1;
+  u8 gateway_info_valid : 1;
+  u8 timestamp_valid : 1;
+  u8 sequence_num;
+  u8 reserved : 7;
+  u8 time_uncertain : 1;
+  u64 stream_id;
+  u32 avtp_timestamp;
+  u32 gateway_info;
+  u16 stream_data_length;
+} __attribute__((packed)) iec61883_t;
 
-  /* Parse VLAN-tagged frame structure:
-   * Ethernet (14) + VLAN (4) = 18 bytes
-   * Then AVTP 61883-IIDC header starts at offset 18
-   */
-  const size_t vlan_header_size = 18; // Eth + VLAN
+typedef struct am824_sample
+{
+  u8 label;
+  u8 sample[3];
+} __attribute__((packed)) am824_sample_t;
 
-  if (packet_len < vlan_header_size + 32) // Minimum: headers + some audio
+static void extract_am824_audio(const u8* packet, size_t packet_len, int32_t* output_buffer, u8 channels,
+                                size_t* output_samples)
+{
+  iec61883_t* iec61883 = (iec61883_t*)&packet[18];
+
+  iec61883_cip_header_t* cip = (iec61883_cip_header_t*)&packet[42];
+  /* amount of channels per sample */
+  u8 dbs = cip->dbs;
+
+  u8* audio_data = (u8*)&packet[50];
+
+  unsigned int sample_count = 0;
+  // Calculate number of samples in the packet
+  for (int i = 0; i < iec61883->stream_data_length && i < packet_len - 50; i += 4)
   {
-    return;
-  }
-
-  /* 61883-IIDC AVTP header (24 bytes):
-   * 0: subtype (0x00)
-   * 1: sv, version, mr, _r, tv
-   * 2-3: sequence_num
-   * 4-7: stream_id (upper 32 bits)
-   * 8-11: avtp_timestamp
-   * 12: gateway_info
-   * 13-15: stream_data_length (in bytes)
-   * 16-17: tag (upper 8), channel, tcode, sy
-   * 18-23: stream_id (lower 48 bits)
-   */
-  const u8* avtp_header = packet + vlan_header_size;
-
-  // Extract stream_data_length (includes CIP header + audio data)
-  u16 stream_data_length = (avtp_header[13] << 16) | (avtp_header[14] << 8) | avtp_header[15];
-  stream_data_length &= 0xFFFF; // Only lower 16 bits
-
-  /* CIP header starts after AVTP header (24 bytes) */
-  const size_t cip_offset = vlan_header_size + 24;
-
-  if (packet_len < cip_offset + 8) // Need at least CIP header
-  {
-    return;
-  }
-
-  /* CIP header (8 bytes):
-   * 0-1: SID, DBS, FN, QPC, SPH, _r
-   * 2-5: DBC, FMT, FDF, SYT
-   * 6-7: Additional format info
-   *
-   * For AM824: DBS = number of data blocks
-   * (DBS field available but not used for basic stereo extraction)
-   */
-
-  /* Audio data starts after CIP header */
-  const size_t audio_offset = cip_offset + 8;
-
-  if (packet_len < audio_offset + 4)
-  {
-    return;
-  }
-
-  /* Calculate number of audio samples
-   * For stereo AM824: each sample is 4 bytes, 2 channels = 8 bytes per stereo pair
-   * Typical: 6 stereo pairs = 48 bytes of audio data
-   */
-  size_t audio_data_len = stream_data_length - 8; // Subtract CIP header
-  size_t num_quadlets = audio_data_len / 4; // Each quadlet is 4 bytes
-
-  const u8* audio_data = packet + audio_offset;
-  size_t out_idx = 0;
-
-  /* Extract samples (assuming 2-channel stereo AM824) */
-  for (size_t i = 0; i < num_quadlets && (out_idx < 12); i += 2) // Process stereo pairs (6 samples = 12 channels)
-  {
-    size_t offset = i * 4;
-
-    if (audio_offset + offset + 8 > packet_len)
+    u8 channel_index = (i / 4) % dbs;
+    if (channel_index < channels)
     {
-      break;
-    }
-
-    /* Extract left channel (first quadlet):
-     * Byte 0: Label (typically 0x40 for valid audio)
-     * Bytes 1-3: 24-bit PCM data (MSB first)
-     */
-    u8 label_l = audio_data[offset];
-
-    // Only process if label indicates valid audio (0x40)
-    if ((label_l & 0x40) == 0)
-    {
-      continue; // Skip invalid samples
-    }
-
-    // Extract 24-bit PCM and convert to 16-bit
-    int32_t sample_l = (audio_data[offset + 1] << 16) |
-      (audio_data[offset + 2] << 8) |
-      audio_data[offset + 3];
-
-    // Sign extend 24-bit to 32-bit
-    if (sample_l & 0x800000)
-    {
-      sample_l |= 0xFF000000;
-    }
-
-    // Convert to 16-bit (right shift 8 bits)
-    output_buffer[out_idx++] = (int16_t)(sample_l >> 8);
-
-    /* Extract right channel (second quadlet) */
-    if (i + 1 < num_quadlets)
-    {
-      u8 label_r = audio_data[offset + 4];
-
-      if ((label_r & 0x40) == 0)
-      {
-        output_buffer[out_idx++] = 0; // Silence if invalid
-        continue;
-      }
-
-      int32_t sample_r = (audio_data[offset + 5] << 16) |
-        (audio_data[offset + 6] << 8) |
-        audio_data[offset + 7];
-
-      // Sign extend
-      if (sample_r & 0x800000)
-      {
-        sample_r |= 0xFF000000;
-      }
-
-      output_buffer[out_idx++] = (int16_t)(sample_r >> 8);
+      am824_sample_t* sample = (am824_sample_t*)&audio_data[i];
+      output_buffer[sample_count++] = 0x00 | sample->sample[2] << 8 | sample->sample[1] << 16 | sample->sample[0] << 24;
     }
   }
-
-  *output_samples = out_idx / 2; // Return number of stereo pairs
+  *output_samples = sample_count / channels;
 }
 
 
@@ -415,14 +312,16 @@ static void avtp_stream_task(void* arg)
                   seq_number = raw_buf[20];
                 }
 
-                int16_t audio_samples[12];
+                // TODO depends on codec used...
+                u8 channels = 4;
+                int32_t audio_samples[6 * channels];
                 size_t num_samples = 0;
 
-                extract_am824_audio(raw_buf, len, audio_samples, &num_samples);
+                extract_am824_audio(raw_buf, len, audio_samples, channels, &num_samples);
 
                 if (num_samples > 0)
                 {
-                  size_t bytes_to_write = num_samples * 2 * sizeof(int16_t);
+                  size_t bytes_to_write = num_samples * channels * sizeof(int32_t);
                   u32 bytes_written = 0;
                   CODEC_I2S_WRITE(audio_samples, bytes_to_write, &bytes_written);
                 }
