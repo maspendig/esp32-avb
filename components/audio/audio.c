@@ -16,7 +16,7 @@
 
 void init_audio_codec()
 {
-  // #ifndef CONFIG_CODEC_ES8311
+#ifndef CONFIG_CODEC_ES8311
 
   // Configure LDO 4 to 3.3V
   ESP_LOGI(TAG, "Configuring LDO 4 to 3.3V");
@@ -37,9 +37,13 @@ void init_audio_codec()
   {
     ESP_LOGE(TAG, "Failed to configure LDO 4: %s", esp_err_to_name(ret));
   }
-  // #endif // CONFIG_AUDIO_CODEC_ES8311
+#endif // CONFIG_AUDIO_CODEC_ES8311
 
   CODEC_INIT();
+
+#ifdef CONFIG_CODEC_TLV320AIC3254
+  CODEC_SET_OUTPUT_LEVELS(75, 75); // Set output levels to 75%
+#endif
 }
 
 #define TAG "audio"

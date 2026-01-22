@@ -186,29 +186,6 @@ static uint64_t mac_to_entity_id(uint64_t mac)
 }
 
 
-typedef struct iec61883
-{
-  u8 subtype;
-  u8 sv : 1;
-  u8 version : 3;
-  u8 media_clock_restart : 1;
-  u8 gateway_info_valid : 1;
-  u8 timestamp_valid : 1;
-  u8 sequence_num;
-  u8 reserved : 7;
-  u8 time_uncertain : 1;
-  u64 stream_id;
-  u32 avtp_timestamp;
-  u32 gateway_info;
-  u16 stream_data_length;
-} __attribute__((packed)) iec61883_t;
-
-typedef struct am824_sample
-{
-  u8 label;
-  u8 sample[3];
-} __attribute__((packed)) am824_sample_t;
-
 static void extract_am824_audio(const u8* packet, size_t packet_len, int32_t* output_buffer, u8 channels,
                                 size_t* output_samples)
 {
@@ -312,8 +289,7 @@ static void avtp_stream_task(void* arg)
                   seq_number = raw_buf[20];
                 }
 
-                // TODO depends on codec used...
-                u8 channels = 4;
+                u8 channels = OUTPUT_CHANNELS;
                 int32_t audio_samples[6 * channels];
                 size_t num_samples = 0;
 
