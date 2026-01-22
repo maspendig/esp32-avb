@@ -185,9 +185,39 @@ static uint64_t mac_to_entity_id(uint64_t mac)
   return ((mac & 0xffffff000000) << 16) | (0xfffe000000) | (mac & 0xffffff);
 }
 
+static void extract_am824_audio_to_16(const u8* packet, size_t packet_len, s16* output_buffer, u8 channels,
+                                      size_t* output_samples)
+{
+  iec61883_t* iec61883 = (iec61883_t*)&packet[18];
 
-static void extract_am824_audio(const u8* packet, size_t packet_len, int32_t* output_buffer, u8 channels,
-                                size_t* output_samples)
+  iec61883_cip_header_t* cip = (iec61883_cip_header_t*)&packet[42];
+  /* amount of channels per sample */
+  u8 dbs = cip->dbs;
+
+  u8* audio_data = (u8*)&packet[50];
+
+  unsigned int sample_count = 0;
+  // Calculate number of samples in the packet
+  for (int i = 0; i < iec61883->stream_data_length && i < packet_len - 50; i += 4)
+  {
+    u8 channel_index = (i / 4) % dbs;
+    if (channel_index < channels)
+    {
+      am824_sample_t* sample = (am824_sample_t*)&audio_data[i];
+
+      s32 sample_value = sample->sample[0] << 16 | sample->sample[1] << 8 | sample->sample[2];
+      if (sample_value & 0x800000)
+      {
+        sample_value |= 0xFF000000; // sign extend negative values
+      }
+      output_buffer[sample_count++] = (int16_t)(sample_value >> 8);
+    }
+  }
+  *output_samples = sample_count / channels;
+}
+
+static void extract_am824_audio_to_32(const u8* packet, size_t packet_len, s32* output_buffer, u8 channels,
+                                      size_t* output_samples)
 {
   iec61883_t* iec61883 = (iec61883_t*)&packet[18];
 
@@ -290,14 +320,19 @@ static void avtp_stream_task(void* arg)
                 }
 
                 u8 channels = OUTPUT_CHANNELS;
-                int32_t audio_samples[6 * channels];
                 size_t num_samples = 0;
+#if SAMPLE_BIT_RATE == 16
+                int16_t audio_samples[6 * channels];
+                extract_am824_audio_to_16(raw_buf, len, audio_samples, channels, &num_samples);
+#else
+                int32_t audio_samples[6 * channels];
+                extract_am824_audio_to_32(raw_buf, len, audio_samples, channels, &num_samples);
+#endif
 
-                extract_am824_audio(raw_buf, len, audio_samples, channels, &num_samples);
 
                 if (num_samples > 0)
                 {
-                  size_t bytes_to_write = num_samples * channels * sizeof(int32_t);
+                  size_t bytes_to_write = num_samples * channels * sizeof(audio_samples[0]);
                   u32 bytes_written = 0;
                   CODEC_I2S_WRITE(audio_samples, bytes_to_write, &bytes_written);
                 }
