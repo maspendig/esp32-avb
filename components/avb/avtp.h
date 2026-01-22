@@ -36,6 +36,47 @@
 #define AVTP_MSGTYPE_MASK  0x0F /* bits 4..0 */
 
 
+/* IEC 61883-6 CIP header format */
+typedef struct iec61883
+{
+  u8 subtype;
+  u8 sv : 1;
+  u8 version : 3;
+  u8 media_clock_restart : 1;
+  u8 gateway_info_valid : 1;
+  u8 timestamp_valid : 1;
+  u8 sequence_num;
+  u8 reserved : 7;
+  u8 time_uncertain : 1;
+  u64 stream_id;
+  u32 avtp_timestamp;
+  u32 gateway_info;
+  u16 stream_data_length;
+} __attribute__((packed)) iec61883_t;
+
+/* AM824 audio sample format */
+typedef struct am824_sample
+{
+  u8 label;
+  u8 sample[3];
+} __attribute__((packed)) am824_sample_t;
+
+/* IEEE 1722-2016 5.4.3 IEC 61883 CIP header encapsulation */
+typedef struct iec61883_cip_header
+{
+  u8 qi_1 : 2; /* quadlet indicator */
+  u8 sid : 6; /* source id */
+  u8 dbs; /* data block size */
+  u8 fn : 1; /* fraction number */
+  u8 qpc : 3; /* quadlet per channel */
+  u8 sph : 1; /* source packet header */
+  u8 dbc; /* data block count */
+  u8 qi_2 : 2; /* quadlet indicator */
+  u8 fmt : 6; /* format */
+  u8 cip_fmt_specific_data[3]; /* format specific data */
+  u8 cip_data_payload[];
+} __attribute__((packed)) iec61883_cip_header_t;
+
 struct avtp_discovery_msg_s
 {
   struct header_s header;

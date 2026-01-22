@@ -22,7 +22,7 @@
 #include <time.h>
 #include <sys/select.h>
 
-#include "audio_output.h"
+#include "audio.h"
 
 #define CONFIG_ADP_SEND_INTERVAL_MSEC 5800
 
@@ -36,7 +36,6 @@ const char* TAG = "avtp";
 
 /* Forward declarations */
 static uint64_t mac_to_entity_id(uint64_t mac);
-static void extract_am824_audio(const u8* packet, size_t packet_len, int16_t* output_buffer, size_t* output_samples);
 
 static struct avtp_state_s* s_state;
 
@@ -186,155 +185,60 @@ static uint64_t mac_to_entity_id(uint64_t mac)
   return ((mac & 0xffffff000000) << 16) | (0xfffe000000) | (mac & 0xffffff);
 }
 
-/**
- * @brief Extract AM824 audio samples from 61883-IIDC packet
- *
- * IEC 61883-6 AM824 format:
- * - Each audio sample is 32 bits (4 bytes)
- * - Label (8 bits) + PCM data (24 bits, MSB aligned)
- * - For 48kHz stereo, typically 6 samples per channel per packet
- *
- * Packet structure (with VLAN):
- * - Ethernet header (14 bytes)
- * - VLAN tag (4 bytes)
- * - AVTP header (~24 bytes for 61883-IIDC)
- * - CIP header (8 bytes)
- * - Audio data (AM824 format)
- *
- * @param packet Raw packet buffer starting from Ethernet header
- * @param packet_len Total packet length
- * @param output_buffer Output buffer for 16-bit stereo PCM samples
- * @param output_samples Number of stereo sample pairs extracted
- */
-static void extract_am824_audio(const u8* packet, size_t packet_len, int16_t* output_buffer, size_t* output_samples)
+static void extract_am824_audio_to_16(const u8* packet, size_t packet_len, s16* output_buffer, u8 channels,
+                                      size_t* output_samples)
 {
-  *output_samples = 0;
+  iec61883_t* iec61883 = (iec61883_t*)&packet[18];
 
-  /* Parse VLAN-tagged frame structure:
-   * Ethernet (14) + VLAN (4) = 18 bytes
-   * Then AVTP 61883-IIDC header starts at offset 18
-   */
-  const size_t vlan_header_size = 18; // Eth + VLAN
+  iec61883_cip_header_t* cip = (iec61883_cip_header_t*)&packet[42];
+  /* amount of channels per sample */
+  u8 dbs = cip->dbs;
 
-  if (packet_len < vlan_header_size + 32) // Minimum: headers + some audio
+  u8* audio_data = (u8*)&packet[50];
+
+  unsigned int sample_count = 0;
+  // Calculate number of samples in the packet
+  for (int i = 0; i < iec61883->stream_data_length && i < packet_len - 50; i += 4)
   {
-    return;
-  }
-
-  /* 61883-IIDC AVTP header (24 bytes):
-   * 0: subtype (0x00)
-   * 1: sv, version, mr, _r, tv
-   * 2-3: sequence_num
-   * 4-7: stream_id (upper 32 bits)
-   * 8-11: avtp_timestamp
-   * 12: gateway_info
-   * 13-15: stream_data_length (in bytes)
-   * 16-17: tag (upper 8), channel, tcode, sy
-   * 18-23: stream_id (lower 48 bits)
-   */
-  const u8* avtp_header = packet + vlan_header_size;
-
-  // Extract stream_data_length (includes CIP header + audio data)
-  u16 stream_data_length = (avtp_header[13] << 16) | (avtp_header[14] << 8) | avtp_header[15];
-  stream_data_length &= 0xFFFF; // Only lower 16 bits
-
-  /* CIP header starts after AVTP header (24 bytes) */
-  const size_t cip_offset = vlan_header_size + 24;
-
-  if (packet_len < cip_offset + 8) // Need at least CIP header
-  {
-    return;
-  }
-
-  /* CIP header (8 bytes):
-   * 0-1: SID, DBS, FN, QPC, SPH, _r
-   * 2-5: DBC, FMT, FDF, SYT
-   * 6-7: Additional format info
-   *
-   * For AM824: DBS = number of data blocks
-   * (DBS field available but not used for basic stereo extraction)
-   */
-
-  /* Audio data starts after CIP header */
-  const size_t audio_offset = cip_offset + 8;
-
-  if (packet_len < audio_offset + 4)
-  {
-    return;
-  }
-
-  /* Calculate number of audio samples
-   * For stereo AM824: each sample is 4 bytes, 2 channels = 8 bytes per stereo pair
-   * Typical: 6 stereo pairs = 48 bytes of audio data
-   */
-  size_t audio_data_len = stream_data_length - 8; // Subtract CIP header
-  size_t num_quadlets = audio_data_len / 4; // Each quadlet is 4 bytes
-
-  const u8* audio_data = packet + audio_offset;
-  size_t out_idx = 0;
-
-  /* Extract samples (assuming 2-channel stereo AM824) */
-  for (size_t i = 0; i < num_quadlets && (out_idx < 12); i += 2) // Process stereo pairs (6 samples = 12 channels)
-  {
-    size_t offset = i * 4;
-
-    if (audio_offset + offset + 8 > packet_len)
+    u8 channel_index = (i / 4) % dbs;
+    if (channel_index < channels)
     {
-      break;
-    }
+      am824_sample_t* sample = (am824_sample_t*)&audio_data[i];
 
-    /* Extract left channel (first quadlet):
-     * Byte 0: Label (typically 0x40 for valid audio)
-     * Bytes 1-3: 24-bit PCM data (MSB first)
-     */
-    u8 label_l = audio_data[offset];
-
-    // Only process if label indicates valid audio (0x40)
-    if ((label_l & 0x40) == 0)
-    {
-      continue; // Skip invalid samples
-    }
-
-    // Extract 24-bit PCM and convert to 16-bit
-    int32_t sample_l = (audio_data[offset + 1] << 16) |
-      (audio_data[offset + 2] << 8) |
-      audio_data[offset + 3];
-
-    // Sign extend 24-bit to 32-bit
-    if (sample_l & 0x800000)
-    {
-      sample_l |= 0xFF000000;
-    }
-
-    // Convert to 16-bit (right shift 8 bits)
-    output_buffer[out_idx++] = (int16_t)(sample_l >> 8);
-
-    /* Extract right channel (second quadlet) */
-    if (i + 1 < num_quadlets)
-    {
-      u8 label_r = audio_data[offset + 4];
-
-      if ((label_r & 0x40) == 0)
+      s32 sample_value = sample->sample[0] << 16 | sample->sample[1] << 8 | sample->sample[2];
+      if (sample_value & 0x800000)
       {
-        output_buffer[out_idx++] = 0; // Silence if invalid
-        continue;
+        sample_value |= 0xFF000000; // sign extend negative values
       }
-
-      int32_t sample_r = (audio_data[offset + 5] << 16) |
-        (audio_data[offset + 6] << 8) |
-        audio_data[offset + 7];
-
-      // Sign extend
-      if (sample_r & 0x800000)
-      {
-        sample_r |= 0xFF000000;
-      }
-
-      output_buffer[out_idx++] = (int16_t)(sample_r >> 8);
+      output_buffer[sample_count++] = (int16_t)(sample_value >> 8);
     }
   }
+  *output_samples = sample_count / channels;
+}
 
-  *output_samples = out_idx / 2; // Return number of stereo pairs
+static void extract_am824_audio_to_32(const u8* packet, size_t packet_len, s32* output_buffer, u8 channels,
+                                      size_t* output_samples)
+{
+  iec61883_t* iec61883 = (iec61883_t*)&packet[18];
+
+  iec61883_cip_header_t* cip = (iec61883_cip_header_t*)&packet[42];
+  /* amount of channels per sample */
+  u8 dbs = cip->dbs;
+
+  u8* audio_data = (u8*)&packet[50];
+
+  unsigned int sample_count = 0;
+  // Calculate number of samples in the packet
+  for (int i = 0; i < iec61883->stream_data_length && i < packet_len - 50; i += 4)
+  {
+    u8 channel_index = (i / 4) % dbs;
+    if (channel_index < channels)
+    {
+      am824_sample_t* sample = (am824_sample_t*)&audio_data[i];
+      output_buffer[sample_count++] = 0x00 | sample->sample[2] << 8 | sample->sample[1] << 16 | sample->sample[0] << 24;
+    }
+  }
+  *output_samples = sample_count / channels;
 }
 
 
@@ -354,6 +258,8 @@ static void avtp_stream_task(void* arg)
   struct avtp_state_s* state = (struct avtp_state_s*)arg;
   u8 raw_buf[1518]; /* Max Ethernet frame size */
   u8 seq_number = 0;
+
+  init_audio_codec();
 
   ESP_LOGI(TAG, "Stream task started on core %d (priority %d)",
            xPortGetCoreID(), uxTaskPriorityGet(NULL));
@@ -413,15 +319,22 @@ static void avtp_stream_task(void* arg)
                   seq_number = raw_buf[20];
                 }
 
-                int16_t audio_samples[12];
+                u8 channels = OUTPUT_CHANNELS;
                 size_t num_samples = 0;
+#if SAMPLE_BIT_RATE == 16
+                int16_t audio_samples[6 * channels];
+                extract_am824_audio_to_16(raw_buf, len, audio_samples, channels, &num_samples);
+#else
+                int32_t audio_samples[6 * channels];
+                extract_am824_audio_to_32(raw_buf, len, audio_samples, channels, &num_samples);
+#endif
 
-                extract_am824_audio(raw_buf, len, audio_samples, &num_samples);
 
                 if (num_samples > 0)
                 {
-                  size_t bytes_to_write = num_samples * 2 * sizeof(int16_t);
-                  audio_output_write(audio_samples, bytes_to_write);
+                  size_t bytes_to_write = num_samples * channels * sizeof(audio_samples[0]);
+                  u32 bytes_written = 0;
+                  CODEC_I2S_WRITE(audio_samples, bytes_to_write, &bytes_written);
                 }
                 seq_number++;
               }
@@ -547,23 +460,31 @@ static void avtp_control_task(void* arg)
   vTaskDelete(NULL);
 }
 
-static void avtp_listener_task(void* arg)
+int start_avtp_listener(const char* interface)
 {
-  const char* interface = "ETH_0";
+  if (s_state != NULL)
+  {
+    ESP_LOGE(TAG, "Other instance of AVTP is already running");
+    return ESP_FAIL;
+  }
+
+  if (interface == NULL)
+  {
+    interface = "ETH_0";
+  }
 
   struct avtp_state_s* state = calloc(1, sizeof(struct avtp_state_s));
-
-  if (arg != NULL)
+  if (!state)
   {
-    interface = arg;
+    ESP_LOGE(TAG, "Failed to allocate memory for AVTP state");
+    return ESP_ERR_NO_MEM;
   }
 
   if (avtp_init_state(state, interface) != ESP_OK)
   {
-    ESP_LOGE(TAG, "Failed to initialize AVTP state, exiting\n");
+    ESP_LOGE(TAG, "Failed to initialize AVTP state");
     free(state);
-    vTaskDelete(NULL);
-    return;
+    return ESP_FAIL;
   }
 
   ESP_LOGI(TAG, "AVTP listener initialized on interface: %s", interface);
@@ -583,9 +504,9 @@ static void avtp_listener_task(void* arg)
   if (ret != pdPASS)
   {
     ESP_LOGE(TAG, "Failed to create stream task");
+    s_state = NULL;
     free(state);
-    vTaskDelete(NULL);
-    return;
+    return ESP_FAIL;
   }
 
   /* Create control task on Core 0 */
@@ -605,30 +526,15 @@ static void avtp_listener_task(void* arg)
     ESP_LOGE(TAG, "Failed to create control task");
     state->stop = true;
     vTaskDelay(pdMS_TO_TICKS(100)); /* Give stream task time to exit */
+    s_state = NULL;
     free(state);
-    vTaskDelete(NULL);
-    return;
+    return ESP_FAIL;
   }
 
   ESP_LOGI(TAG, "AVTP dual-core architecture started: Stream on Core %d, Control on Core %d",
            STREAM_TASK_CORE, CONTROL_TASK_CORE);
 
-  /* This task can exit now, the stream and control tasks will run independently */
-  vTaskDelete(NULL);
-}
-
-
-int start_avtp_listener(const char* interface)
-{
-  if (s_state == NULL)
-  {
-    /* Use higher priority for real-time packet processing */
-    xTaskCreate(avtp_listener_task, "AVTP", 8192,
-                (void*)interface, 10, NULL);
-    return ESP_OK;
-  }
-  ESP_LOGE(TAG, "Other instance of AVTP is already running");
-  return ESP_FAIL;
+  return ESP_OK;
 }
 
 int stop_avtp_listener(int pid)

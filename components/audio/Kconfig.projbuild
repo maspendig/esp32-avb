@@ -1,0 +1,25 @@
+menu "AVB Configurations"
+
+    choice CODEC_SELECTION
+        prompt "Select Audio Codec"
+        default CODEC_ES8311
+        help
+            Choose which audio codec to use for this project.
+
+        config CODEC_ES8311
+            bool "ES8311 (Default)"
+            help
+                Use the onboard ES8311 codec (es8311.c).
+
+        config CODEC_TLV320AIC3254
+            bool "TLV320AIC3254"
+            help
+                Use the TLV320AIC3254 codec (codec.c).
+
+        config CODEC_AK4619
+            bool "AK4619 (TDM Mode)"
+            help
+                Use the AK4619 codec in TDM mode (ak4619_tdm.c).
+    endchoice
+
+endmenu
