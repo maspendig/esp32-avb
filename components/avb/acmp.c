@@ -227,6 +227,7 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_commo
     //                       MSRP_SR_CLASS_A_PRIO, /* priority - Class A */
     //                       1, /* rank - non-emergency */
     //                       100095); /* accumulated_latency in nanoseconds */
+    avtp_talker_start(state);
   }
   else if (is_listener_connected(state, listener_entity_id, listener_unique_id) == true)
   {
@@ -540,6 +541,7 @@ void disconnectTalker(struct avtp_state_s* state, struct acmp_common_s* msg)
     ESP_LOGI(TAG, "No more connected listeners, withdrawing talker advertisement");
     // TODO re-enable when MSRP leave is implemented
     // msrp_talker_leave(state, state->talker_stream_info.stream_id);
+    avtp_talker_stop(state);
 
     /* Deallocate stream multicast MAC address */
     maap_release(state);

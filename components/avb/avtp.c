@@ -179,7 +179,6 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   return ESP_OK;
 }
 
-
 static uint64_t mac_to_entity_id(uint64_t mac)
 {
   return ((mac & 0xffffff000000) << 16) | (0xfffe000000) | (mac & 0xffffff);
@@ -493,7 +492,7 @@ int start_avtp_listener(const char* interface)
   TaskHandle_t stream_task_handle;
   BaseType_t ret = xTaskCreatePinnedToCore(
     avtp_stream_task,
-    "AVTP_Stream",
+    "avtp_listener",
     8192,
     state,
     STREAM_TASK_PRIORITY,
@@ -513,7 +512,7 @@ int start_avtp_listener(const char* interface)
   TaskHandle_t control_task_handle;
   ret = xTaskCreatePinnedToCore(
     avtp_control_task,
-    "AVTP_Ctrl",
+    "avtp_ctrl",
     8192,
     state,
     CONTROL_TASK_PRIORITY,
@@ -541,4 +540,51 @@ int stop_avtp_listener(int pid)
 {
   s_state->stop = true;
   return ESP_OK;
+}
+
+static TaskHandle_t talker_stream_task_handle;
+
+static void avtp_talker_stream_task(void* arg)
+{
+  struct avtp_state_s* state = arg;
+  ESP_LOGI(TAG, "Talker stream task started on core %d (priority %d)",
+           xPortGetCoreID(), uxTaskPriorityGet(NULL));
+  while (!state->talker_stop)
+  {
+    /* Talker stream processing logic goes here */
+    vTaskDelay(pdMS_TO_TICKS(2000)); /* Placeholder delay */
+    ESP_LOGI(TAG, "Talker stream task running...");
+  }
+  ESP_LOGI(TAG, "Talker stream task exiting");
+  vTaskDelete(talker_stream_task_handle);
+}
+
+int avtp_talker_stop(struct avtp_state_s* state)
+{
+  state->talker_stop = true;
+  return ESP_OK;
+}
+
+int avtp_talker_start(struct avtp_state_s* state)
+{
+  state->talker_stop = false;
+  /* Create high-priority stream task on Core 1 */
+  BaseType_t ret = xTaskCreatePinnedToCore(
+    avtp_talker_stream_task,
+    "avtp_talker",
+    8192,
+    state,
+    STREAM_TASK_PRIORITY,
+    &talker_stream_task_handle,
+    STREAM_TASK_CORE
+  );
+
+  if (ret != pdPASS)
+  {
+    ESP_LOGE(TAG, "Failed to create stream task");
+    s_state = NULL;
+    free(state);
+    return ESP_FAIL;
+  }
+  return ret;
 }

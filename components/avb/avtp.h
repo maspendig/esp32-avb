@@ -181,6 +181,7 @@ struct talker_stream_info_s
 
 struct avtp_state_s
 {
+  bool talker_stop;
   bool stop;
   int socket; /* Untagged AVTP frames (0x22F0) */
   int vlan_socket; /* VLAN-tagged frames (0x8100) for AVB streams */
@@ -211,6 +212,8 @@ struct avtp_state_s
   bool acquire_persistent; /* Whether the acquisition is persistent */
 };
 
+int avtp_talker_start(struct avtp_state_s* state);
+int avtp_talker_stop(struct avtp_state_s* state);
 int start_avtp_listener(const char* interface);
 
 #define AVTP_GET_STATUS(hdr) \
