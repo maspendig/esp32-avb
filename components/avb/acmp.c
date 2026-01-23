@@ -218,16 +218,8 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_commo
     /* Start MSRP Talker Advertisement with proper state machine integration
      * This will trigger the applicant state machine to send periodic advertisements */
     // TODO start msrp talker advertise properly
-    // msrp_talker_advertise(state,
-    //                       state->talker_stream_info.stream_id,
-    //                       state->talker_stream_info.stream_dest_mac,
-    //                       state->talker_stream_info.stream_vlan_id,
-    //                       224, /* max_frame_size - typical for audio */
-    //                       1, /* max_frame_interval */
-    //                       MSRP_SR_CLASS_A_PRIO, /* priority - Class A */
-    //                       1, /* rank - non-emergency */
-    //                       100095); /* accumulated_latency in nanoseconds */
     avtp_talker_start(state);
+    msrp_register_stream_request(&state->msrp.app, &state->talker_stream_info);
   }
   else if (is_listener_connected(state, listener_entity_id, listener_unique_id) == true)
   {

@@ -542,6 +542,119 @@ int stop_avtp_listener(int pid)
   return ESP_OK;
 }
 
+
+typedef struct iec61883_am824_packet
+{
+  struct header_s header;
+
+  struct
+  {
+    u16 tci;
+    u16 vlan_eth_type;
+  } vlan_tag;
+
+  iec61883_t iec61883;
+
+  // TODO rename according to spec
+  union
+  {
+    struct
+    {
+      u8 format_tag : 2;
+      u8 channel : 6;
+      u8 tcode : 4;
+      u8 app_specific_control : 4;
+    } packet_info;
+
+    u8 packet_info_raw[2];
+  } packet_info_u;
+
+  iec61883_cip_header_t cip;
+  am824_sample_t audio_data[6 * 8];
+} iec61883_am824_packet_t;
+
+void avtp_set_common_header(struct avtp_state_s* state, struct iec61883_am824_packet* msg)
+{
+  /* Set Ethernet header */
+  memcpy(msg->header.dst_mac, state->talker_stream_info.stream_dest_mac, sizeof(msg->header.dst_mac));
+  memcpy(msg->header.src_mac, state->intf_hw_addr, sizeof(msg->header.src_mac));
+
+  /* Ethernet type (big-endian) */
+  msg->header.eth_type[0] = (ETH_TYPE_8021Q >> 8) & 0xFF;
+  msg->header.eth_type[1] = ETH_TYPE_8021Q & 0xFF;
+
+  u16 priority = 3;
+  u16 ineligible = 0;
+  u16 vlan_id = state->talker_stream_info.stream_vlan_id;
+  msg->vlan_tag.tci = htons((priority << 13) | (ineligible << 12) | vlan_id);
+  msg->vlan_tag.vlan_eth_type = htons(ETH_TYPE_AVTP);
+}
+
+void avtp_send_am824_stream(struct avtp_state_s* state, s32* audio_samples, u32 u32)
+{
+  iec61883_am824_packet_t p = {0};
+  avtp_set_common_header(state, &p);
+  p.iec61883.subtype = AVTP_SUBTYPE_61883_IIDC;
+
+  bool stream_id_valid = 1;
+  u8 version = 0;
+  bool media_clock_restart = 0;
+  bool gateway_info_valid = 0;
+  bool timestamp_valid = 0;
+  p.iec61883.avtp_info = (stream_id_valid << 7) |
+    (version << 4) |
+    (media_clock_restart << 3) |
+    (gateway_info_valid << 2) |
+    (timestamp_valid << 1);
+  p.iec61883.sequence_num = state->talker_stream_info.sequence_number++;
+  p.iec61883.stream_id = htonll(state->talker_stream_info.stream_id);
+  p.iec61883.avtp_timestamp = htonl(0); // TODO proper timestamp
+  p.iec61883.gateway_info = htonl(0);
+  p.iec61883.stream_data_length = htons(200); // TODO proper length
+  u8 format_tag = 0x1; // CIP header included
+  u8 channel = 31; // Originating source is on AVTP network
+  u8 tcode = 0xa; // Data packet
+  u8 app_specific_control = 0;
+  p.packet_info_u.packet_info_raw[0] = (format_tag << 6) | (channel & 0x3F);
+  p.packet_info_u.packet_info_raw[1] = (tcode << 4) | (app_specific_control & 0x0F);
+  p.cip.qi_1 = 0x0;
+  p.cip.sid = 63; // Origination source is on AVTP network
+  p.cip.dbs = 0x8;
+  p.cip.fn = 0;
+  p.cip.sph = 0;
+  p.cip.dbc = state->talker_stream_info.cip_data_block_continuity += 6; // 6 data blocks
+  p.cip.qi_2 = 0x2;
+  p.cip.fmt = 0x10; // AM824 format
+  p.cip.cip_fmt_specific_data[0] = 0x02;
+  p.cip.cip_fmt_specific_data[1] = 0x00;
+  p.cip.cip_fmt_specific_data[2] = 0x08; //
+
+  // Fill audio data
+  u8 audio_samples_idx = 0;
+  u8 avtp_samples_idx = 0;
+  for (int sample_idx = 0; sample_idx < 6; sample_idx++)
+  {
+    for (int ch = 0; ch < 8; ch++)
+    {
+      s32 sample_value = 0;
+      if (ch < OUTPUT_CHANNELS)
+      {
+        sample_value = audio_samples[audio_samples_idx++];
+      }
+      p.audio_data[avtp_samples_idx].label = 0x40; // Audio data label
+      p.audio_data[avtp_samples_idx].sample[0] = (sample_value >> 24) & 0xFF;
+      p.audio_data[avtp_samples_idx].sample[1] = (sample_value >> 16) & 0xFF;
+      p.audio_data[avtp_samples_idx].sample[2] = (sample_value >> 8) & 0xFF;
+      avtp_samples_idx++;
+    }
+  }
+  ssize_t sent_bytes = write(state->vlan_socket, &p, sizeof(p));
+  if (sent_bytes < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send AVTP stream packet: %d", errno);
+  }
+}
+
 static TaskHandle_t talker_stream_task_handle;
 
 static void avtp_talker_stream_task(void* arg)
@@ -551,9 +664,17 @@ static void avtp_talker_stream_task(void* arg)
            xPortGetCoreID(), uxTaskPriorityGet(NULL));
   while (!state->talker_stop)
   {
-    /* Talker stream processing logic goes here */
-    vTaskDelay(pdMS_TO_TICKS(2000)); /* Placeholder delay */
-    ESP_LOGI(TAG, "Talker stream task running...");
+    u32 bytes_read = 0;
+#if SAMPLE_BIT_RATE == 16
+    s16 audio_samples[INPUT_CHANNELS * 6];
+    CODEC_I2S_READ(audio_samples, sizeof(audio_samples), &bytes_read);
+#else
+    s32 audio_samples[INPUT_CHANNELS * 6];
+    CODEC_I2S_READ(audio_samples, sizeof(audio_samples), &bytes_read);
+    // last byte is always 0x00 due to 24-bit audio in 32-bit container
+    avtp_send_am824_stream(state, audio_samples, bytes_read);
+
+#endif
   }
   ESP_LOGI(TAG, "Talker stream task exiting");
   vTaskDelete(talker_stream_task_handle);
@@ -579,6 +700,7 @@ int avtp_talker_start(struct avtp_state_s* state)
     STREAM_TASK_CORE
   );
 
+  // TODO errorhandling!
   if (ret != pdPASS)
   {
     ESP_LOGE(TAG, "Failed to create stream task");

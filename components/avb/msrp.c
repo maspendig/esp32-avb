@@ -586,6 +586,26 @@ void msrp_register_attach_request(struct mrp_application* app, u64 stream_id)
   mrp_mad_join_request(app, MSRP_LISTENER, (u8*)&listener_attr, true);
 }
 
+/*
+ * 32.2.3.1.1 REGISTER_STREAM.request
+ * A Talker application entity shall issue a REGISTER_STREAM.request
+ * to the MSRP Participant to initiate the advertisement of an available Stream.
+ */
+void msrp_register_stream_request(struct mrp_application* app, struct talker_stream_info_s* stream_info)
+{
+  msrp_talker_advertise_attr_value_t talker_adv_attr = {
+    .stream_id = htonll(stream_info->stream_id),
+    .vlan_id = htons(stream_info->stream_vlan_id),
+    // TODO make configurable
+    .max_frame_size = htons(224),
+    .max_frame_interval = htons(1),
+    .priority_and_rank = 0x70,
+    .accumulated_latency = htonl(95)
+  };
+  memcpy(talker_adv_attr.dest_mac, stream_info->stream_dest_mac, ETH_ADDR_LEN);
+  mrp_mad_join_request(app, MSRP_TALKER_ADVERTISE, (u8*)&talker_adv_attr, true);
+}
+
 void msrp_state_init(struct avtp_state_s* state)
 {
   msrp_ctx_t* msrp = &state->msrp;
