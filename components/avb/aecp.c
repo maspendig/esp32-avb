@@ -69,7 +69,10 @@ static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aec
   resp.descriptor.available_index = htonl(s_state->adp_available_index);
   resp.descriptor.association_id = htonll(0);
 
-  strncpy((char*)resp.descriptor.entity_name, CONFIG_ENTITY_NAME, sizeof(resp.descriptor.entity_name));
+  if (nvs_read_str("name_0_0_0", (char*)resp.descriptor.entity_name, sizeof(resp.descriptor.entity_name)) != ESP_OK)
+  {
+    strncpy((char*)resp.descriptor.entity_name, CONFIG_ENTITY_NAME, sizeof(resp.descriptor.entity_name));
+  }
 
   resp.descriptor.vendor_name_string = htons(0);
   resp.descriptor.model_name_string = htons(1);
@@ -924,7 +927,6 @@ void handle_aem_read_desc_strings(struct avtp_state_s* state, struct aecp_data_u
 
   /* Fill STRINGS descriptor */
   resp.descriptor.descriptor_type = htons(AEM_DESC_TYPE_STRINGS);
-  ESP_LOGE(TAG, "Requested STRINGS descriptor index: %d", read_desc_cmd->descriptor_index);
   resp.descriptor.descriptor_index = read_desc_cmd->descriptor_index; // Echo the requested index
 
   // Set string_0 to vendor name
