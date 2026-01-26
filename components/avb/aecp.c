@@ -1,5 +1,8 @@
 #include "types.h"
 #include "aecp.h"
+
+#include <audio.h>
+
 #include "acmp.h"
 #include "avtp.h"
 #include "config.h"
@@ -61,7 +64,7 @@ static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aec
   resp.descriptor.entity_id = htonll(s_state->entity_id);
   resp.descriptor.entity_model_id = htonll(s_state->entity_model_id);
   resp.descriptor.entity_capabilities = htonl(CONFIG_ENTITY_CAPABILITIES); // Example capabilities
-  resp.descriptor.talker_stream_sources = htons(CONFIG_TALKER_STREAM_SOURCES);
+  resp.descriptor.talker_stream_sources = htons(INPUT_CHANNELS ? 1 : 0);
   resp.descriptor.talker_capabilities = htons(CONFIG_TALKER_CAPABILITIES);
   resp.descriptor.listener_stream_sinks = htons(CONFIG_LISTENER_STREAM_SINKS);
   resp.descriptor.listener_capabilities = htons(CONFIG_LISTENER_CAPABILITIES);
@@ -153,24 +156,29 @@ void handle_aem_read_configuration(struct avtp_state_s* state, struct aecp_data_
   resp->config_desc.descriptor_index = htons(0);
   memset(resp->config_desc.object_name, 0, sizeof(resp->config_desc.object_name));
   resp->config_desc.localized_description = htons(0xFFFF);
-  resp->config_desc.descriptor_counts_count = htons(num_desc_types);
   resp->config_desc.descriptor_counts_offset = htons(74); // Offset to descriptor_counts array
 
+  u8 desc_count = 0;
   // Populate the descriptor_counts array
-  resp->config_desc.descriptor_counts[0].descriptor_type = htons(AEM_DESC_TYPE_AUDIO_UNIT);
-  resp->config_desc.descriptor_counts[0].count = htons(1);
-  resp->config_desc.descriptor_counts[1].descriptor_type = htons(AEM_DESC_TYPE_STREAM_INPUT);
-  resp->config_desc.descriptor_counts[1].count = htons(1);
-  resp->config_desc.descriptor_counts[2].descriptor_type = htons(AEM_DESC_TYPE_STREAM_OUTPUT);
-  resp->config_desc.descriptor_counts[2].count = htons(1);
-  resp->config_desc.descriptor_counts[3].descriptor_type = htons(AEM_DESC_TYPE_AVB_INTERFACE);
-  resp->config_desc.descriptor_counts[3].count = htons(1);
-  resp->config_desc.descriptor_counts[4].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_SOURCE);
-  resp->config_desc.descriptor_counts[4].count = htons(CONFIG_NUM_CLOCK_SOURCES);
-  resp->config_desc.descriptor_counts[5].descriptor_type = htons(AEM_DESC_TYPE_LOCALE);
-  resp->config_desc.descriptor_counts[5].count = htons(1);
-  resp->config_desc.descriptor_counts[6].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
-  resp->config_desc.descriptor_counts[6].count = htons(1);
+  resp->config_desc.descriptor_counts[desc_count].descriptor_type = htons(AEM_DESC_TYPE_AUDIO_UNIT);
+  resp->config_desc.descriptor_counts[desc_count++].count = htons(1);
+  resp->config_desc.descriptor_counts[desc_count].descriptor_type = htons(AEM_DESC_TYPE_STREAM_INPUT);
+  resp->config_desc.descriptor_counts[desc_count++].count = htons(1);
+  if (INPUT_CHANNELS)
+  {
+    resp->config_desc.descriptor_counts[desc_count].descriptor_type = htons(AEM_DESC_TYPE_STREAM_OUTPUT);
+    resp->config_desc.descriptor_counts[desc_count++].count = htons(1);
+  }
+  resp->config_desc.descriptor_counts[desc_count].descriptor_type = htons(AEM_DESC_TYPE_AVB_INTERFACE);
+  resp->config_desc.descriptor_counts[desc_count++].count = htons(1);
+  resp->config_desc.descriptor_counts[desc_count].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_SOURCE);
+  resp->config_desc.descriptor_counts[desc_count++].count = htons(CONFIG_NUM_CLOCK_SOURCES);
+  resp->config_desc.descriptor_counts[desc_count].descriptor_type = htons(AEM_DESC_TYPE_LOCALE);
+  resp->config_desc.descriptor_counts[desc_count++].count = htons(1);
+  resp->config_desc.descriptor_counts[desc_count].descriptor_type = htons(AEM_DESC_TYPE_CLOCK_DOMAIN);
+  resp->config_desc.descriptor_counts[desc_count++].count = htons(1);
+
+  resp->config_desc.descriptor_counts_count = htons(desc_count);
 
   // Send configuration descriptor response
   send_aecp_msg(state, resp, response_size);
