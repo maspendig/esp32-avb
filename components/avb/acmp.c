@@ -215,9 +215,6 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_commo
     memcpy(state->talker_stream_info.stream_dest_mac, state->maap_db.start_mac, ETH_ADDR_LEN);
     state->talker_stream_info.stream_vlan_id = 2;
 
-    /* Start MSRP Talker Advertisement with proper state machine integration
-     * This will trigger the applicant state machine to send periodic advertisements */
-    // TODO start msrp talker advertise properly
     avtp_talker_start(state);
     msrp_register_stream_request(&state->msrp.app, &state->talker_stream_info);
   }
@@ -439,7 +436,7 @@ void handle_acmp_disconnect_rx_command(struct avtp_state_s* state, struct acmp_c
   acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_DISCONNECT_TX_COMMAND, 44, ACMP_STATUS_SUCCESS);
 
   struct listener_stream_info_s* listener_info = &state->listener_stream_infos[msg->listener_unique_id];
-  // msrp_listener_leave(state, listener_info->stream_id);
+  msrp_deregister_attach_request(&state->msrp.app, listener_info->stream_id);
 
   *listener_info = (struct listener_stream_info_s){0};
   listener_info->sequence_id = ntohs(msg->sequence_id);

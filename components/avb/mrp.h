@@ -248,6 +248,7 @@ inline void mrp_decode_four_packed_event(u8 packed_event, u8* event)
 
 // Function declarations
 void mrp_mad_join_request(struct mrp_application* app, u8 attribute_type, u8* value, bool new);
+void mrp_mad_leave_request(struct mrp_application* app, u8 attribute_type, u8* value);
 char* mrp_attribute_event_to_str(mrp_attribute_event_t event);
 void mrp_applicant_state_machine(struct mrp_attribute* attr, mrp_event_t event);
 void mrp_leaveall_state_machine(const struct mrp_application* app, mrp_event_t event);

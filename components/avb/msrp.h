@@ -200,6 +200,7 @@ void msrp_state_init(struct avtp_state_s* state);
  */
 void msrp_net_rx(struct avtp_state_s* state);
 void msrp_register_attach_request(struct mrp_application* app, u64 stream_id);
+void msrp_deregister_attach_request(struct mrp_application* app, u64 stream_id);
 struct talker_stream_info_s;
 void msrp_register_stream_request(struct mrp_application* app, struct talker_stream_info_s* stream_info);
 

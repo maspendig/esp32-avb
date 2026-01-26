@@ -1092,6 +1092,37 @@ void mrp_leaveall_state_machine(const struct mrp_application* app, mrp_event_t e
 
 //endregion
 
+/** IEEE 802.1Q-2022 - Table 10-3 Note 11:
+ * The VO,AO, and QO states represent states where the attribute is neither being declared nor registered.
+ * In implementations [...] the state machine can be discarded [...].
+ */
+void mrp_check_attribute_relevance(struct mrp_application* app, struct mrp_attribute* attribute)
+{
+  ESP_LOGI(TAG, "Garbage collection:  check for attribute type %d: applicant state %s, registrar state %s",
+           attribute->type,
+           mrp_state_to_str(attribute->applicant.state),
+           mrp_state_to_str(attribute->registrar.state));
+  switch (attribute->applicant.state)
+  {
+  case MRP_VO_STATE:
+  case MRP_AO_STATE:
+  case MRP_QO_STATE:
+    // check registrar state to be emtpy as well
+    if (attribute->registrar.state == MRP_MT_STATE)
+    {
+      mrp_delete_attribute(attribute);
+      ESP_LOGI(TAG, "[%s] Deleting attribute type %d as both applicant and registrar states are empty",
+               mrp_application_type_to_str(app->type),
+               attribute->type);
+    }
+    break;
+  default:
+
+
+
+  }
+}
+
 struct mrp_attribute* mrp_get_attribute(struct mrp_application* app, u8 attribute_type, u8* value)
 {
   ESP_LOGD(TAG, "[%s] Searching for attribute type %d",
@@ -1173,6 +1204,25 @@ void mrp_mad_join_request(struct mrp_application* app, u8 attribute_type, u8* va
   {
     mrp_applicant_state_machine(attribute, MRP_EVENT_JOIN);
   }
+}
+
+void mrp_mad_leave_request(struct mrp_application* app, u8 attribute_type, u8* value)
+{
+  ESP_LOGD(TAG, "[%s] MAD Leave Request for attribute type %d",
+           mrp_application_type_to_str(app->type),
+           attribute_type);
+
+  struct mrp_attribute* attribute = mrp_get_attribute(app, attribute_type, value);
+  if (attribute == NULL)
+  {
+    ESP_LOGW(TAG, "Attribute type %d not found, cannot process leave request", attribute_type);
+    return;
+  }
+  mrp_applicant_state_machine(attribute, MRP_EVENT_LV);
+  ESP_LOGI(TAG, "Registrar state for attribute type %d: %s",
+           attribute_type,
+           mrp_state_to_str(attribute->registrar.state));
+  mrp_check_attribute_relevance(app, attribute);
 }
 
 void mrp_process_attribute(struct mrp_application* app, struct mrp_attribute* attr, mrp_attribute_event_t event)
