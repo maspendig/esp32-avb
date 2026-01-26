@@ -1098,10 +1098,6 @@ void mrp_leaveall_state_machine(const struct mrp_application* app, mrp_event_t e
  */
 void mrp_check_attribute_relevance(struct mrp_application* app, struct mrp_attribute* attribute)
 {
-  ESP_LOGI(TAG, "Garbage collection:  check for attribute type %d: applicant state %s, registrar state %s",
-           attribute->type,
-           mrp_state_to_str(attribute->applicant.state),
-           mrp_state_to_str(attribute->registrar.state));
   switch (attribute->applicant.state)
   {
   case MRP_VO_STATE:
@@ -1111,15 +1107,13 @@ void mrp_check_attribute_relevance(struct mrp_application* app, struct mrp_attri
     if (attribute->registrar.state == MRP_MT_STATE)
     {
       mrp_delete_attribute(attribute);
-      ESP_LOGI(TAG, "[%s] Deleting attribute type %d as both applicant and registrar states are empty",
+      ESP_LOGD(TAG, "[%s] Deleting attribute type %d as both applicant and registrar states are empty",
                mrp_application_type_to_str(app->type),
                attribute->type);
     }
     break;
   default:
-
-
-
+    return;
   }
 }
 
@@ -1219,9 +1213,6 @@ void mrp_mad_leave_request(struct mrp_application* app, u8 attribute_type, u8* v
     return;
   }
   mrp_applicant_state_machine(attribute, MRP_EVENT_LV);
-  ESP_LOGI(TAG, "Registrar state for attribute type %d: %s",
-           attribute_type,
-           mrp_state_to_str(attribute->registrar.state));
   mrp_check_attribute_relevance(app, attribute);
 }
 
