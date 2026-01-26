@@ -414,8 +414,8 @@ static void cfg_codec(const bool use_pll)
   write_AIC32X4_reg(AIC32X4_DOSRMSB, 0x00);
   write_AIC32X4_reg(AIC32X4_DOSRLSB, 0x80); // DOSR = 128
 
-  // Step 9: Program I2S word length (16-bit)
-  write_AIC32X4_reg(AIC32X4_IFACE1, 0b00000000);
+  // Step 9: Program I2S word length (24-bit)
+  write_AIC32X4_reg(AIC32X4_IFACE1, 0b00100000);
   write_AIC32X4_reg(AIC32X4_IFACE2, 0x00);
 
   // Step 10: Program processing block (using defaults PRB_P1 and PRB_R1)
@@ -542,7 +542,7 @@ static void cfg_i2s()
   i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_PORT_NUM, I2S_ROLE_MASTER);
   chan_cfg.auto_clear = false;
   chan_cfg.dma_desc_num = 4;
-  chan_cfg.dma_frame_num = 512;
+  chan_cfg.dma_frame_num = 32;
 
   ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &tx_handle, &rx_handle));
 
@@ -553,10 +553,10 @@ static void cfg_i2s()
       //.clk_src = I2S_CLK_SRC_DEFAULT, // direct XTAL
       .clk_src = SOC_MOD_CLK_APLL,
       .ext_clk_freq_hz = 0,
-      .mclk_multiple = I2S_MCLK_MULTIPLE_256,
+      .mclk_multiple = I2S_MCLK_MULTIPLE_384,
       .bclk_div = 0,
     },
-    .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+    .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO),
     .gpio_cfg = {
       .mclk = I2S_MCLK,
       .bclk = I2S_BCLK,

@@ -17,7 +17,6 @@
 #define CODEC_I2S_WRITE(buf, size, bytes_written) es8311_i2s_write(buf, size, bytes_written)
 #elif CONFIG_CODEC_TLV320AIC3254
 #include "codec.h"
-#define SAMPLE_BIT_RATE 16
 #define INPUT_CHANNELS 0
 #define OUTPUT_CHANNELS 2
 #define CODEC_INIT() InitCodec()
