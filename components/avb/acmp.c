@@ -118,6 +118,7 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_com
     resp.sequence_id = htons(listenerInfo->sequence_id);
 
     /* Join the MSRP stream reservation as a listener */
+    avtp_listener_start(state);
     msrp_register_attach_request(&state->msrp.app, listenerInfo->stream_id);
 
     ESP_LOGI(TAG, "Updated listener stream info [%u]: pending_connection=false (connection established)",
@@ -436,6 +437,7 @@ void handle_acmp_disconnect_rx_command(struct avtp_state_s* state, struct acmp_c
   acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_DISCONNECT_TX_COMMAND, 44, ACMP_STATUS_SUCCESS);
 
   struct listener_stream_info_s* listener_info = &state->listener_stream_infos[msg->listener_unique_id];
+  avtp_listener_stop(state);
   msrp_deregister_attach_request(&state->msrp.app, listener_info->stream_id);
 
   *listener_info = (struct listener_stream_info_s){0};

@@ -14,6 +14,13 @@
 
 #define TAG "audio"
 
+void empty_audio_buffer()
+{
+  uint32_t buf[256] = {0};
+  uint32_t bytes_written = 0;
+  CODEC_I2S_WRITE(buf, sizeof(buf), &bytes_written);
+}
+
 void init_audio_codec()
 {
 #ifndef CONFIG_CODEC_ES8311

@@ -67,4 +67,5 @@ static inline int16_t convert_sample_24_to_16_dither(int32_t s24)
 }
 
 void init_audio_codec();
+void empty_audio_buffer();
 #endif //ETHERNET_PTP_AUDIO_H

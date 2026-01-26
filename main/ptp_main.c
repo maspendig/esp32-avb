@@ -3,6 +3,7 @@
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
+#include <audio.h>
 #include <storage.h>
 #include <string.h>
 #include "sdkconfig.h"
@@ -93,6 +94,7 @@ void app_main(void)
   int pid = ptpd_start("ETH_0");
   int avtp_pid = start_avtp_listener("ETH_0");
 
+  init_audio_codec();
   esp_err_t err = init_nvs();
   if (err != ESP_OK)
   {

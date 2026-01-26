@@ -35,6 +35,9 @@
 
 const char* TAG = "avtp";
 
+static TaskHandle_t talker_stream_task_handle;
+static TaskHandle_t listener_stream_task_handle;
+
 /* Forward declarations */
 static uint64_t mac_to_entity_id(uint64_t mac);
 
@@ -97,7 +100,6 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
     fcntl(state->vlan_socket, F_SETFL, flags | O_NONBLOCK);
   }
   ESP_LOGI(TAG, "VLAN socket initialized for 802.1Q tagged frames (non-blocking)");
-
   // Get the ethernet handle to configure multicast reception
   esp_eth_handle_t eth_handle;
   if (ioctl(state->socket, L2TAP_G_DEVICE_DRV_HNDL, &eth_handle) < 0)
@@ -248,30 +250,22 @@ static int64_t timespec_to_ms(const struct timespec* ts)
 }
 
 /**
- * @brief High-priority stream data task - runs on Core 1
- *
  * This task exclusively handles VLAN-tagged AVB stream packets.
  * It runs on a dedicated core with high priority to minimize packet loss.
  */
-static void avtp_stream_task(void* arg)
+static void avtp_listener_stream_task(void* arg)
 {
   struct avtp_state_s* state = (struct avtp_state_s*)arg;
   u8 raw_buf[1518]; /* Max Ethernet frame size */
   u8 seq_number = 0;
 
-  init_audio_codec();
 
   ESP_LOGI(TAG, "Stream task started on core %d (priority %d)",
            xPortGetCoreID(), uxTaskPriorityGet(NULL));
 
-  /* Set VLAN socket to non-blocking mode */
-  int flags = fcntl(state->vlan_socket, F_GETFL, 0);
-  if (flags >= 0)
-  {
-    fcntl(state->vlan_socket, F_SETFL, flags | O_NONBLOCK);
-  }
+  empty_audio_buffer();
 
-  while (!state->stop)
+  while (!state->listener_stop)
   {
     fd_set readfds;
     FD_ZERO(&readfds);
@@ -331,7 +325,6 @@ static void avtp_stream_task(void* arg)
                 extract_am824_audio_to_32(raw_buf, len, audio_samples, channels, &num_samples);
 #endif
 
-
                 if (num_samples > 0)
                 {
                   size_t bytes_to_write = num_samples * channels * sizeof(audio_samples[0]);
@@ -355,8 +348,9 @@ static void avtp_stream_task(void* arg)
     }
   }
 
-  ESP_LOGI(TAG, "Stream task exiting");
-  vTaskDelete(NULL);
+  empty_audio_buffer();
+  ESP_LOGI(TAG, "Listener stream task exiting");
+  vTaskDelete(listener_stream_task_handle);
 }
 
 /**
@@ -489,31 +483,10 @@ int start_avtp_listener(const char* interface)
     return ESP_FAIL;
   }
 
-  ESP_LOGI(TAG, "AVTP listener initialized on interface: %s", interface);
-
-  /* Create high-priority stream task on Core 1 */
-  TaskHandle_t stream_task_handle;
-  BaseType_t ret = xTaskCreatePinnedToCore(
-    avtp_stream_task,
-    "avtp_listener",
-    8192,
-    state,
-    STREAM_TASK_PRIORITY,
-    &stream_task_handle,
-    STREAM_TASK_CORE
-  );
-
-  if (ret != pdPASS)
-  {
-    ESP_LOGE(TAG, "Failed to create stream task");
-    s_state = NULL;
-    free(state);
-    return ESP_FAIL;
-  }
 
   /* Create control task on Core 0 */
   TaskHandle_t control_task_handle;
-  ret = xTaskCreatePinnedToCore(
+  esp_err_t ret = xTaskCreatePinnedToCore(
     avtp_control_task,
     "avtp_ctrl",
     8192,
@@ -545,7 +518,6 @@ int stop_avtp_listener(int pid)
   return ESP_OK;
 }
 
-
 typedef struct iec61883_am824_packet
 {
   struct header_s header;
@@ -558,7 +530,6 @@ typedef struct iec61883_am824_packet
 
   iec61883_t iec61883;
 
-  // TODO rename according to spec
   union
   {
     struct
@@ -658,7 +629,6 @@ void avtp_send_am824_stream(struct avtp_state_s* state, s32* audio_samples, u32 
   }
 }
 
-static TaskHandle_t talker_stream_task_handle;
 
 static void avtp_talker_stream_task(void* arg)
 {
@@ -683,10 +653,9 @@ static void avtp_talker_stream_task(void* arg)
   vTaskDelete(talker_stream_task_handle);
 }
 
-int avtp_talker_stop(struct avtp_state_s* state)
+void avtp_talker_stop(struct avtp_state_s* state)
 {
   state->talker_stop = true;
-  return ESP_OK;
 }
 
 int avtp_talker_start(struct avtp_state_s* state)
@@ -712,4 +681,34 @@ int avtp_talker_start(struct avtp_state_s* state)
     return ESP_FAIL;
   }
   return ret;
+}
+
+int avtp_listener_start(struct avtp_state_s* state)
+{
+  state->listener_stop = false;
+  /* Create high-priority stream task on Core 1 */
+  BaseType_t ret = xTaskCreatePinnedToCore(
+    avtp_listener_stream_task,
+    "avtp_listener",
+    8192,
+    state,
+    STREAM_TASK_PRIORITY,
+    &listener_stream_task_handle,
+    STREAM_TASK_CORE
+  );
+
+  // TODO errorhandling!
+  if (ret != pdPASS)
+  {
+    ESP_LOGE(TAG, "Failed to create stream task");
+    s_state = NULL;
+    free(state);
+    return ESP_FAIL;
+  }
+  return ret;
+}
+
+void avtp_listener_stop(struct avtp_state_s* state)
+{
+  state->listener_stop = true;
 }

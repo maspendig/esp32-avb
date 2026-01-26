@@ -180,6 +180,7 @@ struct talker_stream_info_s
 struct avtp_state_s
 {
   bool talker_stop;
+  bool listener_stop;
   bool stop;
   int socket; /* Untagged AVTP frames (0x22F0) */
   int vlan_socket; /* VLAN-tagged frames (0x8100) for AVB streams */
@@ -212,9 +213,14 @@ struct avtp_state_s
   bool acquire_persistent; /* Whether the acquisition is persistent */
 };
 
-int avtp_talker_start(struct avtp_state_s* state);
-int avtp_talker_stop(struct avtp_state_s* state);
+// TODO move this content to the main
 int start_avtp_listener(const char* interface);
+
+int avtp_talker_start(struct avtp_state_s* state);
+void avtp_talker_stop(struct avtp_state_s* state);
+
+int avtp_listener_start(struct avtp_state_s* state);
+void avtp_listener_stop(struct avtp_state_s* state);
 
 #define AVTP_GET_STATUS(hdr) \
 ((ntohs((hdr)->control_data_len_status) >> 11) & 0x1F)
