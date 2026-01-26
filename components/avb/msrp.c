@@ -476,10 +476,29 @@ void msrp_process_rx(struct avtp_state_s* state, const u8* buf, size_t len)
             node = node->next;
           }
 
+          // FIXME couldn't we return here already?
           break;
         }
       case MSRP_TALKER_FAILED:
-        // TODO implement processing of Talker Failed attribute
+        struct msrp_pdu_talker_failed_first_value* talker_failed = (struct msrp_pdu_talker_failed_first_value*)(buf +
+          first_value_pointer);
+        mrp_decode_three_packed_event(buf[vector_end], three_packed);
+        value = (u8*)talker_failed;
+
+        struct Node* head = state->msrp.app.attributes[MSRP_LISTENER];
+        struct Node* node = head;
+        while (node->next != head)
+        {
+          struct mrp_attribute* list_entry = (struct mrp_attribute*)node->next;
+          msrp_listener_attr_value_t* listener = (msrp_listener_attr_value_t*)list_entry->value;
+          if (listener->stream_id == talker_failed->stream_id)
+          {
+            mrp_process_attribute(&state->msrp.app, list_entry, three_packed[0]);
+          }
+          node = node->next;
+        }
+
+        // FIXME couldn't we return here already?
         break;
       case MSRP_DOMAIN:
         {

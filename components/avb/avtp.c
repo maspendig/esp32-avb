@@ -314,7 +314,8 @@ static void avtp_listener_stream_task(void* arg)
                 if (raw_buf[20] != seq_number)
                 {
                   ESP_LOGW(TAG, "sequence number mismatch: expected=%u received=%u", seq_number, raw_buf[20]);
-                  seq_number = raw_buf[20];
+                  seq_number = raw_buf[20] + 1;
+                  continue;
                 }
 
                 // TODO check timestamp uncertain field and avtp_timestamp for sync
