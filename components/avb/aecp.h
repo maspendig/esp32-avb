@@ -41,6 +41,7 @@
 #define AECP_ACQUIRE_FLAG_RELEASE                   0x80000000
 
 #define ACM_COMMAND_TYPE_GET_STREAM_FORMAT 0x0009
+#define ACM_COMMAND_TYPE_SET_NAME 0x0010
 #define ACM_COMMAND_TYPE_GET_SAMPLING_RATE 0x0015
 #define ACM_COMMAND_TYPE_SET_CLOCK_SOURCE 0x0016
 #define ACM_COMMAND_TYPE_GET_STREAM_INFO 0x000F
@@ -390,6 +391,16 @@ struct aecp_set_clock_source_s
   u16 descriptor_index;
   u16 clock_source_index;
   u16 reserved;
+} __attribute__((packed));
+
+struct aecp_set_name_s
+{
+  struct aecp_data_unit_s aecp_header;
+  u16 descriptor_type;
+  u16 descriptor_index;
+  u16 name_index;
+  u16 configuration_index;
+  u8 name[64];
 } __attribute__((packed));
 
 struct aecp_read_desc_request_s

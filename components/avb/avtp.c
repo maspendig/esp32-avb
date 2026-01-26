@@ -14,6 +14,7 @@
 #include "acmp.h"
 
 #include <fcntl.h>
+#include <nvs_flash.h>
 
 #include "esp_eth_spec.h"
 #include "pthread.h"
@@ -137,7 +138,7 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
 
   /* Also enable all multicast reception as fallback */
   bool enable_multicast = true;
-  int err = esp_eth_ioctl(eth_handle, ETH_CMD_S_ALL_MULTICAST, &enable_multicast);
+  esp_err_t err = esp_eth_ioctl(eth_handle, ETH_CMD_S_ALL_MULTICAST, &enable_multicast);
   if (err != ESP_OK)
   {
     ESP_LOGW(TAG, "failed to enable all multicast reception: %s", esp_err_to_name(err));
@@ -317,6 +318,8 @@ static void avtp_stream_task(void* arg)
                   ESP_LOGW(TAG, "sequence number mismatch: expected=%u received=%u", seq_number, raw_buf[20]);
                   seq_number = raw_buf[20];
                 }
+
+                // TODO check timestamp uncertain field and avtp_timestamp for sync
 
                 u8 channels = OUTPUT_CHANNELS;
                 size_t num_samples = 0;

@@ -8,6 +8,7 @@
 #include <esp_err.h>
 #include <esp_eth_spec.h>
 #include <esp_log.h>
+#include <storage.h>
 #include <sys/unistd.h>
 
 #define TAG "aecp"
@@ -923,6 +924,7 @@ void handle_aem_read_desc_strings(struct avtp_state_s* state, struct aecp_data_u
 
   /* Fill STRINGS descriptor */
   resp.descriptor.descriptor_type = htons(AEM_DESC_TYPE_STRINGS);
+  ESP_LOGE(TAG, "Requested STRINGS descriptor index: %d", read_desc_cmd->descriptor_index);
   resp.descriptor.descriptor_index = read_desc_cmd->descriptor_index; // Echo the requested index
 
   // Set string_0 to vendor name
@@ -1334,6 +1336,31 @@ void handle_acm_set_clock_source(struct avtp_state_s* state, struct aecp_set_clo
 }
 
 /**
+ * Handle SET_NAME command (IEEE 1722.1-2021, 7.4.17)
+ * Currently unimplemented.
+ */
+void handle_acm_set_name(struct avtp_state_s* state, struct aecp_set_name_s* msg)
+{
+  // log descriptor type
+  ESP_LOGI(TAG, "Receive SET_NAME to '%s' for %s[%d] ", msg->name,
+           aem_desc_type_to_string(ntohs(msg->descriptor_type)),
+           ntohs(msg->descriptor_index));
+
+  char key[24];
+  snprintf(key, sizeof(key), "name_%d_%d_%d", msg->name_index, msg->descriptor_type, msg->descriptor_index);
+
+  esp_err_t err = nvs_write_str(key, (char*)msg->name);
+  if (err != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to store name in NVS");
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Stored name in NVS with key: %s", key);
+  }
+}
+
+/**
  * Handle GET_CONFIGURATION command (IEEE 1722.1-2021, 7.4.5)
  * Returns the current configuration index for the entity.
  */
@@ -1417,6 +1444,9 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
     break;
   case ACM_COMMAND_TYPE_GET_COUNTERS:
     ESP_LOGW(TAG, "Received unimplemented AECP ACM GET_COUNTERS Command");
+    break;
+  case ACM_COMMAND_TYPE_SET_NAME:
+    handle_acm_set_name(s_state, (struct aecp_set_name_s*)msg);
     break;
 
   default:

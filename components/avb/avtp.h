@@ -11,6 +11,7 @@
 #include <maap.h>
 #include <msrp.h>
 #include <mvrp.h>
+#include <nvs.h>
 
 #define ETH_TYPE_AVTP 0x22F0
 #define ETH_TYPE_8021Q 0x8100  /* 802.1Q VLAN tag */
@@ -184,6 +185,8 @@ struct avtp_state_s
   int vlan_socket; /* VLAN-tagged frames (0x8100) for AVB streams */
   int msrp_socket;
   int mvrp_socket;
+
+  nvs_handle_t nvs_handle;
 
   struct maap_db_s maap_db;
 
