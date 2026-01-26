@@ -279,13 +279,11 @@ static void avtp_listener_stream_task(void* arg)
     if (ret > 0 && FD_ISSET(state->vlan_socket, &readfds))
     {
       ssize_t len;
-      int packets_processed = 0;
+      bool first_packet = true;
 
       /* Drain all available packets (non-blocking) */
       while ((len = read(state->vlan_socket, raw_buf, sizeof(raw_buf))) > 0)
       {
-        packets_processed++;
-
         /* Parse 802.1Q VLAN header */
         u16 tci = (raw_buf[14] << 8) | raw_buf[15];
         u16 vlan_id = tci & 0x0FFF;
@@ -307,6 +305,12 @@ static void avtp_listener_stream_task(void* arg)
               break;
             case AVTP_SUBTYPE_61883_IIDC:
               {
+                if (first_packet)
+                {
+                  seq_number = raw_buf[20];
+                  first_packet = false;
+                }
+
                 if (raw_buf[20] != seq_number)
                 {
                   ESP_LOGW(TAG, "sequence number mismatch: expected=%u received=%u", seq_number, raw_buf[20]);
@@ -314,7 +318,6 @@ static void avtp_listener_stream_task(void* arg)
                 }
 
                 // TODO check timestamp uncertain field and avtp_timestamp for sync
-
                 u8 channels = OUTPUT_CHANNELS;
                 size_t num_samples = 0;
 #if SAMPLE_BIT_RATE == 16
@@ -339,11 +342,6 @@ static void avtp_listener_stream_task(void* arg)
             }
           }
         }
-      }
-
-      if (packets_processed > 0)
-      {
-        ESP_LOGD(TAG, "Stream task processed %d packets", packets_processed);
       }
     }
   }
