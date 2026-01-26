@@ -69,6 +69,7 @@ static void handle_aem_read_desc_entity(struct avtp_state_s* s_state, struct aec
   resp.descriptor.available_index = htonl(s_state->adp_available_index);
   resp.descriptor.association_id = htonll(0);
 
+  // [state_type]_[name_index]_[desc_type]_[desc_index]
   if (nvs_read_str("name_0_0_0", (char*)resp.descriptor.entity_name, sizeof(resp.descriptor.entity_name)) != ESP_OK)
   {
     strncpy((char*)resp.descriptor.entity_name, CONFIG_ENTITY_NAME, sizeof(resp.descriptor.entity_name));
