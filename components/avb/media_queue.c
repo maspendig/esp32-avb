@@ -12,7 +12,7 @@ static const char* TAG = "m_queue";
 
 /* Consumer task configuration */
 #define MEDIA_QUEUE_CONSUMER_TASK_STACK  4096
-#define MEDIA_QUEUE_CONSUMER_TASK_PRIO   16  /* Slightly lower than stream receive task */
+#define MEDIA_QUEUE_CONSUMER_TASK_PRIO   16
 #define MEDIA_QUEUE_CONSUMER_TASK_CORE   1   /* Same core as stream processing */
 
 /**
