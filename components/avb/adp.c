@@ -11,6 +11,9 @@
 #include <esp_log.h>
 #include <sys/types.h>
 #include <sys/unistd.h>
+#include "esp_eth_time.h"
+#include "../ptpd/ptpv2.h"
+#include "../ptpd/include/ptpd.h"
 
 #define TAG "adp"
 
@@ -139,8 +142,11 @@ void send_adp_entity_available(struct avtp_state_s* s_state)
   msg.available_index = htonl(s_state->adp_available_index++);
   msg.association_id = htonll(0);
 
-  // TODO get grandmaster from PTP module
-  memcpy(msg.gptp_grandmaster_id, (uint8_t[]){0x00, 0x01, 0xf2, 0xff, 0xfe, 0x00, 0xae, 0x35}, 8);
+  struct ptp_announce_s* clock_source = ptpd_get_selected_source();
+  if (clock_source != NULL)
+  {
+    memcpy(msg.gptp_grandmaster_id, clock_source->gm_identity, 8);
+  }
 
   ssize_t written = write(s_state->socket, &msg, 82);
   if (written < 0)

@@ -59,16 +59,16 @@ struct ptpd_status_s
 
   struct
   {
-    uint8_t id[8];     /* Clock identity */
-    int utcoffset;     /* Offset between clock time and UTC time (seconds) */
-    int priority1;     /* Main priority field */
-    int clockclass;    /* Clock class (IEEE-1588, lower is better) */
-    int accuracy;      /* Clock accuracy (IEEE-1588, lower is better) */
-    int variance;      /* Clock variance (IEEE-1588, lower is better) */
-    int priority2;     /* Secondary priority field */
-    uint8_t gm_id[8];  /* Grandmaster clock identity */
-    int stepsremoved;  /* How many steps from grandmaster clock */
-    int timesource;    /* Type of time source (IEEE-1588) */
+    uint8_t id[8]; /* Clock identity */
+    int utcoffset; /* Offset between clock time and UTC time (seconds) */
+    int priority1; /* Main priority field */
+    int clockclass; /* Clock class (IEEE-1588, lower is better) */
+    int accuracy; /* Clock accuracy (IEEE-1588, lower is better) */
+    int variance; /* Clock variance (IEEE-1588, lower is better) */
+    int priority2; /* Secondary priority field */
+    uint8_t gm_id[8]; /* Grandmaster clock identity */
+    int stepsremoved; /* How many steps from grandmaster clock */
+    int timesource; /* Type of time source (IEEE-1588) */
   } clock_source_info;
 
   /* When was clock last updated or adjusted (CLOCK_REALTIME).
@@ -79,8 +79,8 @@ struct ptpd_status_s
 
   /* Details of clock adjustment made at last_clock_update */
 
-  int64_t last_delta_ns;     /* Latest measured clock error */
-  int64_t last_adjtime_ns;   /* Previously applied adjtime() offset */
+  int64_t last_delta_ns; /* Latest measured clock error */
+  int64_t last_adjtime_ns; /* Previously applied adjtime() offset */
 
   /* Averaged clock drift estimate (parts per billion).
    * Positive means remote clock runs faster than local clock before
@@ -97,8 +97,8 @@ struct ptpd_status_s
   /* Timestamps of latest received packets (CLOCK_MONOTONIC) */
 
   struct timespec last_received_multicast; /* Any multicast packet */
-  struct timespec last_received_announce;  /* Announce from any server */
-  struct timespec last_received_sync;      /* Sync from selected source */
+  struct timespec last_received_announce; /* Announce from any server */
+  struct timespec last_received_sync; /* Sync from selected source */
 
   /* Timestamps of latest transmitted packets (CLOCK_MONOTONIC) */
 
@@ -114,8 +114,10 @@ struct ptpd_status_s
 
 #ifdef __cplusplus
 #define EXTERN extern "C"
-extern "C"
-{
+extern "C" {
+
+
+
 #else
 #define EXTERN extern
 #endif
@@ -139,7 +141,7 @@ extern "C"
  *
  ****************************************************************************/
 
-int ptpd_start(FAR const char *interface);
+int ptpd_start(FAR const char* interface);
 
 /****************************************************************************
  * Name: ptpd_status
@@ -162,7 +164,7 @@ int ptpd_start(FAR const char *interface);
  *
  ****************************************************************************/
 
-int ptpd_status(int pid, FAR struct ptpd_status_s *status);
+int ptpd_status(int pid, FAR struct ptpd_status_s* status);
 
 /****************************************************************************
  * Name: ptpd_stop
@@ -180,6 +182,8 @@ int ptpd_status(int pid, FAR struct ptpd_status_s *status);
  ****************************************************************************/
 
 int ptpd_stop(int pid);
+
+struct ptp_announce_s* ptpd_get_selected_source();
 
 #undef EXTERN
 #ifdef __cplusplus
