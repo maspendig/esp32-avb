@@ -12,6 +12,7 @@
 #include <msrp.h>
 #include <mvrp.h>
 #include <nvs.h>
+#include "media_queue.h"
 
 #define ETH_TYPE_AVTP 0x22F0
 #define ETH_TYPE_8021Q 0x8100  /* 802.1Q VLAN tag */
@@ -207,6 +208,9 @@ struct avtp_state_s
 
   msrp_ctx_t msrp;
   mvrp_ctx_t mvrp;
+
+  /* Media queue for audio sample buffering and synchronized playback */
+  media_queue_t media_queue;
 
   /* AECP entity acquisition state (IEEE 1722.1-2021, 7.4.1) */
   uint64_t acquired_by_controller_id; /* Entity ID of controller that acquired us (0 = not acquired) */

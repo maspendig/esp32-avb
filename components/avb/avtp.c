@@ -4,6 +4,7 @@
 #include "maap.h"
 #include "msrp.h"
 #include "mvrp.h"
+#include "media_queue.h"
 
 #include "esp_log.h"
 #include "esp_err.h"
@@ -108,6 +109,14 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
     return ESP_FAIL;
   }
 
+  /* Initialize the media queue for audio sample buffering */
+  esp_err_t err = media_queue_init(&state->media_queue);
+  if (err != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to initialize media queue");
+    return ESP_FAIL;
+  }
+
   state->acmp_sequence_id = 0;
   state->msrp_socket = msrp_init_socket(interface);
   state->mvrp_socket = mvrp_init_socket(interface);
@@ -140,7 +149,7 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
 
   /* Also enable all multicast reception as fallback */
   bool enable_multicast = true;
-  esp_err_t err = esp_eth_ioctl(eth_handle, ETH_CMD_S_ALL_MULTICAST, &enable_multicast);
+  err = esp_eth_ioctl(eth_handle, ETH_CMD_S_ALL_MULTICAST, &enable_multicast);
   if (err != ESP_OK)
   {
     ESP_LOGW(TAG, "failed to enable all multicast reception: %s", esp_err_to_name(err));
@@ -313,27 +322,40 @@ static void avtp_listener_stream_task(void* arg)
 
                 if (raw_buf[20] != seq_number)
                 {
-                  // ESP_LOGW(TAG, "sequence number mismatch: expected=%u received=%u", seq_number, raw_buf[20]);
+                  ESP_LOGW(TAG, "sequence number mismatch: expected=%u received=%u", seq_number, raw_buf[20]);
                   seq_number = raw_buf[20] + 1;
                   continue;
                 }
 
-                // TODO check timestamp uncertain field and avtp_timestamp for sync
+                /* Parse AVTP header for timestamp info */
+                iec61883_t* iec61883 = (iec61883_t*)&raw_buf[18];
+                u32 avtp_timestamp = ntohl(iec61883->avtp_timestamp);
+                bool timestamp_valid = (iec61883->avtp_info >> 1) & 0x01;
+                bool timestamp_uncertain = iec61883->time_uncertain;
+
                 u8 channels = OUTPUT_CHANNELS;
                 size_t num_samples = 0;
+
+                /* Prepare media queue entry */
+                media_queue_entry_t entry = {
+                  .avtp_timestamp = avtp_timestamp,
+                  .sequence_number = raw_buf[20],
+                  .timestamp_valid = timestamp_valid,
+                  .timestamp_uncertain = timestamp_uncertain,
+                };
+
 #if SAMPLE_BIT_RATE == 16
-                int16_t audio_samples[6 * channels];
-                extract_am824_audio_to_16(raw_buf, len, audio_samples, channels, &num_samples);
+                extract_am824_audio_to_16(raw_buf, len, entry.samples, channels, &num_samples);
 #else
-                int32_t audio_samples[6 * channels];
-                extract_am824_audio_to_32(raw_buf, len, audio_samples, channels, &num_samples);
+                extract_am824_audio_to_32(raw_buf, len, entry.samples, channels, &num_samples);
 #endif
+
+                entry.sample_count = num_samples;
 
                 if (num_samples > 0)
                 {
-                  size_t bytes_to_write = num_samples * channels * sizeof(audio_samples[0]);
-                  u32 bytes_written = 0;
-                  CODEC_I2S_WRITE(audio_samples, bytes_to_write, &bytes_written);
+                  /* Push to media queue - consumer task will write to codec */
+                  media_queue_push(&state->media_queue, &entry);
                 }
                 seq_number++;
               }
@@ -686,6 +708,17 @@ int avtp_talker_start(struct avtp_state_s* state)
 int avtp_listener_start(struct avtp_state_s* state)
 {
   state->listener_stop = false;
+
+
+  /* Start the media queue consumer task */
+  esp_err_t err = media_queue_start(&state->media_queue);
+  if (err != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to start media queue consumer");
+    media_queue_deinit(&state->media_queue);
+    return ESP_FAIL;
+  }
+
   /* Create high-priority stream task on Core 1 */
   BaseType_t ret = xTaskCreatePinnedToCore(
     avtp_listener_stream_task,
@@ -697,10 +730,10 @@ int avtp_listener_start(struct avtp_state_s* state)
     STREAM_TASK_CORE
   );
 
-  // TODO errorhandling!
   if (ret != pdPASS)
   {
-    ESP_LOGE(TAG, "Failed to create stream task");
+    ESP_LOGE(TAG, "Failed to create listener stream task");
+    media_queue_deinit(&state->media_queue);
     s_state = NULL;
     free(state);
     return ESP_FAIL;
@@ -711,4 +744,10 @@ int avtp_listener_start(struct avtp_state_s* state)
 void avtp_listener_stop(struct avtp_state_s* state)
 {
   state->listener_stop = true;
+
+  /* Give listener task time to exit */
+  vTaskDelay(pdMS_TO_TICKS(50));
+
+  /* Stop and cleanup the media queue */
+  media_queue_deinit(&state->media_queue);
 }
