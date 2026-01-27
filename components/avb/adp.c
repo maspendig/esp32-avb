@@ -147,10 +147,6 @@ void send_adp_entity_available(struct avtp_state_s* s_state)
   {
     ESP_LOGE(TAG, "Failed to send ADP entity available: %d", errno);
   }
-  else
-  {
-    ESP_LOGI(TAG, "Sent ADP Entity Available");
-  }
 }
 
 int adp_net_rx(struct avtp_state_s* state, struct avtp_discovery_msg_s* msg, ssize_t len)

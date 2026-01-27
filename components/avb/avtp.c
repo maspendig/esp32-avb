@@ -31,7 +31,7 @@
 #define STREAM_TASK_CORE    1       /* Core 1 for high-priority stream processing */
 #define CONTROL_TASK_CORE   0       /* Core 0 for control protocols */
 #define STREAM_TASK_PRIORITY  15    /* Higher priority for stream data */
-#define CONTROL_TASK_PRIORITY 10    /* Lower priority for control protocols */
+#define CONTROL_TASK_PRIORITY 6    /* Lower priority for control protocols */
 
 const char* TAG = "avtp";
 
@@ -313,7 +313,7 @@ static void avtp_listener_stream_task(void* arg)
 
                 if (raw_buf[20] != seq_number)
                 {
-                  ESP_LOGW(TAG, "sequence number mismatch: expected=%u received=%u", seq_number, raw_buf[20]);
+                  // ESP_LOGW(TAG, "sequence number mismatch: expected=%u received=%u", seq_number, raw_buf[20]);
                   seq_number = raw_buf[20] + 1;
                   continue;
                 }
