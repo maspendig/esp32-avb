@@ -339,6 +339,7 @@ static void avtp_listener_stream_task(void* arg)
               }
               break;
             default:
+              ESP_LOGW(TAG, "Received unknown AVTP subtype: %d", subtype);
               break;
             }
           }
