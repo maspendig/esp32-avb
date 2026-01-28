@@ -330,7 +330,7 @@ static void avtp_listener_stream_task(void* arg)
                 /* Parse AVTP header for timestamp info */
                 iec61883_t* iec61883 = (iec61883_t*)&raw_buf[18];
                 u32 avtp_timestamp = ntohl(iec61883->avtp_timestamp);
-                bool timestamp_valid = (iec61883->avtp_info >> 1) & 0x01;
+                bool timestamp_valid = iec61883->avtp_info & 0x01;
                 bool timestamp_uncertain = iec61883->time_uncertain;
 
                 u8 channels = OUTPUT_CHANNELS;
@@ -709,7 +709,6 @@ int avtp_listener_start(struct avtp_state_s* state)
 {
   state->listener_stop = false;
 
-
   /* Start the media queue consumer task */
   esp_err_t err = media_queue_start(&state->media_queue);
   if (err != ESP_OK)
@@ -749,5 +748,5 @@ void avtp_listener_stop(struct avtp_state_s* state)
   vTaskDelay(pdMS_TO_TICKS(50));
 
   /* Stop and cleanup the media queue */
-  media_queue_deinit(&state->media_queue);
+  media_queue_stop(&state->media_queue);
 }

@@ -3,12 +3,40 @@
 //
 
 #include "media_queue.h"
+
+#include <esp_private/systimer.h>
+#include <hal/systimer_hal.h>
+
 #include "audio.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_eth_time.h"
+#include "esp_rom_sys.h"
 
 static const char* TAG = "m_queue";
+
+static u64 get_ptptime(void)
+{
+  struct timespec ts;
+  if (esp_eth_clock_gettime(CLOCK_PTP_SYSTEM, &ts) == 0)
+  {
+    return ((u64)ts.tv_sec * 1000000000ULL) + ts.tv_nsec;
+  }
+  return 0;
+}
+
+u32 timespec_to_avtp_timestamp(struct timespec gptp_time)
+{
+  // avtp_timestamp = (AS_sec * 10^9 + AS_nsec) mod 2^32
+  return (u32)(((u64)gptp_time.tv_sec * 1000000000ULL + gptp_time.tv_nsec) & 0xFFFFFFFF);
+}
+
+u32 u64_to_avtp_timestamp(u64 gptp_time)
+{
+  // avtp_timestamp = (AS_sec * 10^9 + AS_nsec) mod 2^32
+  return (u32)(gptp_time & 0xFFFFFFFF);
+}
 
 /* Consumer task configuration */
 #define MEDIA_QUEUE_CONSUMER_TASK_STACK  4096
@@ -34,10 +62,13 @@ static void media_queue_consumer_task(void* arg)
     /* Wait for an entry with a short timeout to allow checking running flag */
     if (xQueueReceive(mq->queue, &entry, pdMS_TO_TICKS(10)) == pdTRUE)
     {
-      /* TODO: In the future, check presentation time against gPTP clock
-       * and wait until the appropriate time to play the samples.
-       * For now, write immediately to the codec.
-       */
+      if (entry.timestamp_valid)
+      {
+        u32 current_ns = u64_to_avtp_timestamp(get_ptptime());
+        s32 delta_ns = (s32)(entry.avtp_timestamp - current_ns);
+        // TODO use delta_ns for synchronized playback
+      }
+
       if (entry.sample_count > 0)
       {
         size_t bytes_to_write = entry.sample_count * OUTPUT_CHANNELS * sizeof(entry.samples[0]);
@@ -111,6 +142,7 @@ esp_err_t media_queue_start(media_queue_t* mq)
 
 void media_queue_stop(media_queue_t* mq)
 {
+  ESP_LOGI(TAG, "Stopping media queue consumer task");
   if (mq == NULL)
   {
     return;
