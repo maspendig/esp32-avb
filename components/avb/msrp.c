@@ -237,10 +237,11 @@ void msrp_talker_failed_join_indication(struct mrp_application* app, struct mrp_
  */
 void msrp_listener_join_indication(struct mrp_application* app, struct mrp_attribute* attribute, bool new)
 {
-  if (OUTPUT_CHANNELS == 0)
+  if (INPUT_CHANNELS == 0)
   {
     return;
   }
+
   msrp_ctx_t* msrp = (msrp_ctx_t*)app->ctx;
   msrp_listener_attr_value_t* value = (msrp_listener_attr_value_t*)attribute->value;
 

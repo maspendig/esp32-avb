@@ -426,11 +426,6 @@ static int ptp_net_recv(FAR struct ptp_state_s* state, void* ptp_msg, uint16_t p
   if (ret > 0 && ts && ts_info->type == L2TAP_IREC_TIME_STAMP)
   {
     *ts = *(struct timespec*)ts_info->data;
-    // Worst case fall back for basic functionality
-    if (((struct timespec*)ts_info->data)->tv_sec == 0 && ((struct timespec*)ts_info->data)->tv_nsec == 0)
-    {
-      ptp_gettime(state, ts);
-    }
   }
 
   memcpy(ptp_msg, &eth_frame[ETH_HEADER_LEN], ret);
@@ -1498,7 +1493,7 @@ static int ptp_update_local_clock(FAR struct ptp_state_s* state,
 
     if (ret == OK)
     {
-      ptpinfo("Jumped to timestamp %lld.%09ld s\n",
+      ptpinfo("Jumped to timestamp %lld.%09ld s",
               (long long)new_time.tv_sec, (long)new_time.tv_nsec);
     }
     else
@@ -2323,8 +2318,8 @@ int ptpd_start(FAR const char* interface)
 #ifdef ESP_PTP
   if (s_state == NULL)
   {
-    xTaskCreate(ptp_daemon, "PTPD", CONFIG_NETUTILS_PTPD_STACKSIZE,
-                (void*)interface, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreatePinnedToCore(ptp_daemon, "PTPD", CONFIG_NETUTILS_PTPD_STACKSIZE,
+                            (void*)interface, 10, NULL, 0);
     return 1;
   }
   ESP_LOGE(TAG, "Other instance of PTP is already running");

@@ -64,9 +64,40 @@ static void media_queue_consumer_task(void* arg)
     {
       if (entry.timestamp_valid)
       {
-        u32 current_ns = u64_to_avtp_timestamp(get_ptptime());
-        s32 delta_ns = (s32)(entry.avtp_timestamp - current_ns);
-        // TODO use delta_ns for synchronized playback
+        //  u32 timestamp = entry.avtp_timestamp;
+        //  u64 nsNow = get_ptptime();
+        //  u32 tsNow = u64_to_avtp_timestamp(nsNow);
+        //  u32 delta;
+        //  u64 playback_time_ns;
+        //  if (tsNow < timestamp)
+        //  {
+        //    delta = timestamp - tsNow;
+        //  }
+        //  else if (tsNow > timestamp)
+        //  {
+        //    delta = timestamp + (0x100000000ULL - tsNow);
+        //  }
+        //  else
+        //  {
+        ///    delta = 0;
+        ///  }
+        ///  if (delta < 0x7FFFFFFF)
+        ///  {
+        ///    playback_time_ns = nsNow + delta;
+        ///  }
+        ///  else
+        ///  {
+        ///    playback_time_ns = nsNow - (0x100000000ULL - delta);
+        ///  }
+
+        //  if (playback_time_ns + 10000000 < get_ptptime())
+        //  {
+        //    continue;
+        //  }
+
+        //  while (playback_time_ns > get_ptptime())
+        //  {
+        //  }
       }
 
       if (entry.sample_count > 0)

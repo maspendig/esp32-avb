@@ -322,7 +322,6 @@ static void avtp_listener_stream_task(void* arg)
 
                 if (raw_buf[20] != seq_number)
                 {
-                  ESP_LOGW(TAG, "sequence number mismatch: expected=%u received=%u", seq_number, raw_buf[20]);
                   seq_number = raw_buf[20] + 1;
                   continue;
                 }
@@ -534,12 +533,6 @@ int start_avtp_listener(const char* interface)
   return ESP_OK;
 }
 
-int stop_avtp_listener(int pid)
-{
-  s_state->stop = true;
-  return ESP_OK;
-}
-
 typedef struct iec61883_am824_packet
 {
   struct header_s header;
@@ -709,14 +702,6 @@ int avtp_listener_start(struct avtp_state_s* state)
 {
   state->listener_stop = false;
 
-  /* Start the media queue consumer task */
-  esp_err_t err = media_queue_start(&state->media_queue);
-  if (err != ESP_OK)
-  {
-    ESP_LOGE(TAG, "Failed to start media queue consumer");
-    media_queue_deinit(&state->media_queue);
-    return ESP_FAIL;
-  }
 
   /* Create high-priority stream task on Core 1 */
   BaseType_t ret = xTaskCreatePinnedToCore(
@@ -732,9 +717,17 @@ int avtp_listener_start(struct avtp_state_s* state)
   if (ret != pdPASS)
   {
     ESP_LOGE(TAG, "Failed to create listener stream task");
-    media_queue_deinit(&state->media_queue);
     s_state = NULL;
     free(state);
+    return ESP_FAIL;
+  }
+
+  /* Start the media queue consumer task */
+  esp_err_t err = media_queue_start(&state->media_queue);
+  if (err != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to start media queue consumer");
+    media_queue_deinit(&state->media_queue);
     return ESP_FAIL;
   }
   return ret;
