@@ -347,7 +347,7 @@ void handle_aem_read_desc_stream_port_output(struct avtp_state_s* state, struct 
   resp.stream_port_desc.number_of_controls = htons(0);
   resp.stream_port_desc.base_control = htons(0);
   resp.stream_port_desc.number_of_clusters = htons(CONFIG_NUM_AUDIO_CLUSTERS);
-  resp.stream_port_desc.base_cluster = htons(0);
+  resp.stream_port_desc.base_cluster = htons(CONFIG_NUM_AUDIO_CLUSTERS);
   resp.stream_port_desc.number_of_maps = htons(CONFIG_NUM_AUDIO_MAPS);
   resp.stream_port_desc.base_map = htons(CONFIG_NUM_AUDIO_MAPS); // Output map starts after input map
 
@@ -1416,8 +1416,7 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
   uint64_t target_entity_id = ntohll(msg->target_entity_id);
   if (target_entity_id != s_state->entity_id)
   {
-    // TODO change to debug level once verified
-    ESP_LOGW(TAG, "AECP message not for this entity (target: 0x%016llX, our: 0x%016llX)",
+    ESP_LOGD(TAG, "AECP message not for this entity (target: 0x%016llX, our: 0x%016llX)",
              target_entity_id, s_state->entity_id);
     return ESP_OK;
   }

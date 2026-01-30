@@ -58,8 +58,8 @@
 #define CONFIG_LISTENER_CAPABILITIES 0x4001
 
 // Talker configuration (stream source - sends audio)
-#define CONFIG_NUM_STREAM_OUTPUTS 0
-#define CONFIG_TALKER_STREAM_SOURCES 0
+#define CONFIG_NUM_STREAM_OUTPUTS INPUT_CHANNELS ? 1 : 0
+#define CONFIG_TALKER_STREAM_SOURCES INPUT_CHANNELS ? 1 : 0
 #define CONFIG_TALKER_CAPABILITIES 0x4001
 
 // Stream port configuration
@@ -80,9 +80,6 @@
 #define CONFIG_NUM_AUDIO_MAPPINGS CONFIG_AUDIO_CHANNELS
 
 #define CONFIG_CONTROLLER_CAPABILITIES 0x0000
-
-// TODO replace with MAAP handled MAC
-#define MAAP_MAC_ADDRESS (u8[6]){0x91, 0xE0, 0xF0, 0x00, 0xFE, 0x00}
 
 // Supported stream formats (AAF format)
 // Format: 0x00a0CCSSFNNNNNNN where CC=channels, SS=sample size, F=format, N=sample rate
