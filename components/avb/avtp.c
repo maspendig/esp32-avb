@@ -8,6 +8,7 @@
 
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_attr.h"
 #include <errno.h>
 
 #include "esp_vfs_l2tap.h"
@@ -227,8 +228,8 @@ static void extract_am824_audio_to_16(const u8* packet, size_t packet_len, s16* 
   *output_samples = sample_count / channels;
 }
 
-static void extract_am824_audio_to_32(const u8* packet, size_t packet_len, s32* output_buffer, u8 channels,
-                                      size_t* output_samples)
+static IRAM_ATTR void extract_am824_audio_to_32(const u8* packet, size_t packet_len, s32* output_buffer, u8 channels,
+                                                size_t* output_samples)
 {
   iec61883_t* iec61883 = (iec61883_t*)&packet[18];
 

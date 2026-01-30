@@ -47,7 +47,7 @@ static void adp_upsert_entity(struct avtp_state_s* s_state, struct avtp_discover
       if (s_state->adp_entities[i].entity_id == entity_id)
       {
         set_entity_values(&s_state->adp_entities[i], msg);
-        ESP_LOGI(TAG, "Updated ADP entity 0x%016llX (valid %us)",
+        ESP_LOGV(TAG, "Updated ADP entity 0x%016llX (valid %us)",
                  (unsigned long long)entity_id, (unsigned)(s_state->adp_entities[i].valid_until * 2));
         return;
       }
@@ -164,15 +164,15 @@ int adp_net_rx(struct avtp_state_s* state, struct avtp_discovery_msg_s* msg, ssi
   switch (msg_type)
   {
   case ADP_MSG_TYPE_ENTITY_AVAILABLE:
-    ESP_LOGI(TAG, "ADP Entity Available Message received");
+    ESP_LOGV(TAG, "ADP Entity Available Message received");
     adp_upsert_entity(state, msg);
     break;
   case ADP_MSG_TYPE_ENTITY_DEPARTING:
-    ESP_LOGI(TAG, "ADP Entity Departing Message received");
+    ESP_LOGV(TAG, "ADP Entity Departing Message received");
     adp_remove_entity(state, msg);
     break;
   case ADP_MSG_TYPE_ENTITY_DISCOVER:
-    ESP_LOGI(TAG, "Entity Discover Message", msg_type);
+    ESP_LOGV(TAG, "Entity Discover Message", msg_type);
     break;
   default:
     ESP_LOGW(TAG, "Unknown ADP message type: 0x%02X", msg_type);
