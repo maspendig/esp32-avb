@@ -12,7 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_eth_time.h"
-#include "esp_rom_sys.h"
+#include "esp_attr.h"
 
 static const char* TAG = "m_queue";
 
@@ -43,6 +43,34 @@ u32 u64_to_avtp_timestamp(u64 gptp_time)
 #define MEDIA_QUEUE_CONSUMER_TASK_PRIO   16
 #define MEDIA_QUEUE_CONSUMER_TASK_CORE   1   /* Same core as stream processing */
 
+u64 IRAM_ATTR ts_to_playback_ns(u32* ts, u64* now_ns)
+{
+  u32 now_ts = u64_to_avtp_timestamp(*now_ns);
+  u32 delta;
+  u64 playback_time_ns;
+  if (now_ts < *ts)
+  {
+    delta = *ts - now_ts;
+  }
+  else if (now_ts > *ts)
+  {
+    delta = *ts + (0x100000000ULL - now_ts);
+  }
+  else
+  {
+    delta = 0;
+  }
+  if (delta < 0x7FFFFFFF)
+  {
+    playback_time_ns = *now_ns + delta;
+  }
+  else
+  {
+    playback_time_ns = *now_ns - (0x100000000ULL - delta);
+  }
+  return playback_time_ns;
+}
+
 /**
  * @brief Consumer task that reads from the queue and writes to codec
  *
@@ -64,40 +92,8 @@ static void media_queue_consumer_task(void* arg)
     {
       if (entry.timestamp_valid)
       {
-        //  u32 timestamp = entry.avtp_timestamp;
-        //  u64 nsNow = get_ptptime();
-        //  u32 tsNow = u64_to_avtp_timestamp(nsNow);
-        //  u32 delta;
-        //  u64 playback_time_ns;
-        //  if (tsNow < timestamp)
-        //  {
-        //    delta = timestamp - tsNow;
-        //  }
-        //  else if (tsNow > timestamp)
-        //  {
-        //    delta = timestamp + (0x100000000ULL - tsNow);
-        //  }
-        //  else
-        //  {
-        ///    delta = 0;
-        ///  }
-        ///  if (delta < 0x7FFFFFFF)
-        ///  {
-        ///    playback_time_ns = nsNow + delta;
-        ///  }
-        ///  else
-        ///  {
-        ///    playback_time_ns = nsNow - (0x100000000ULL - delta);
-        ///  }
-
-        //  if (playback_time_ns + 10000000 < get_ptptime())
-        //  {
-        //    continue;
-        //  }
-
-        //  while (playback_time_ns > get_ptptime())
-        //  {
-        //  }
+        u64 now_ns = get_ptptime();
+        u64 playback_time_ns = ts_to_playback_ns(&entry.avtp_timestamp, &now_ns);
       }
 
       if (entry.sample_count > 0)

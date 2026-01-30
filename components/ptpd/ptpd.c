@@ -1619,6 +1619,12 @@ static int ptp_update_local_clock(FAR struct ptp_state_s* state,
 #endif // ESP_PTP
   }
 
+  if (delta_ns > 0)
+  {
+    ptpinfo("Adjust clock forward");
+    // TODO signal clock jump forward to subscribers
+  }
+
   return ret;
 }
 
