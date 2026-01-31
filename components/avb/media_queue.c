@@ -85,6 +85,8 @@ static void media_queue_consumer_task(void* arg)
   ESP_LOGI(TAG, "Media Queue task started on core %d (priority %d)",
            xPortGetCoreID(), uxTaskPriorityGet(NULL));
 
+  u64 last_log_time_ns = 0;
+
   while (mq->running)
   {
     /* Wait for an entry with a short timeout to allow checking running flag */
@@ -94,6 +96,15 @@ static void media_queue_consumer_task(void* arg)
       {
         u64 now_ns = get_ptptime();
         u64 playback_time_ns = ts_to_playback_ns(&entry.avtp_timestamp, &now_ns);
+
+        // print delta every 2 seconds only once
+        if (now_ns - last_log_time_ns > 2000000000ULL)
+        {
+          last_log_time_ns = now_ns;
+          ESP_LOGI(TAG, "avtp_ts %lu, now_ts %lu, delta: %lld ns", entry.avtp_timestamp,
+                   u64_to_avtp_timestamp(now_ns),
+                   playback_time_ns - now_ns);
+        }
       }
 
       if (entry.sample_count > 0)

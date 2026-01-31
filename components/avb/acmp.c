@@ -14,6 +14,8 @@
 #include <esp_eth_spec.h>
 #include <msrp.h>
 
+#include "../../../../../esp-idf/components/esp_driver_ana_cmpr/include/driver/ana_cmpr_types.h"
+
 #define TAG "acmp"
 
 void eui48_from_uint64(uint8_t* mac[6], uint64_t other)
@@ -90,7 +92,7 @@ void handle_acmp_connect_tx_response(struct avtp_state_s* state, struct acmp_com
   /* Check status */
   if (status != 0)
   {
-    ESP_LOGE(TAG, "ACMP Connect TX Response failed with status: %d", status);
+    ESP_LOGW(TAG, "ACMP Connect TX Response failed with status: %d", status);
     return;
   }
 
@@ -193,77 +195,71 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_commo
     return ESP_OK;
   }
 
-  ESP_LOGI(TAG, "Received ACMP Connect TX Command");
-
-  // TODO implement talkerIsAcquiredOrLockedByOther 1722.1-2021 p352
-  // if (is_talker_unavailable(&msg))
-  // {
-  //   // Talker is unavailable, send response with appropriate status
-  //   ACMP_SET_CTRL_DATA_STATUS(*resp, ACMP_STATUS_CONTROLLER_NOT_AUTHORIZED, 44);
-  //   status = ACMP_STATUS_CONTROLLER_NOT_AUTHORIZED;
-  // }
-
-  acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_TX_RESPONSE, 44, 0);
-
-  // Save talker stream information
-  u64 listener_entity_id = ntohll(msg->listener_entity_id);
-  u16 listener_unique_id = ntohs(msg->listener_unique_id);
-
-  // Initialize stream info on first connection
-  if (state->talker_stream_info.connection_count == 0)
+  if (state->acquired_by_controller_id != 0 && state->acquired_by_controller_id != htonll(msg->controller_entity_id))
   {
-    generate_stream_id(state->intf_hw_addr, 1, &state->talker_stream_info.stream_id);
-    memcpy(state->talker_stream_info.stream_dest_mac, state->maap_db.start_mac, ETH_ADDR_LEN);
-    state->talker_stream_info.stream_vlan_id = 2;
-
-    avtp_talker_start(state);
-    msrp_register_stream_request(&state->msrp.app, &state->talker_stream_info);
-  }
-  else if (is_listener_connected(state, listener_entity_id, listener_unique_id) == true)
-  {
-    ESP_LOGW(TAG, "Listener 0x%016llX (unique_id=%u) is already connected, ignoring duplicate connection",
-             (unsigned long long)listener_entity_id,
-             listener_unique_id);
-    return ESP_OK;
-  }
-
-  // Add listener to connected_listeners array
-  if (state->talker_stream_info.connection_count < MAX_CONNECTED_LISTENERS)
-  {
-    const u16 index = state->talker_stream_info.connection_count;
-    state->talker_stream_info.connected_listeners[index].listener_entity_id = listener_entity_id;
-    state->talker_stream_info.connected_listeners[index].listener_unique_id = listener_unique_id;
-    state->talker_stream_info.connection_count++;
-
-    ESP_LOGI(TAG, "Saved talker stream info: listener[%u]=0x%016llX (unique_id=%u), total_connections=%u",
-             index,
-             (unsigned long long)listener_entity_id,
-             listener_unique_id,
-             state->talker_stream_info.connection_count);
+    ESP_LOGI(
+      TAG, "Reverting unauthorized ACMP Connect TX Command by controller 0x%016llX - locked by 0x%016llX).",
+      htonll(msg->controller_entity_id),
+      state->acquired_by_controller_id);
+    status = ACMP_STATUS_CONTROLLER_NOT_AUTHORIZED;
   }
   else
   {
-    ESP_LOGW(TAG, "Maximum connected listeners (%d) reached, cannot add listener 0x%016llX",
-             MAX_CONNECTED_LISTENERS,
-             (unsigned long long)listener_entity_id);
-    status = ACMP_STATUS_TALKER_NO_BANDWIDTH;
+    ESP_LOGI(TAG, "Received ACMP Connect TX Command");
+
+    // Save talker stream information
+    u64 listener_entity_id = ntohll(msg->listener_entity_id);
+    u16 listener_unique_id = ntohs(msg->listener_unique_id);
+
+    // Initialize stream info on first connection
+    if (state->talker_stream_info.connection_count == 0)
+    {
+      generate_stream_id(state->intf_hw_addr, 1, &state->talker_stream_info.stream_id);
+      memcpy(state->talker_stream_info.stream_dest_mac, state->maap_db.start_mac, ETH_ADDR_LEN);
+      state->talker_stream_info.stream_vlan_id = 2;
+
+      avtp_talker_start(state);
+      msrp_register_stream_request(&state->msrp.app, &state->talker_stream_info);
+    }
+    else if (is_listener_connected(state, listener_entity_id, listener_unique_id) == true)
+    {
+      ESP_LOGW(TAG, "Listener 0x%016llX (unique_id=%u) is already connected, ignoring duplicate connection",
+               (unsigned long long)listener_entity_id,
+               listener_unique_id);
+      return ESP_OK;
+    }
+
+    // Add listener to connected_listeners array
+    if (state->talker_stream_info.connection_count < MAX_CONNECTED_LISTENERS)
+    {
+      const u16 index = state->talker_stream_info.connection_count;
+      state->talker_stream_info.connected_listeners[index].listener_entity_id = listener_entity_id;
+      state->talker_stream_info.connected_listeners[index].listener_unique_id = listener_unique_id;
+      state->talker_stream_info.connection_count++;
+
+      ESP_LOGI(TAG, "Saved talker stream info: listener[%u]=0x%016llX (unique_id=%u), total_connections=%u",
+               index,
+               (unsigned long long)listener_entity_id,
+               listener_unique_id,
+               state->talker_stream_info.connection_count);
+    }
+    else
+    {
+      ESP_LOGW(TAG, "Maximum connected listeners (%d) reached, cannot add listener 0x%016llX",
+               MAX_CONNECTED_LISTENERS,
+               (unsigned long long)listener_entity_id);
+      status = ACMP_STATUS_TALKER_NO_BANDWIDTH;
+    }
   }
 
-  resp.sequence_id = msg->sequence_id;
-
-  /* ACMP payload - convert to network byte order */
-  resp.talker_entity_id = msg->talker_entity_id;
-  resp.controller_entity_id = msg->controller_entity_id;
-  resp.listener_entity_id = msg->listener_entity_id;
-
-  // wait for MAAP address to be acquired
+  /* Prepare Connect TX Response */
+  memcpy(&resp, msg, sizeof(struct acmp_common_s));
+  acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_TX_RESPONSE, 44, status);
   memcpy(resp.stream_dest_mac, state->maap_db.start_mac, sizeof(resp.stream_dest_mac));
 
   resp.connection_count = htons(state->talker_stream_info.connection_count);
   resp.stream_id = htonll(state->talker_stream_info.stream_id);
   resp.stream_vlan_id = htons(2); // Keep the same VLAN ID
-
-  ACMP_SET_CTRL_DATA_STATUS((&resp), status, 44);
 
   if (send_msg(state->socket, &resp, sizeof(resp)) != ESP_OK)
   {
@@ -277,6 +273,9 @@ int handle_acmp_connect_tx_command(struct avtp_state_s* state, struct acmp_commo
 
 int handle_acmp_connect_rx_command(struct avtp_state_s* state, struct acmp_common_s* msg)
 {
+  u8 status = ACMP_STATUS_SUCCESS;
+
+
   if (state->entity_id != htonll(msg->listener_entity_id))
   {
     ESP_LOGI(TAG, "Ignoring foreign ACMP Connect RX Command (target: 0x%016llX, our: 0x%016llX).",
@@ -285,29 +284,28 @@ int handle_acmp_connect_rx_command(struct avtp_state_s* state, struct acmp_commo
     return ESP_OK;
   }
 
+  if (state->acquired_by_controller_id != 0 && state->acquired_by_controller_id != htonll(msg->controller_entity_id))
+  {
+    ESP_LOGI(
+      TAG, "Reverting unauthorized ACMP Connect RX Command by controller 0x%016llX - locked by 0x%016llX).",
+      htonll(msg->controller_entity_id),
+      state->acquired_by_controller_id);
+    status = ACMP_STATUS_CONTROLLER_NOT_AUTHORIZED;
+  }
+
   ESP_LOGI(TAG, "Received ACMP Connect RX Command");
 
   struct acmp_common_s resp = {0};
 
-  acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_TX_COMMAND, 44, 0);
+  memcpy(&resp, msg, sizeof(struct acmp_common_s));
+  acmp_set_common_header(state, &resp, ACMP_MSG_TYPE_CONNECT_TX_COMMAND, 44, status);
 
-  resp.stream_id = htonll(0);
-  resp.controller_entity_id = msg->controller_entity_id;
-  resp.talker_entity_id = msg->talker_entity_id;
-  resp.listener_entity_id = msg->listener_entity_id;
-  // TODO check if this is really simply returned!
-  resp.talker_unique_id = msg->talker_unique_id;
-  resp.listener_unique_id = msg->listener_unique_id;
-  memcpy(resp.stream_dest_mac, msg->stream_dest_mac, sizeof(resp.stream_dest_mac));
-  resp.connection_count = msg->connection_count;
-  const u16 seq = state->acmp_sequence_id++;
-  resp.sequence_id = htons(seq);
-  resp.flags = msg->flags;
+  resp.sequence_id = htons(++state->acmp_sequence_id);
   resp.stream_vlan_id = htons(0x0002);
 
   int result = send_msg(state->socket, &resp, sizeof(resp));
 
-  if (result == ESP_OK)
+  if (result == ESP_OK && status == ACMP_STATUS_SUCCESS)
   {
     // Save listener stream information
     u16 listener_unique_id = ntohs(resp.listener_unique_id);
@@ -319,7 +317,7 @@ int handle_acmp_connect_rx_command(struct avtp_state_s* state, struct acmp_commo
       listenerInfo->pending_connection = true;
       listenerInfo->sequence_id = ntohs(msg->sequence_id);
 
-      ESP_LOGI(TAG, "Saved listener stream info [%u]: talker_entity_id=0x%016llX, talker_unique_id=%u, pending=true",
+      ESP_LOGV(TAG, "Saved listener stream info [%u]: talker_entity_id=0x%016llX, talker_unique_id=%u, pending=true",
                listener_unique_id,
                (unsigned long long)listenerInfo->talker_entity_id,
                listenerInfo->talker_unique_id);
@@ -353,8 +351,13 @@ int handle_acmp_connect_rx_response(struct avtp_state_s* state, struct acmp_comm
   case ACMP_STATUS_LISTENER_TALKER_TIMEOUT:
     ESP_LOGW(TAG, "ACMP Connect RX Response: Listener-Talker Timeout");
     return ESP_FAIL;
+  case ACMP_STATUS_CONTROLLER_NOT_AUTHORIZED:
+    ESP_LOGW(TAG, "ACMP Connect RX Response: Controller Not Authorized (controller: 0x%016llX, talker: 0x%016llX)}",
+             htonll(msg->controller_entity_id)
+             , htonll(msg->talker_entity_id));
+    return ESP_FAIL;
   default:
-    ESP_LOGE(TAG, "ACMP Connect RX Response failed with status: %d", status);
+    ESP_LOGW(TAG, "ACMP Connect RX Response failed with status: %d", status);
     return ESP_FAIL;
   }
 
@@ -612,6 +615,10 @@ void acmp_net_rx(struct avtp_state_s* state, struct acmp_common_s* msg, ssize_t 
     break;
   case ACMP_MSG_TYPE_DISCONNECT_RX_RESPONSE:
     ESP_LOGW(TAG, "Received ACMP Disconnect RX Response - NOT IMPLEMENTED");
+    break;
+  case ACMP_MSG_TYPE_GET_TX_STATE_COMMAND:
+    ESP_LOGW(TAG, "Received unimplemented ACMP Get TX State Command");
+
     break;
   default:
     ESP_LOGW(TAG, "Received unimplemented ACMP message type: 0x%1X", msg->message_type);

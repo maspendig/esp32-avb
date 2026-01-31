@@ -40,7 +40,7 @@ void init_ethernet_and_netif(void)
   esp_netif_inherent_config_t esp_netif_base_config = ESP_NETIF_INHERENT_DEFAULT_ETH();
   esp_netif_config_t esp_netif_config = {
     .base = &esp_netif_base_config,
-    .stack = ESP_NETIF_NETSTACK_DEFAULT_ETH
+    .stack = ESP_NETIF_NETSTACK_DEFAULT_ETH,
   };
   char if_key_str[10];
   char if_desc_str[10];

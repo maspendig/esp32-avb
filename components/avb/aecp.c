@@ -1394,8 +1394,6 @@ void handle_acm_get_configuration(struct avtp_state_s* state, struct aecp_data_u
   memcpy(resp.aecp_header.header.dst_mac, msg->header.src_mac, ETH_ADDR_LEN);
   memcpy(resp.aecp_header.header.src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
 
-  resp.aecp_header.message_type = AECP_MSG_TYPE_AEM_RESPONSE;
-
   /* Response payload - current configuration index (always 0 for single configuration) */
   resp.configuration_index = htons(0);
 
@@ -1458,7 +1456,12 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
   case ACM_COMMAND_TYPE_SET_NAME:
     handle_acm_set_name(s_state, (struct aecp_set_name_s*)msg);
     break;
-
+  case ACM_COMMAND_TYPE_START_STREAMING:
+    ESP_LOGW(TAG, "Received unimplemented AECP ACM START_STREAMING Command");
+    break;
+  case ACM_COMMAND_TYPE_SET_MAX_TRANSIT_TIME:
+    ESP_LOGW(TAG, "Received unimplemented AECP ACM SET_MAX_TRANSIT_TIME Command");
+    break;
   default:
     ESP_LOGW(TAG, "Received unimplemented AECP ACM Command type: 0x%04X", command_type);
   }
