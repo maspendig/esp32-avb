@@ -97,8 +97,9 @@ static IRAM_ATTR void media_queue_consumer_task(void* arg)
       {
         u64 now_ns = get_ptptime();
         u64 playback_time_ns = ts_to_playback_ns(&entry.avtp_timestamp, &now_ns);
+        s64 delta_ns = (s64)(playback_time_ns - now_ns);
 
-        if (playback_time_ns + 100000 < now_ns)
+        if (delta_ns < -100000)
         {
           // this package is late!
           if (uxQueueMessagesWaiting(mq->queue) >= 1)
