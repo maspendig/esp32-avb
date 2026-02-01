@@ -18,8 +18,8 @@ static const char* TAG = "m_queue";
 
 /* Consumer task configuration */
 #define MEDIA_QUEUE_CONSUMER_TASK_STACK  4096
-#define MEDIA_QUEUE_CONSUMER_TASK_PRIO   14
-#define MEDIA_QUEUE_CONSUMER_TASK_CORE   0
+#define MEDIA_QUEUE_CONSUMER_TASK_PRIO   15
+#define MEDIA_QUEUE_CONSUMER_TASK_CORE   1
 
 
 static u64 get_ptptime(void)
@@ -98,12 +98,16 @@ static IRAM_ATTR void media_queue_consumer_task(void* arg)
         u64 now_ns = get_ptptime();
         u64 playback_time_ns = ts_to_playback_ns(&entry.avtp_timestamp, &now_ns);
 
-        //
-        //        while (playback_time_ns - now_ns > 10000)
-        //        {
-        //          now_ns = get_ptptime();
-        //        }
-        //
+        if (playback_time_ns + 100000 < now_ns)
+        {
+          // this package is late!
+          if (uxQueueMessagesWaiting(mq->queue) >= 1)
+          {
+            // we have more packages in the queue, skip this one
+            mq->stats_q_drop++;
+            continue;
+          }
+        }
         // print delta every 2 seconds only once
         if (now_ns - last_log_time_ns > 2000000000ULL)
         {
