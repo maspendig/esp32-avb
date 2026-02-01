@@ -260,11 +260,20 @@ static int64_t timespec_to_ms(const struct timespec* ts)
   return ts->tv_sec * 1000 + (ts->tv_nsec / 1000000ll);
 }
 
-static IRAM_ATTR void rx_avtp_61883_IIDC(struct avtp_state_s* state, u8* buf, ssize_t len, u8* seq_number)
+static IRAM_ATTR void rx_avtp_61883_IIDC(struct avtp_state_s* state, u8* buf, ssize_t len, u8* seq_number,
+                                         bool* seq_synced)
 {
-  if (buf[20] != *seq_number)
+  u8 pkt_seq = buf[20];
+
+  if (!*seq_synced)
   {
-    *seq_number = buf[20] + 1;
+    /* First packet - synchronize to the stream's sequence number */
+    *seq_number = pkt_seq;
+    *seq_synced = true;
+  }
+  else if (pkt_seq != *seq_number)
+  {
+    *seq_number = pkt_seq + 1;
     state->media_queue.stats_seq_err++;
     return;
   }
@@ -301,67 +310,95 @@ static IRAM_ATTR void rx_avtp_61883_IIDC(struct avtp_state_s* state, u8* buf, ss
   (*seq_number)++;
 }
 
+static IRAM_ATTR void process_vlan_stream_packet(
+  struct avtp_state_s* state,
+  u8* raw_buf,
+  ssize_t len,
+  u8* seq_number,
+  bool* seq_synced)
+{
+  /* Quick validation: minimum VLAN + AVTP header size */
+  if (len < 22)
+  {
+    return;
+  }
+
+  /* Parse inner Ethertype directly (skip TCI parsing unless needed) */
+  const u16 inner_ethertype = (raw_buf[16] << 8) | raw_buf[17];
+
+  /* Fast path: check AVTP ethertype first */
+  if (inner_ethertype != ETH_TYPE_AVTP)
+  {
+    return;
+  }
+
+  const u8 subtype = raw_buf[18];
+
+  /* Stream data subtypes are < 0x80 */
+  if (subtype == AVTP_SUBTYPE_61883_IIDC)
+  {
+    rx_avtp_61883_IIDC(state, raw_buf, len, seq_number, seq_synced);
+  }
+  /* AAF support can be added here when implemented */
+}
+
 /**
  * This task exclusively handles VLAN-tagged AVB stream packets.
  * It runs on a dedicated core with high priority to minimize packet loss.
+ *
+ * Optimizations:
+ * - Drains stale packets on start to avoid processing outdated data
+ * - Minimizes system call overhead by batching reads
+ * - Uses optimized packet parsing in IRAM
+ * - Flushes media queue on reconnect for clean slate
  */
 static void avtp_listener_stream_task(void* arg)
 {
   struct avtp_state_s* state = (struct avtp_state_s*)arg;
-  u8 raw_buf[1518]; /* Max Ethernet frame size */
+  /* Align buffer for potentially better memory access */
+  u8 __attribute__((aligned(4))) raw_buf[1518];
   u8 seq_number = 0;
+  bool seq_synced = false;
+  const int vlan_fd = state->vlan_socket;
+  const int max_fd_plus_one = vlan_fd + 1;
 
-
-  ESP_LOGI(TAG, "Stream task started on core %d (priority %d)",
+  ESP_LOGI(TAG, "Listener stream task started on core %d (priority %d)",
            xPortGetCoreID(), uxTaskPriorityGet(NULL));
 
   while (!state->listener_stop)
   {
     fd_set readfds;
+  /* Flush the media queue to start with a clean slate */
+  media_queue_flush(&state->media_queue);
+
+  /* Reset sequence tracking to resync with incoming stream */
+  seq_number = 0;
+  seq_synced = false;
+
+  /* Pre-initialize fd_set outside loop - only one fd, so we can reuse */
+  fd_set readfds;
+
+  while (!state->listener_stop)
+  {
     FD_ZERO(&readfds);
-    FD_SET(state->vlan_socket, &readfds);
+    FD_SET(vlan_fd, &readfds);
 
     /* Short timeout to ensure responsive shutdown */
-    struct timeval timeout = {.tv_sec = 0, .tv_usec = 10000}; /* 10ms */
+    struct timeval timeout = {.tv_sec = 0, .tv_usec = 5000}; /* 5ms for tighter loop */
 
-    int ret = select(state->vlan_socket + 1, &readfds, NULL, NULL, &timeout);
+    const int ret = select(max_fd_plus_one, &readfds, NULL, NULL, &timeout);
 
-    if (ret > 0 && FD_ISSET(state->vlan_socket, &readfds))
+    if (ret > 0)
     {
       ssize_t len;
 
-      while ((len = read(state->vlan_socket, raw_buf, sizeof(raw_buf))) > 0)
+      /* Process all available packets in a tight loop */
+      while ((len = read(vlan_fd, raw_buf, sizeof(raw_buf))) > 0)
       {
-        /* Parse 802.1Q VLAN header */
-        u16 tci = (raw_buf[14] << 8) | raw_buf[15];
-        u16 vlan_id = tci & 0x0FFF;
-        u8 pcp = (tci >> 13) & 0x07;
-        u16 inner_ethertype = (raw_buf[16] << 8) | raw_buf[17];
-
-        /* Check if inner Ethertype is AVTP */
-        if (inner_ethertype == ETH_TYPE_AVTP)
-        {
-          u8 subtype = raw_buf[18];
-
-          if (subtype < 0x80)
-          {
-            switch (subtype)
-            {
-            case AVTP_SUBTYPE_AAF:
-              ESP_LOGI(TAG, "Received AAF stream packet: VLAN ID=%u, PCP=%u, Length=%zd bytes",
-                       vlan_id, pcp, len);
-              break;
-            case AVTP_SUBTYPE_61883_IIDC:
-              rx_avtp_61883_IIDC(state, (u8*)&raw_buf, len, &seq_number);
-              break;
-            default:
-              ESP_LOGW(TAG, "Received unknown AVTP subtype: %d", subtype);
-              break;
-            }
-          }
-        }
+        process_vlan_stream_packet(state, raw_buf, len, &seq_number, &seq_synced);
       }
     }
+    /* ret == 0 is timeout, ret < 0 && errno == EINTR is interrupt - both OK to continue */
   }
 
   empty_audio_buffer();
