@@ -96,7 +96,7 @@ void msrp_declare_domain(struct msrp_ctx* ctx, msrp_pdu_domain_first_value_t* do
     existing_domain = msrp_create_domain(ctx, domain);
   }
 
-  ESP_LOGI(TAG, "Declaring MSRP domain: { id: %d, prio: %d, vid: %d }, %s",
+  ESP_LOGV(TAG, "Declaring MSRP domain: { id: %d, prio: %d, vid: %d }, %s",
            domain->sr_class_id,
            domain->sr_class_priority,
            ntohs(domain->sr_class_vid),
@@ -120,16 +120,6 @@ static msrp_map_listener_t* msrp_map_find_listener(msrp_ctx_t* ctx, u64 stream_i
   return NULL;
 }
 
-static void msrp_map_add_listener(msrp_ctx_t* ctx, msrp_listener_attr_value_t* value)
-{
-  if (msrp_map_find_listener(ctx, value->stream_id)) return;
-
-  msrp_map_listener_t* node = calloc(1, sizeof(msrp_map_listener_t));
-  node->value = *value;
-  list_append(ctx->map.listeners, &node->list);
-  ESP_LOGI(TAG, "Added listener to map, StreamID: 0x%llx", ntohll(value->stream_id));
-}
-
 static void msrp_map_remove_listener(msrp_ctx_t* ctx, u64 stream_id)
 {
   msrp_map_listener_t* node = msrp_map_find_listener(ctx, stream_id);
@@ -137,7 +127,7 @@ static void msrp_map_remove_listener(msrp_ctx_t* ctx, u64 stream_id)
   {
     list_remove(&node->list);
     free(node);
-    ESP_LOGI(TAG, "Removed listener from map, StreamID: 0x%llx", stream_id);
+    ESP_LOGV(TAG, "Removed listener from map, StreamID: 0x%llx", stream_id);
   }
 }
 
@@ -259,7 +249,7 @@ void msrp_domain_join_indication(struct mrp_application* app, struct mrp_attribu
 {
   msrp_pdu_domain_first_value_t* attr_value = (msrp_pdu_domain_first_value_t*)attribute->value;
 
-  ESP_LOGI(TAG, "MSRP Domain Join Indication: { id: %d, prio: %d, vid: %d }, %s",
+  ESP_LOGV(TAG, "MSRP Domain Join Indication: { id: %d, prio: %d, vid: %d }, %s",
            attr_value->sr_class_id,
            attr_value->sr_class_priority,
            ntohs(attr_value->sr_class_vid),
@@ -303,7 +293,7 @@ void msrp_mad_leave_indication(struct mrp_application* app, struct mrp_attribute
   case MSRP_LISTENER:
     {
       msrp_listener_attr_value_t* val = (msrp_listener_attr_value_t*)attr->value;
-      ESP_LOGI(TAG, "MSRP Listener Leave Indication: StreamID 0x%llx", val->stream_id);
+      ESP_LOGV(TAG, "MSRP Listener Leave Indication: StreamID 0x%llx", val->stream_id);
       msrp_map_remove_listener((msrp_ctx_t*)app->ctx, val->stream_id);
       break;
     }
