@@ -292,7 +292,11 @@ static IRAM_ATTR void rx_avtp_61883_IIDC(struct avtp_state_s* state, u8* buf, ss
   if (num_samples > 0)
   {
     /* Push to media queue - consumer task will write to codec */
-    media_queue_push(&state->media_queue, &entry);
+    esp_err_t err = media_queue_push(&state->media_queue, &entry);
+    if (err != ESP_OK)
+    {
+      printf("q");
+    }
   }
   (*seq_number)++;
 }
@@ -665,9 +669,16 @@ int avtp_talker_start(struct avtp_state_s* state)
 
 int avtp_listener_start(struct avtp_state_s* state)
 {
+  /* Start the media queue consumer task */
+  esp_err_t err = media_queue_start(&state->media_queue);
+  if (err != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to start media queue consumer");
+    media_queue_deinit(&state->media_queue);
+    return ESP_FAIL;
+  }
+
   state->listener_stop = false;
-
-
   /* Create high-priority stream task on Core 1 */
   BaseType_t ret = xTaskCreatePinnedToCore(
     avtp_listener_stream_task,
@@ -687,14 +698,6 @@ int avtp_listener_start(struct avtp_state_s* state)
     return ESP_FAIL;
   }
 
-  /* Start the media queue consumer task */
-  esp_err_t err = media_queue_start(&state->media_queue);
-  if (err != ESP_OK)
-  {
-    ESP_LOGE(TAG, "Failed to start media queue consumer");
-    media_queue_deinit(&state->media_queue);
-    return ESP_FAIL;
-  }
   return ret;
 }
 

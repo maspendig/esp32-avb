@@ -114,7 +114,9 @@ static IRAM_ATTR void media_queue_consumer_task(void* arg)
         if (now_ns - last_log_time_ns > 2000000000ULL)
         {
           last_log_time_ns = now_ns;
-          ESP_LOGW(TAG, "avtp_ts %lu, now_ts %lu, delta: %lld ns, drops: %d", entry.avtp_timestamp,
+          ESP_LOGW(TAG, "q_len %d, avtp_ts %lu, now_ts %lu, delta: %lld ns, drops: %d",
+                   uxQueueMessagesWaiting(mq->queue),
+                   entry.avtp_timestamp,
                    u64_to_avtp_timestamp(now_ns),
                    playback_time_ns - now_ns,
                    drops
@@ -219,7 +221,7 @@ esp_err_t IRAM_ATTR media_queue_push(media_queue_t* mq, const media_queue_entry_
   }
 
   /* Non-blocking push - if queue is full, packet is dropped */
-  if (xQueueSend(mq->queue, entry, 0) != pdTRUE)
+  if (xQueueSendToBack(mq->queue, entry, 0) != pdTRUE)
   {
     /* Queue full - this is expected under heavy load */
     return ESP_ERR_TIMEOUT;
@@ -255,5 +257,5 @@ void media_queue_flush(media_queue_t* mq)
   }
 
   xQueueReset(mq->queue);
-  ESP_LOGD(TAG, "Media queue flushed");
+  ESP_LOGV(TAG, "Media queue flushed");
 }

@@ -17,7 +17,7 @@
 #define MEDIA_QUEUE_MAX_SAMPLES_PER_PACKET (6 * OUTPUT_CHANNELS)
 
 /* Queue depth - number of packets that can be buffered */
-#define MEDIA_QUEUE_DEPTH 64
+#define MEDIA_QUEUE_DEPTH 256
 
 /* Media sample entry containing audio data and timing info */
 typedef struct media_queue_entry
