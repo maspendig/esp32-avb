@@ -16,6 +16,12 @@
 
 static const char* TAG = "m_queue";
 
+/* Consumer task configuration */
+#define MEDIA_QUEUE_CONSUMER_TASK_STACK  4096
+#define MEDIA_QUEUE_CONSUMER_TASK_PRIO   14
+#define MEDIA_QUEUE_CONSUMER_TASK_CORE   0
+
+
 static u64 get_ptptime(void)
 {
   struct timespec ts;
@@ -37,11 +43,6 @@ u32 u64_to_avtp_timestamp(u64 gptp_time)
   // avtp_timestamp = (AS_sec * 10^9 + AS_nsec) mod 2^32
   return (u32)(gptp_time & 0xFFFFFFFF);
 }
-
-/* Consumer task configuration */
-#define MEDIA_QUEUE_CONSUMER_TASK_STACK  4096
-#define MEDIA_QUEUE_CONSUMER_TASK_PRIO   18
-#define MEDIA_QUEUE_CONSUMER_TASK_CORE   0
 
 u64 IRAM_ATTR ts_to_playback_ns(u32* ts, u64* now_ns)
 {
