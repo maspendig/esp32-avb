@@ -246,7 +246,7 @@ struct avtp_state_s
 };
 
 // TODO move this content to the main
-int start_avtp_listener(const char* interface);
+int start_avtp_control_task(const char* interface);
 
 int avtp_talker_start(struct avtp_state_s* state);
 void avtp_talker_stop(struct avtp_state_s* state);

@@ -332,7 +332,6 @@ static void avtp_listener_stream_task(void* arg)
     {
       ssize_t len;
 
-      /* Drain all available packets (non-blocking) */
       while ((len = read(state->vlan_socket, raw_buf, sizeof(raw_buf))) > 0)
       {
         /* Parse 802.1Q VLAN header */
@@ -476,7 +475,7 @@ static void avtp_control_task(void* arg)
   vTaskDelete(NULL);
 }
 
-int start_avtp_listener(const char* interface)
+int start_avtp_control_task(const char* interface)
 {
   if (s_state != NULL)
   {
@@ -656,7 +655,6 @@ int avtp_talker_start(struct avtp_state_s* state)
     STREAM_TASK_CORE
   );
 
-  // TODO errorhandling!
   if (ret != pdPASS)
   {
     ESP_LOGE(TAG, "Failed to create stream task");
@@ -669,15 +667,6 @@ int avtp_talker_start(struct avtp_state_s* state)
 
 int avtp_listener_start(struct avtp_state_s* state)
 {
-  /* Start the media queue consumer task */
-  esp_err_t err = media_queue_start(&state->media_queue);
-  if (err != ESP_OK)
-  {
-    ESP_LOGE(TAG, "Failed to start media queue consumer");
-    media_queue_deinit(&state->media_queue);
-    return ESP_FAIL;
-  }
-
   state->listener_stop = false;
   /* Create high-priority stream task on Core 1 */
   BaseType_t ret = xTaskCreatePinnedToCore(
@@ -695,6 +684,15 @@ int avtp_listener_start(struct avtp_state_s* state)
     ESP_LOGE(TAG, "Failed to create listener stream task");
     s_state = NULL;
     free(state);
+    return ESP_FAIL;
+  }
+
+  /* Start the media queue consumer task */
+  esp_err_t err = media_queue_start(&state->media_queue);
+  if (err != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to start media queue consumer");
+    media_queue_deinit(&state->media_queue);
     return ESP_FAIL;
   }
 

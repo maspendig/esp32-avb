@@ -92,7 +92,7 @@ void app_main(void)
   init_ethernet_and_netif();
 
   int pid = ptpd_start("ETH_0");
-  int avtp_pid = start_avtp_listener("ETH_0");
+  int avtp_pid = start_avtp_control_task("ETH_0");
 
   init_audio_codec();
   esp_err_t err = init_nvs();
