@@ -18,7 +18,7 @@ static const char* TAG = "m_queue";
 
 /* Consumer task configuration */
 #define MEDIA_QUEUE_CONSUMER_TASK_STACK  4096
-#define MEDIA_QUEUE_CONSUMER_TASK_PRIO   15
+#define MEDIA_QUEUE_CONSUMER_TASK_PRIO   19
 #define MEDIA_QUEUE_CONSUMER_TASK_CORE   1
 
 
@@ -108,6 +108,11 @@ static IRAM_ATTR void media_queue_consumer_task(void* arg)
             mq->stats_q_drop++;
             continue;
           }
+        }
+        if (delta_ns > 10000)
+        {
+          xQueueSendToFront(mq->queue, &entry, 0);
+          continue;
         }
         // print delta every 2 seconds only once
         if (now_ns - last_log_time_ns > 2000000000ULL)
