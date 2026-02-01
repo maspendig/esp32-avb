@@ -2324,7 +2324,7 @@ int ptpd_start(FAR const char* interface)
   if (s_state == NULL)
   {
     xTaskCreatePinnedToCore(ptp_daemon, "PTPD", CONFIG_NETUTILS_PTPD_STACKSIZE,
-                            (void*)interface, 10, NULL, 0);
+                            (void*)interface, 10, NULL, 1);
     return 1;
   }
   ESP_LOGE(TAG, "Other instance of PTP is already running");

@@ -371,7 +371,7 @@ void handle_acmp_get_rx_state_command(struct avtp_state_s* state, struct acmp_co
   // check if we are the intended listener
   if (state->entity_id != htonll(msg->listener_entity_id))
   {
-    ESP_LOGW(TAG, "Ignoring foreign ACMP Get RX State Command (target: 0x%016llX, our: 0x%016llX).",
+    ESP_LOGI(TAG, "Ignoring foreign ACMP Get RX State Command (target: 0x%016llX, our: 0x%016llX).",
              htonll(msg->listener_entity_id),
              state->entity_id);
     return;
@@ -427,7 +427,7 @@ void handle_acmp_disconnect_rx_command(struct avtp_state_s* state, struct acmp_c
   // remove listener stream info. if found and ok, return DISCONNECT_TX_COMMAND
   if (state->entity_id != htonll(msg->listener_entity_id))
   {
-    ESP_LOGW(TAG, "Ignoring foreign ACMP DISCONNECT RX Command (target: 0x%016llX, our: 0x%016llX).",
+    ESP_LOGI(TAG, "Ignoring foreign ACMP DISCONNECT RX Command (target: 0x%016llX, our: 0x%016llX).",
              htonll(msg->listener_entity_id),
              state->entity_id);
     return;
@@ -464,7 +464,7 @@ void handle_acmp_disconnect_tx_response(struct avtp_state_s* state, struct acmp_
   // remove listener stream info. if found and ok, return DISCONNECT_TX_COMMAND
   if (state->entity_id != htonll(msg->listener_entity_id))
   {
-    ESP_LOGW(TAG, "Ignoring foreign ACMP DISCONNECT TX Response (target: 0x%016llX, our: 0x%016llX).",
+    ESP_LOGI(TAG, "Ignoring foreign ACMP DISCONNECT TX Response (target: 0x%016llX, our: 0x%016llX).",
              htonll(msg->listener_entity_id),
              state->entity_id);
     return;
@@ -547,7 +547,7 @@ void handle_acmp_disconnect_tx_command(struct avtp_state_s* state, struct acmp_c
   // check if we are the intended talker
   if (state->entity_id != htonll(msg->talker_entity_id))
   {
-    ESP_LOGW(TAG, "Ignoring foreign ACMP DISCONNECT TX Command (target: 0x%016llX, our: 0x%016llX).",
+    ESP_LOGI(TAG, "Ignoring foreign ACMP DISCONNECT TX Command (target: 0x%016llX, our: 0x%016llX).",
              htonll(msg->listener_entity_id),
              state->entity_id);
     return;
@@ -602,7 +602,7 @@ void acmp_net_rx(struct avtp_state_s* state, struct acmp_common_s* msg, ssize_t 
     handle_acmp_get_rx_state_command(state, msg);
     break;
   case ACMP_MSG_TYPE_GET_TX_STATE_RESPONSE:
-    ESP_LOGW(TAG, "Received ACMP Get TX State Response - NOT IMPLEMENTED");
+    ESP_LOGI(TAG, "Received ACMP Get TX State Response - NOT IMPLEMENTED");
     break;
   case ACMP_MSG_TYPE_DISCONNECT_RX_COMMAND:
     handle_acmp_disconnect_rx_command(state, msg);
@@ -614,10 +614,10 @@ void acmp_net_rx(struct avtp_state_s* state, struct acmp_common_s* msg, ssize_t 
     handle_acmp_disconnect_tx_command(state, msg);
     break;
   case ACMP_MSG_TYPE_DISCONNECT_RX_RESPONSE:
-    ESP_LOGW(TAG, "Received ACMP Disconnect RX Response - NOT IMPLEMENTED");
+    ESP_LOGI(TAG, "Received ACMP Disconnect RX Response - NOT IMPLEMENTED");
     break;
   case ACMP_MSG_TYPE_GET_TX_STATE_COMMAND:
-    ESP_LOGW(TAG, "Received unimplemented ACMP Get TX State Command");
+    ESP_LOGI(TAG, "Received ACMP Get TX State Command - NOT IMPLEMENTED");
 
     break;
   default:

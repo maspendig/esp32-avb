@@ -33,12 +33,13 @@
 #define STREAM_TASK_CORE    1       /* Core 1 for high-priority stream processing */
 #define CONTROL_TASK_CORE   0       /* Core 0 for control protocols */
 #define STREAM_TASK_PRIORITY  14    /* Higher priority for stream data */
-#define CONTROL_TASK_PRIORITY 6    /* Lower priority for control protocols */
+#define CONTROL_TASK_PRIORITY 5    /* Lower priority for control protocols */
 
 const char* TAG = "avtp";
 
 static TaskHandle_t talker_stream_task_handle;
 static TaskHandle_t listener_stream_task_handle;
+static TaskHandle_t avtp_control_task_handle;
 
 /* Forward declarations */
 static uint64_t mac_to_entity_id(uint64_t mac);
@@ -259,6 +260,43 @@ static int64_t timespec_to_ms(const struct timespec* ts)
   return ts->tv_sec * 1000 + (ts->tv_nsec / 1000000ll);
 }
 
+static IRAM_ATTR void rx_avtp_61883_IIDC(struct avtp_state_s* state, u8* buf, ssize_t len, u8* seq_number)
+{
+  if (buf[20] != *seq_number)
+  {
+    *seq_number = buf[20] + 1;
+    printf("s");
+    return;
+  }
+
+  /* Parse AVTP header for timestamp info */
+  iec61883_t* iec61883 = (iec61883_t*)&buf[18];
+  u32 avtp_timestamp = ntohl(iec61883->avtp_timestamp);
+  bool timestamp_valid = iec61883->avtp_info & 0x01;
+  bool timestamp_uncertain = iec61883->time_uncertain;
+
+  u8 channels = OUTPUT_CHANNELS;
+  size_t num_samples = 0;
+
+  /* Prepare media queue entry */
+  media_queue_entry_t entry = {
+    .avtp_timestamp = (!timestamp_uncertain && timestamp_valid) ? avtp_timestamp : 0,
+  };
+
+#if SAMPLE_BIT_RATE == 16
+  extract_am824_audio_to_16(raw_buf, len, entry.samples, channels, &num_samples);
+#else
+  extract_am824_audio_to_32(buf, len, entry.samples, channels, &num_samples);
+#endif
+
+  if (num_samples > 0)
+  {
+    /* Push to media queue - consumer task will write to codec */
+    media_queue_push(&state->media_queue, &entry);
+  }
+  (*seq_number)++;
+}
+
 /**
  * This task exclusively handles VLAN-tagged AVB stream packets.
  * It runs on a dedicated core with high priority to minimize packet loss.
@@ -289,7 +327,6 @@ static void avtp_listener_stream_task(void* arg)
     if (ret > 0 && FD_ISSET(state->vlan_socket, &readfds))
     {
       ssize_t len;
-      bool first_packet = true;
 
       /* Drain all available packets (non-blocking) */
       while ((len = read(state->vlan_socket, raw_buf, sizeof(raw_buf))) > 0)
@@ -314,51 +351,7 @@ static void avtp_listener_stream_task(void* arg)
                        vlan_id, pcp, len);
               break;
             case AVTP_SUBTYPE_61883_IIDC:
-              {
-                if (first_packet)
-                {
-                  seq_number = raw_buf[20];
-                  first_packet = false;
-                }
-
-                if (raw_buf[20] != seq_number)
-                {
-                  seq_number = raw_buf[20] + 1;
-                  continue;
-                }
-
-                /* Parse AVTP header for timestamp info */
-                iec61883_t* iec61883 = (iec61883_t*)&raw_buf[18];
-                u32 avtp_timestamp = ntohl(iec61883->avtp_timestamp);
-                bool timestamp_valid = iec61883->avtp_info & 0x01;
-                bool timestamp_uncertain = iec61883->time_uncertain;
-
-                u8 channels = OUTPUT_CHANNELS;
-                size_t num_samples = 0;
-
-                /* Prepare media queue entry */
-                media_queue_entry_t entry = {
-                  .avtp_timestamp = avtp_timestamp,
-                  .sequence_number = raw_buf[20],
-                  .timestamp_valid = timestamp_valid,
-                  .timestamp_uncertain = timestamp_uncertain,
-                };
-
-#if SAMPLE_BIT_RATE == 16
-                extract_am824_audio_to_16(raw_buf, len, entry.samples, channels, &num_samples);
-#else
-                extract_am824_audio_to_32(raw_buf, len, entry.samples, channels, &num_samples);
-#endif
-
-                entry.sample_count = num_samples;
-
-                if (num_samples > 0)
-                {
-                  /* Push to media queue - consumer task will write to codec */
-                  media_queue_push(&state->media_queue, &entry);
-                }
-                seq_number++;
-              }
+              rx_avtp_61883_IIDC(state, (u8*)&raw_buf, len, &seq_number);
               break;
             default:
               ESP_LOGW(TAG, "Received unknown AVTP subtype: %d", subtype);
@@ -465,6 +458,7 @@ static void avtp_control_task(void* arg)
     struct timespec time_now;
     struct timespec delta;
 
+    //TODO move into adp file and use esp_timer logic!
     clock_gettime(CLOCK_MONOTONIC, &time_now);
     timespecsub(&time_now, &state->last_transmitted_adp, &delta);
     if (timespec_to_ms(&delta) > CONFIG_ADP_SEND_INTERVAL_MSEC)
@@ -507,14 +501,13 @@ int start_avtp_listener(const char* interface)
 
 
   /* Create control task on Core 0 */
-  TaskHandle_t control_task_handle;
   esp_err_t ret = xTaskCreatePinnedToCore(
     avtp_control_task,
     "avtp_ctrl",
-    8192,
+    4096,
     state,
     CONTROL_TASK_PRIORITY,
-    &control_task_handle,
+    &avtp_control_task_handle,
     CONTROL_TASK_CORE
   );
 
@@ -533,35 +526,6 @@ int start_avtp_listener(const char* interface)
 
   return ESP_OK;
 }
-
-typedef struct iec61883_am824_packet
-{
-  struct header_s header;
-
-  struct
-  {
-    u16 tci;
-    u16 vlan_eth_type;
-  } vlan_tag;
-
-  iec61883_t iec61883;
-
-  union
-  {
-    struct
-    {
-      u8 format_tag : 2;
-      u8 channel : 6;
-      u8 tcode : 4;
-      u8 app_specific_control : 4;
-    } packet_info;
-
-    u8 packet_info_raw[2];
-  } packet_info_u;
-
-  iec61883_cip_header_t cip;
-  am824_sample_t audio_data[6 * 8];
-} iec61883_am824_packet_t;
 
 void avtp_set_common_header(struct avtp_state_s* state, struct iec61883_am824_packet* msg)
 {
@@ -708,7 +672,7 @@ int avtp_listener_start(struct avtp_state_s* state)
   BaseType_t ret = xTaskCreatePinnedToCore(
     avtp_listener_stream_task,
     "avtp_listener",
-    8192,
+    4096,
     state,
     STREAM_TASK_PRIORITY,
     &listener_stream_task_handle,

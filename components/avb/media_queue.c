@@ -40,8 +40,8 @@ u32 u64_to_avtp_timestamp(u64 gptp_time)
 
 /* Consumer task configuration */
 #define MEDIA_QUEUE_CONSUMER_TASK_STACK  4096
-#define MEDIA_QUEUE_CONSUMER_TASK_PRIO   16
-#define MEDIA_QUEUE_CONSUMER_TASK_CORE   1   /* Same core as stream processing */
+#define MEDIA_QUEUE_CONSUMER_TASK_PRIO   18
+#define MEDIA_QUEUE_CONSUMER_TASK_CORE   0
 
 u64 IRAM_ATTR ts_to_playback_ns(u32* ts, u64* now_ns)
 {
@@ -77,7 +77,7 @@ u64 IRAM_ATTR ts_to_playback_ns(u32* ts, u64* now_ns)
  * Currently writes immediately to the codec. Future enhancement will
  * use avtp_timestamp and gPTP time for synchronized playback.
  */
-static void media_queue_consumer_task(void* arg)
+static IRAM_ATTR void media_queue_consumer_task(void* arg)
 {
   media_queue_t* mq = (media_queue_t*)arg;
   media_queue_entry_t entry;
@@ -86,33 +86,45 @@ static void media_queue_consumer_task(void* arg)
            xPortGetCoreID(), uxTaskPriorityGet(NULL));
 
   u64 last_log_time_ns = 0;
-
+  size_t drops = 0;
+  bool init = true;
   while (mq->running)
   {
     /* Wait for an entry with a short timeout to allow checking running flag */
     if (xQueueReceive(mq->queue, &entry, pdMS_TO_TICKS(10)) == pdTRUE)
     {
-      if (entry.timestamp_valid)
+      if (entry.avtp_timestamp != 0)
       {
         u64 now_ns = get_ptptime();
         u64 playback_time_ns = ts_to_playback_ns(&entry.avtp_timestamp, &now_ns);
-
+        //
+        //        if (init && ((playback_time_ns + 10000000) < now_ns || (playback_time_ns - now_ns) > 2000000000ULL))
+        //        {
+        //          drops++;
+        //          continue;
+        //        }
+        //        init = false;
+        //
+        //        while (playback_time_ns - now_ns > 10000)
+        //        {
+        //          now_ns = get_ptptime();
+        //        }
+        //
         // print delta every 2 seconds only once
         if (now_ns - last_log_time_ns > 2000000000ULL)
         {
           last_log_time_ns = now_ns;
-          ESP_LOGI(TAG, "avtp_ts %lu, now_ts %lu, delta: %lld ns", entry.avtp_timestamp,
+          ESP_LOGW(TAG, "avtp_ts %lu, now_ts %lu, delta: %lld ns, drops: %d", entry.avtp_timestamp,
                    u64_to_avtp_timestamp(now_ns),
-                   playback_time_ns - now_ns);
+                   playback_time_ns - now_ns,
+                   drops
+          );
         }
       }
-
-      if (entry.sample_count > 0)
-      {
-        size_t bytes_to_write = entry.sample_count * OUTPUT_CHANNELS * sizeof(entry.samples[0]);
-        u32 bytes_written = 0;
-        CODEC_I2S_WRITE(entry.samples, bytes_to_write, &bytes_written);
-      }
+      // currently only AM824 with 6 samples per packet is supported
+      size_t bytes_to_write = 6 * OUTPUT_CHANNELS * sizeof(entry.samples[0]);
+      u32 bytes_written = 0;
+      CODEC_I2S_WRITE(entry.samples, bytes_to_write, &bytes_written);
     }
   }
 
@@ -199,7 +211,7 @@ void media_queue_stop(media_queue_t* mq)
   media_queue_flush(mq);
 }
 
-esp_err_t media_queue_push(media_queue_t* mq, const media_queue_entry_t* entry)
+esp_err_t IRAM_ATTR media_queue_push(media_queue_t* mq, const media_queue_entry_t* entry)
 {
   if (mq == NULL || mq->queue == NULL || entry == NULL)
   {

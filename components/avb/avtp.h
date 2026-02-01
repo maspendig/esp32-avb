@@ -177,6 +177,34 @@ struct talker_stream_info_s
   u8 cip_data_block_continuity;
 };
 
+typedef struct iec61883_am824_packet
+{
+  struct header_s header;
+
+  struct
+  {
+    u16 tci;
+    u16 vlan_eth_type;
+  } vlan_tag;
+
+  iec61883_t iec61883;
+
+  union
+  {
+    struct
+    {
+      u8 format_tag : 2;
+      u8 channel : 6;
+      u8 tcode : 4;
+      u8 app_specific_control : 4;
+    } packet_info;
+
+    u8 packet_info_raw[2];
+  } packet_info_u;
+
+  iec61883_cip_header_t cip;
+  am824_sample_t audio_data[6 * 8];
+} iec61883_am824_packet_t;
 
 struct avtp_state_s
 {

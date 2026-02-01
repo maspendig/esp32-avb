@@ -23,10 +23,6 @@
 typedef struct media_queue_entry
 {
   u32 avtp_timestamp; /* AVTP presentation timestamp */
-  u8 sequence_number; /* AVTP sequence number for continuity check */
-  u16 sample_count; /* Number of samples per channel */
-  bool timestamp_valid; /* Whether avtp_timestamp is valid */
-  bool timestamp_uncertain; /* Whether timestamp is uncertain */
 #if SAMPLE_BIT_RATE == 16
   s16 samples[MEDIA_QUEUE_MAX_SAMPLES_PER_PACKET];
 #else
