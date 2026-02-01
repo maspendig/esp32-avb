@@ -368,42 +368,40 @@ static void avtp_listener_stream_task(void* arg)
   while (!state->listener_stop)
   {
     fd_set readfds;
-  /* Flush the media queue to start with a clean slate */
-  media_queue_flush(&state->media_queue);
+    /* Flush the media queue to start with a clean slate */
+    media_queue_flush(&state->media_queue);
 
-  /* Reset sequence tracking to resync with incoming stream */
-  seq_number = 0;
-  seq_synced = false;
+    /* Reset sequence tracking to resync with incoming stream */
+    seq_number = 0;
+    seq_synced = false;
 
-  /* Pre-initialize fd_set outside loop - only one fd, so we can reuse */
-  fd_set readfds;
-
-  while (!state->listener_stop)
-  {
-    FD_ZERO(&readfds);
-    FD_SET(vlan_fd, &readfds);
-
-    /* Short timeout to ensure responsive shutdown */
-    struct timeval timeout = {.tv_sec = 0, .tv_usec = 5000}; /* 5ms for tighter loop */
-
-    const int ret = select(max_fd_plus_one, &readfds, NULL, NULL, &timeout);
-
-    if (ret > 0)
+    while (!state->listener_stop)
     {
-      ssize_t len;
+      FD_ZERO(&readfds);
+      FD_SET(vlan_fd, &readfds);
 
-      /* Process all available packets in a tight loop */
-      while ((len = read(vlan_fd, raw_buf, sizeof(raw_buf))) > 0)
+      /* Short timeout to ensure responsive shutdown */
+      struct timeval timeout = {.tv_sec = 0, .tv_usec = 5000}; /* 5ms for tighter loop */
+
+      const int ret = select(max_fd_plus_one, &readfds, NULL, NULL, &timeout);
+
+      if (ret > 0)
       {
-        process_vlan_stream_packet(state, raw_buf, len, &seq_number, &seq_synced);
-      }
-    }
-    /* ret == 0 is timeout, ret < 0 && errno == EINTR is interrupt - both OK to continue */
-  }
+        ssize_t len;
 
-  empty_audio_buffer();
-  ESP_LOGI(TAG, "Listener stream task exiting");
-  vTaskDelete(listener_stream_task_handle);
+        /* Process all available packets in a tight loop */
+        while ((len = read(vlan_fd, raw_buf, sizeof(raw_buf))) > 0)
+        {
+          process_vlan_stream_packet(state, raw_buf, len, &seq_number, &seq_synced);
+        }
+      }
+      /* ret == 0 is timeout, ret < 0 && errno == EINTR is interrupt - both OK to continue */
+    }
+
+    empty_audio_buffer();
+    ESP_LOGI(TAG, "Listener stream task exiting");
+    vTaskDelete(listener_stream_task_handle);
+  }
 }
 
 /**
