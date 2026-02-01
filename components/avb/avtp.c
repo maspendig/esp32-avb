@@ -122,7 +122,7 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   state->acmp_sequence_id = 0;
   state->msrp_socket = msrp_init_socket(interface);
   state->mvrp_socket = mvrp_init_socket(interface);
-
+  state->listener_stop = true;
 
   // get HW address
   esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, &state->intf_hw_addr);
@@ -314,8 +314,6 @@ static void avtp_listener_stream_task(void* arg)
 
   ESP_LOGI(TAG, "Stream task started on core %d (priority %d)",
            xPortGetCoreID(), uxTaskPriorityGet(NULL));
-
-  empty_audio_buffer();
 
   while (!state->listener_stop)
   {
@@ -667,6 +665,11 @@ int avtp_talker_start(struct avtp_state_s* state)
 
 int avtp_listener_start(struct avtp_state_s* state)
 {
+  if (state->listener_stop == false)
+  {
+    ESP_LOGE(TAG, "Listener already started");
+    return ESP_FAIL;
+  }
   state->listener_stop = false;
   /* Create high-priority stream task on Core 1 */
   BaseType_t ret = xTaskCreatePinnedToCore(

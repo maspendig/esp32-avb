@@ -86,7 +86,6 @@ static IRAM_ATTR void media_queue_consumer_task(void* arg)
            xPortGetCoreID(), uxTaskPriorityGet(NULL));
 
   u64 last_log_time_ns = 0;
-  size_t drops = 0;
   bool init = true;
   while (mq->running)
   {
@@ -97,13 +96,7 @@ static IRAM_ATTR void media_queue_consumer_task(void* arg)
       {
         u64 now_ns = get_ptptime();
         u64 playback_time_ns = ts_to_playback_ns(&entry.avtp_timestamp, &now_ns);
-        //
-        //        if (init && ((playback_time_ns + 10000000) < now_ns || (playback_time_ns - now_ns) > 2000000000ULL))
-        //        {
-        //          drops++;
-        //          continue;
-        //        }
-        //        init = false;
+
         //
         //        while (playback_time_ns - now_ns > 10000)
         //        {
