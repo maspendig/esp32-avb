@@ -114,12 +114,13 @@ static IRAM_ATTR void media_queue_consumer_task(void* arg)
         if (now_ns - last_log_time_ns > 2000000000ULL)
         {
           last_log_time_ns = now_ns;
-          ESP_LOGW(TAG, "q_len %d, avtp_ts %lu, now_ts %lu, delta: %lld ns, drops: %d",
+          ESP_LOGI(TAG, "Status: q_len=%d, played=%lu, recv=%lu, seq_err=%lu, q_drop=%lu, delta=%lld ns",
                    uxQueueMessagesWaiting(mq->queue),
-                   entry.avtp_timestamp,
-                   u64_to_avtp_timestamp(now_ns),
-                   playback_time_ns - now_ns,
-                   drops
+                   mq->stats_played,
+                   mq->stats_received,
+                   mq->stats_seq_err,
+                   mq->stats_q_drop,
+                   (long long int)(playback_time_ns - now_ns)
           );
         }
       }
@@ -127,6 +128,7 @@ static IRAM_ATTR void media_queue_consumer_task(void* arg)
       size_t bytes_to_write = 6 * OUTPUT_CHANNELS * sizeof(entry.samples[0]);
       u32 bytes_written = 0;
       CODEC_I2S_WRITE(entry.samples, bytes_to_write, &bytes_written);
+      mq->stats_played++;
     }
   }
 
@@ -150,6 +152,10 @@ esp_err_t media_queue_init(media_queue_t* mq)
 
   mq->consumer_task = NULL;
   mq->running = false;
+  mq->stats_q_drop = 0;
+  mq->stats_seq_err = 0;
+  mq->stats_received = 0;
+  mq->stats_played = 0;
 
   ESP_LOGI(TAG, "Media queue initialized (depth=%d, entry_size=%zu bytes)",
            MEDIA_QUEUE_DEPTH, sizeof(media_queue_entry_t));
@@ -220,10 +226,13 @@ esp_err_t IRAM_ATTR media_queue_push(media_queue_t* mq, const media_queue_entry_
     return ESP_ERR_INVALID_ARG;
   }
 
+  mq->stats_received++;
+
   /* Non-blocking push - if queue is full, packet is dropped */
   if (xQueueSendToBack(mq->queue, entry, 0) != pdTRUE)
   {
     /* Queue full - this is expected under heavy load */
+    mq->stats_q_drop++;
     return ESP_ERR_TIMEOUT;
   }
 

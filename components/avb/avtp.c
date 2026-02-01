@@ -265,7 +265,7 @@ static IRAM_ATTR void rx_avtp_61883_IIDC(struct avtp_state_s* state, u8* buf, ss
   if (buf[20] != *seq_number)
   {
     *seq_number = buf[20] + 1;
-    printf("s");
+    state->media_queue.stats_seq_err++;
     return;
   }
 
@@ -295,7 +295,7 @@ static IRAM_ATTR void rx_avtp_61883_IIDC(struct avtp_state_s* state, u8* buf, ss
     esp_err_t err = media_queue_push(&state->media_queue, &entry);
     if (err != ESP_OK)
     {
-      printf("q");
+      state->media_queue.stats_q_drop++;
     }
   }
   (*seq_number)++;

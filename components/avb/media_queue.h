@@ -36,6 +36,12 @@ typedef struct media_queue
   QueueHandle_t queue;
   TaskHandle_t consumer_task;
   bool running;
+
+  /* Statistics */
+  volatile u32 stats_q_drop;
+  volatile u32 stats_seq_err;
+  volatile u32 stats_received;
+  volatile u32 stats_played;
 } media_queue_t;
 
 /**
