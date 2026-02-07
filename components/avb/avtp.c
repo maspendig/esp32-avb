@@ -32,7 +32,7 @@
 /* Task configuration for dual-core processing */
 #define STREAM_TASK_CORE    1       /* Core 1 for high-priority stream processing */
 #define CONTROL_TASK_CORE   0       /* Core 0 for control protocols */
-#define STREAM_TASK_PRIORITY  15    /* Higher priority for stream data */
+#define STREAM_TASK_PRIORITY  14    /* Higher priority for stream data */
 #define CONTROL_TASK_PRIORITY 8    /* Lower priority for control protocols */
 
 const char* TAG = "avtp";

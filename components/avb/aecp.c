@@ -1400,6 +1400,32 @@ void handle_acm_get_configuration(struct avtp_state_s* state, struct aecp_data_u
   send_aecp_msg(state, &resp, sizeof(resp));
 }
 
+void handle_acm_start_streaming(struct avtp_state_s* state, struct aecp_start_streaming_s* msg)
+{
+  struct aecp_start_streaming_s resp = {0};
+  memcpy(&resp, msg, sizeof(struct aecp_start_streaming_s));
+
+  /* Copy and swap Ethernet header */
+  memcpy(resp.aecp_header.header.dst_mac, msg->aecp_header.header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
+  send_aecp_msg(state, &resp, sizeof(resp));
+}
+
+void handle_acm_get_stream_info(struct avtp_state_s* state, struct aecp_read_desc_request_s* msg)
+{
+  struct aecp_read_desc_request_s resp = {0};
+  memcpy(&resp, msg, sizeof(struct aecp_read_desc_request_s));
+  /* Copy and swap Ethernet header */
+  memcpy(resp.aecp_header.header.dst_mac, msg->aecp_header.header.src_mac, ETH_ADDR_LEN);
+  memcpy(resp.aecp_header.header.src_mac, state->intf_hw_addr, ETH_ADDR_LEN);
+
+  // set status to Not Implemented 0x1
+  AECP_SET_CTRL_DATA_STATUS((&resp.aecp_header), 0x1, 40);
+
+  send_aecp_msg(state, &resp, sizeof(resp));
+}
+
+
 int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_s* msg, ssize_t len)
 {
   if (msg == NULL || len < sizeof(struct aecp_data_unit_s))
@@ -1448,7 +1474,7 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
     handle_acm_set_clock_source(s_state, (struct aecp_set_clock_source_s*)msg);
     break;
   case ACM_COMMAND_TYPE_GET_STREAM_INFO:
-    ESP_LOGW(TAG, "Received unimplemented AECP ACM GET_STREAM_INFO Command");
+    handle_acm_get_stream_info(s_state, (struct aecp_read_desc_request_s*)msg);
     break;
   case ACM_COMMAND_TYPE_GET_COUNTERS:
     ESP_LOGW(TAG, "Received unimplemented AECP ACM GET_COUNTERS Command");
@@ -1457,7 +1483,7 @@ int aecp_aem_command_handle(struct avtp_state_s* s_state, struct aecp_data_unit_
     handle_acm_set_name(s_state, (struct aecp_set_name_s*)msg);
     break;
   case ACM_COMMAND_TYPE_START_STREAMING:
-    ESP_LOGW(TAG, "Received unimplemented AECP ACM START_STREAMING Command");
+    handle_acm_start_streaming(s_state, (struct aecp_start_streaming_s*)msg);
     break;
   case ACM_COMMAND_TYPE_SET_MAX_TRANSIT_TIME:
     ESP_LOGW(TAG, "Received unimplemented AECP ACM SET_MAX_TRANSIT_TIME Command");

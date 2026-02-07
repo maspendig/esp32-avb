@@ -395,6 +395,13 @@ struct aecp_set_clock_source_s
   u16 reserved;
 } __attribute__((packed));
 
+struct aecp_start_streaming_s
+{
+  struct aecp_data_unit_s aecp_header;
+  u16 descriptor_type;
+  u16 descriptor_index;
+} __attribute__((packed));
+
 struct aecp_set_name_s
 {
   struct aecp_data_unit_s aecp_header;
@@ -422,6 +429,25 @@ struct aecp_read_descriptor_response_s
   uint16_t reserved; // 16 bits
   struct atdecc_entity_descriptor_s descriptor;
 } __attribute__((packed));
+
+typedef struct aecp_get_stream_info_resp
+{
+  struct aecp_data_unit_s aecp_header;
+  u16 descriptor_type;
+  u16 descriptor_index;
+  u16 flags;
+  u64 stream_format;
+  u64 stream_id;
+  u32 msrp_accumulated_latency;
+  u8 stream_dest_mac[6];
+  u8 msrp_failure_code;
+  u8 reserved;
+  u64 msrp_failure_bridge_id;
+  u16 stream_vlan_id;
+  u16 ip_flags;
+  u16 source_port;
+  u16 dest_port;
+} __attribute__((packed)) aecp_get_stream_info_resp_t;
 
 #define AECP_SET_CTRL_DATA_STATUS(hdr, status, cdl) \
 (hdr->control_data_len_status = htons(((status & 0x1F) << 11) | (cdl & 0x7FF)))
