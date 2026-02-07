@@ -26,6 +26,7 @@
 #include <sys/select.h>
 
 #include "audio.h"
+#include "esp_eth_time.h"
 
 #define CONFIG_ADP_SEND_INTERVAL_MSEC 5800
 
@@ -258,6 +259,27 @@ static IRAM_ATTR void extract_am824_audio_to_32(const u8* packet, size_t packet_
 static int64_t timespec_to_ms(const struct timespec* ts)
 {
   return ts->tv_sec * 1000 + (ts->tv_nsec / 1000000ll);
+}
+
+static u64 avtp_get_ptp_time_ns(void)
+{
+  struct timespec ts;
+  if (esp_eth_clock_gettime(CLOCK_PTP_SYSTEM, &ts) == 0)
+  {
+    return ((u64)ts.tv_sec * 1000000000ULL) + ts.tv_nsec;
+  }
+  return 0;
+}
+
+static u32 avtp_presentation_timestamp(u64 offset_ns)
+{
+  u64 now_ns = avtp_get_ptp_time_ns();
+  if (now_ns == 0)
+  {
+    return 0;
+  }
+  /* Presentation time 500 microseconds in the future */
+  return (u32)((now_ns + offset_ns) & 0xFFFFFFFFU);
 }
 
 static IRAM_ATTR void rx_avtp_61883_IIDC(struct avtp_state_s* state, u8* buf, ssize_t len, u8* seq_number,
@@ -580,7 +602,7 @@ void avtp_set_common_header(struct avtp_state_s* state, struct iec61883_am824_pa
   msg->vlan_tag.vlan_eth_type = htons(ETH_TYPE_AVTP);
 }
 
-void avtp_send_am824_stream(struct avtp_state_s* state, s32* audio_samples, u32 u32)
+void avtp_send_am824_stream(struct avtp_state_s* state, s32* audio_samples, u32 bytes_read)
 {
   iec61883_am824_packet_t p = {0};
   avtp_set_common_header(state, &p);
@@ -591,14 +613,28 @@ void avtp_send_am824_stream(struct avtp_state_s* state, s32* audio_samples, u32 
   bool media_clock_restart = 0;
   bool gateway_info_valid = 0;
   bool timestamp_valid = 0;
+  u32 avtp_timestamp = 0;
+
+  /* Timestamp pattern: 3 packets with valid timestamp, then 1 with timestamp_valid=0 and timestamp=0 */
+  bool send_valid_ts = (state->talker_ts_pattern_index < 3);
+  if (send_valid_ts)
+  {
+    avtp_timestamp = avtp_presentation_timestamp(300000ULL);
+    if (avtp_timestamp != 0)
+    {
+      timestamp_valid = 1;
+    }
+  }
+  state->talker_ts_pattern_index = (state->talker_ts_pattern_index + 1) & 0x03;
+
   p.iec61883.avtp_info = (stream_id_valid << 7) |
-    (version << 4) |
-    (media_clock_restart << 3) |
-    (gateway_info_valid << 2) |
-    (timestamp_valid << 1);
+    (version << 3) |
+    (media_clock_restart << 2) |
+    (gateway_info_valid << 1) |
+    (timestamp_valid);
   p.iec61883.sequence_num = state->talker_stream_info.sequence_number++;
   p.iec61883.stream_id = htonll(state->talker_stream_info.stream_id);
-  p.iec61883.avtp_timestamp = htonl(0); // TODO proper timestamp
+  p.iec61883.avtp_timestamp = htonl(timestamp_valid ? avtp_timestamp : 0);
   p.iec61883.gateway_info = htonl(0);
   p.iec61883.stream_data_length = htons(200); // TODO proper length
   u8 format_tag = 0x1; // CIP header included
@@ -616,8 +652,8 @@ void avtp_send_am824_stream(struct avtp_state_s* state, s32* audio_samples, u32 
   p.cip.qi_2 = 0x2;
   p.cip.fmt = 0x10; // AM824 format
   p.cip.cip_fmt_specific_data[0] = 0x02;
-  p.cip.cip_fmt_specific_data[1] = 0x00;
-  p.cip.cip_fmt_specific_data[2] = 0x08; //
+  p.cip.cip_fmt_specific_data[1] = 0xFF;
+  p.cip.cip_fmt_specific_data[2] = 0xFF; //
 
   // Fill audio data
   u8 audio_samples_idx = 0;

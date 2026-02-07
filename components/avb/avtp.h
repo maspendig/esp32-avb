@@ -215,6 +215,7 @@ struct avtp_state_s
   int vlan_socket; /* VLAN-tagged frames (0x8100) for AVB streams */
   int msrp_socket;
   int mvrp_socket;
+  u64 avtp_max_transit_time;
 
   nvs_handle_t nvs_handle;
 
@@ -239,6 +240,9 @@ struct avtp_state_s
 
   /* Media queue for audio sample buffering and synchronized playback */
   media_queue_t media_queue;
+
+  /* Talker timestamp pattern index: 0,1,2 = valid timestamp, 3 = invalid */
+  u8 talker_ts_pattern_index;
 
   /* AECP entity acquisition state (IEEE 1722.1-2021, 7.4.1) */
   uint64_t acquired_by_controller_id; /* Entity ID of controller that acquired us (0 = not acquired) */

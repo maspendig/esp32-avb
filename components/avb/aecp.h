@@ -46,6 +46,7 @@
 #define ACM_COMMAND_TYPE_SET_CLOCK_SOURCE 0x0016
 #define ACM_COMMAND_TYPE_GET_STREAM_INFO 0x000F
 #define ACM_COMMAND_TYPE_START_STREAMING 0x0022
+#define ACM_COMMAND_TYPE_STOP_STREAMING 0x0023
 #define ACM_COMMAND_TYPE_REGISTER_UNSOLICITED_NOTIFICATION 0x0024
 #define ACM_COMMAND_TYPE_UNREGISTER_UNSOLICITED_NOTIFICATION 0x0025
 #define ACM_COMMAND_TYPE_IDENTIFY_NOTIFICATION 0x0026
@@ -395,11 +396,28 @@ struct aecp_set_clock_source_s
   u16 reserved;
 } __attribute__((packed));
 
-struct aecp_start_streaming_s
+struct aecp_set_max_transit_time_s
 {
   struct aecp_data_unit_s aecp_header;
   u16 descriptor_type;
   u16 descriptor_index;
+  u64 max_transit_time; // in nanoseconds
+} __attribute__((packed));
+
+struct aecp_simple_descriptor_s
+{
+  struct aecp_data_unit_s aecp_header;
+  u16 descriptor_type;
+  u16 descriptor_index;
+} __attribute__((packed));
+
+struct aecp_get_counters_s
+{
+  struct aecp_data_unit_s aecp_header;
+  u16 descriptor_type;
+  u16 descriptor_index;
+  u16 counters_valid;
+  u32 counters[32];
 } __attribute__((packed));
 
 struct aecp_set_name_s

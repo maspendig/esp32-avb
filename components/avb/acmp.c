@@ -604,6 +604,9 @@ void acmp_net_rx(struct avtp_state_s* state, struct acmp_common_s* msg, ssize_t 
   case ACMP_MSG_TYPE_GET_TX_STATE_RESPONSE:
     ESP_LOGI(TAG, "Received ACMP Get TX State Response - NOT IMPLEMENTED");
     break;
+  case ACMP_MSG_TYPE_GET_RX_STATE_RESPONSE:
+    ESP_LOGI(TAG, "Received ACMP Get RX State Response - NOT IMPLEMENTED");
+    break;
   case ACMP_MSG_TYPE_DISCONNECT_RX_COMMAND:
     handle_acmp_disconnect_rx_command(state, msg);
     break;
