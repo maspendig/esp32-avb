@@ -72,7 +72,7 @@ static esp_err_t ak4619_setup_i2s(void)
   // Configure TDM clock
   i2s_tdm_clk_config_t clk_cfg = {
     .sample_rate_hz = SAMPLE_RATE,
-    .clk_src = SOC_MOD_CLK_APLL,
+    .clk_src = I2S_CLK_SRC_APLL,
     .mclk_multiple = I2S_MCLK_MULTIPLE_384 // 384fs for TDM mode (4 slots × 32-bit × 2 sides = 256 BCLK cycles)
   };
 

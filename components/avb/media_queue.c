@@ -18,7 +18,7 @@ static const char* TAG = "m_queue";
 
 /* Consumer task configuration */
 #define MEDIA_QUEUE_CONSUMER_TASK_STACK  4096
-#define MEDIA_QUEUE_CONSUMER_TASK_PRIO   19
+#define MEDIA_QUEUE_CONSUMER_TASK_PRIO   16
 #define MEDIA_QUEUE_CONSUMER_TASK_CORE   1
 
 
@@ -86,8 +86,12 @@ static IRAM_ATTR void media_queue_consumer_task(void* arg)
   ESP_LOGI(TAG, "Media Queue task started on core %d (priority %d)",
            xPortGetCoreID(), uxTaskPriorityGet(NULL));
 
+  // currently only AM824 with 6 samples per packet is supported
+  const size_t bytes_to_write = 6 * OUTPUT_CHANNELS * sizeof(entry.samples[0]);
+
   u64 last_log_time_ns = 0;
-  bool init = true;
+  u64 now_ns;
+  u64 playback_time_ns;
   while (mq->running)
   {
     /* Wait for an entry with a short timeout to allow checking running flag */
@@ -95,8 +99,8 @@ static IRAM_ATTR void media_queue_consumer_task(void* arg)
     {
       if (entry.avtp_timestamp != 0)
       {
-        u64 now_ns = get_ptptime();
-        u64 playback_time_ns = ts_to_playback_ns(&entry.avtp_timestamp, &now_ns);
+        now_ns = get_ptptime();
+        playback_time_ns = ts_to_playback_ns(&entry.avtp_timestamp, &now_ns);
         s64 delta_ns = (s64)(playback_time_ns - now_ns);
 
         if (delta_ns < -100000)
@@ -109,30 +113,38 @@ static IRAM_ATTR void media_queue_consumer_task(void* arg)
             continue;
           }
         }
-        if (delta_ns > 10000)
+        if (delta_ns > 1000)
         {
-          xQueueSendToFront(mq->queue, &entry, 0);
+          if (xQueueSendToFront(mq->queue, &entry, 0) != pdTRUE)
+          {
+            ESP_LOGE(TAG, "Failed to requeue entry for future playback (delta=%lld ns)", (long long int)delta_ns);
+            // failed to requeue, drop it
+            mq->stats_q_drop++;
+          }
           continue;
         }
-        // print delta every 2 seconds only once
-        if (now_ns - last_log_time_ns > 2000000000ULL)
-        {
-          last_log_time_ns = now_ns;
-          ESP_LOGI(TAG, "Status: q_len=%d, played=%lu, recv=%lu, seq_err=%lu, q_drop=%lu, delta=%lld ns",
-                   uxQueueMessagesWaiting(mq->queue),
-                   mq->stats_played,
-                   mq->stats_received,
-                   mq->stats_seq_err,
-                   mq->stats_q_drop,
-                   (long long int)(playback_time_ns - now_ns)
-          );
-        }
       }
-      // currently only AM824 with 6 samples per packet is supported
-      size_t bytes_to_write = 6 * OUTPUT_CHANNELS * sizeof(entry.samples[0]);
-      u32 bytes_written = 0;
-      CODEC_I2S_WRITE(entry.samples, bytes_to_write, &bytes_written);
-      mq->stats_played++;
+
+      u32 written;
+      CODEC_I2S_WRITE(entry.samples, bytes_to_write, &written);
+      if (written > 0)
+      {
+        mq->stats_played++;
+      }
+
+      // print delta every 2 seconds only once
+      if (now_ns - last_log_time_ns > 2000000000ULL)
+      {
+        last_log_time_ns = now_ns;
+        ESP_LOGI(TAG, "Status: q_len=%d, played=%lu, recv=%lu, seq_err=%lu, q_drop=%lu, delta=%lld ns",
+                 uxQueueMessagesWaiting(mq->queue),
+                 mq->stats_played,
+                 mq->stats_received,
+                 mq->stats_seq_err,
+                 mq->stats_q_drop,
+                 (long long int)(playback_time_ns - now_ns)
+        );
+      }
     }
   }
 
