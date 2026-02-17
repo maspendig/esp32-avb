@@ -1053,7 +1053,7 @@ static int ptp_send_announce(FAR struct ptp_state_s* state)
   timespec_to_ptp_format(&ts, msg.origintimestamp);
 
   /* Add the path trace TLV */
-  struct ptp_pathtrace_tlv_s pathtrace_tlv;
+  struct ptp_pathtrace_tlv_s pathtrace_tlv = {0};
   pathtrace_tlv.type[1] = 8; // Path trace
   pathtrace_tlv.length[1] = 8; // 8 bytes
   memcpy(pathtrace_tlv.pathsequence, state->own_identity.gm_identity, sizeof(state->own_identity.gm_identity));
@@ -1072,7 +1072,7 @@ static int ptp_send_announce(FAR struct ptp_state_s* state)
   }
   else
   {
-    ptpverbose("Sent announce, seq %ld\n",
+    ptpverbose("Sent announce, seq %ld",
                (long)ptp_get_sequence(&msg.header));
   }
 
@@ -1165,6 +1165,11 @@ static int ptp_send_sync(FAR struct ptp_state_s* state)
   msg.header.flags[0] = 0; // Reset 2-step flag
   msg.header.controlfield = 2; // Follow-up message
 
+#ifdef CONFIG_NETUTILS_PTPD_GPTP_PROFILE
+  msg.header.messagetype |= PTP_MSGTYPE_SDOID_GPTP; // gPTP profile message
+  msg.header.flags[1] = PTP_FLAGS1_PTP_TIMESCALE; // gPTP required flag
+#endif
+
   /* Add the information TLV (required for gPTP and ignored otherwise) */
 
   struct ptp_info_tlv_s info_tlv;
@@ -1194,10 +1199,10 @@ static int ptp_send_sync(FAR struct ptp_state_s* state)
     return ret;
   }
 
-  ptpverbose("Sent sync + follow-up, seq %ld\n",
+  ptpverbose("Sent sync + follow-up, seq %ld",
              (long)ptp_get_sequence(&msg.header));
 #else
-  ptpverbose("Sent sync, seq %ld\n",
+  ptpverbose("Sent sync, seq %ld",
              (long)ptp_get_sequence(&msg.header));
 #endif /* CONFIG_NETUTILS_PTPD_TWOSTEP_SYNC */
 
@@ -1453,7 +1458,7 @@ static int ptp_update_local_clock(FAR struct ptp_state_s* state,
   const int64_t adj_limit_ns = CONFIG_NETUTILS_PTPD_SETTIME_THRESHOLD_MS
     * (int64_t)NSEC_PER_MSEC;
 
-  ptpverbose("Local time: %lld.%09ld, remote time %lld.%09ld\n",
+  ptpverbose("Local time: %lld.%09ld, remote time %lld.%09ld",
              (long long)local_timestamp->tv_sec,
              (long)local_timestamp->tv_nsec,
              (long long)remote_timestamp->tv_sec,
@@ -1598,7 +1603,7 @@ static int ptp_update_local_clock(FAR struct ptp_state_s* state,
     state->last_delta_timestamp = *local_timestamp;
     state->last_adjtime_ns = adjustment_ns;
 
-    ptpverbose("Delta: %+lld ns, adjustment %+lld ns, drift rate %+lld ppb\n",
+    ptpverbose("Delta: %+lld ns, adjustment %+lld ns, drift rate %+lld ppb",
                (long long)delta_ns,
                (long long)state->last_adjtime_ns,
                (long long)state->drift_ppb);
@@ -1618,12 +1623,6 @@ static int ptp_update_local_clock(FAR struct ptp_state_s* state,
     }
 #endif // ESP_PTP
   }
-
-  if (delta_ns > 0)
-  {
-    // TODO signal clock jump forward to subscribers
-  }
-
   return ret;
 }
 
@@ -1655,7 +1654,7 @@ static int ptp_process_sync(FAR struct ptp_state_s* state,
 
     state->twostep_rxtime = state->rxtime;
     state->twostep_packet = *msg;
-    ptpverbose("Waiting for follow-up\n");
+    ptpverbose("Waiting for follow-up");
     return OK;
   }
 
@@ -1793,10 +1792,10 @@ static int ptp_process_delay_req(FAR struct ptp_state_s* state,
     ptperr("sendto for delay response follow-up message failed: %d\n", errno);
     return ret;
   }
-  ptpverbose("Sent response + response follow-up, seq %ld\n",
+  ptpverbose("Sent response + response follow-up, seq %ld",
              (long)ptp_get_sequence(&msg.header));
 #else
-  ptpverbose("Sent delay resp, seq %ld\n",
+  ptpverbose("Sent delay resp, seq %ld",
              (long)ptp_get_sequence(&req->header));
 #endif /* CONFIG_NETUTILS_PTPD_GPTP_PROFILE */
 
@@ -1843,7 +1842,7 @@ static int ptp_process_delay_resp(FAR struct ptp_state_s* state,
 
   state->twostep_delay_resp_rxtime = state->rxtime;
   state->twostep_delay_resp_packet = *msg;
-  ptpverbose("Waiting for delay response follow-up\n");
+  ptpverbose("Waiting for delay response follow-up");
 
 #else
   /* Path delay is calculated as the average between delta for sync
@@ -1867,7 +1866,7 @@ static int ptp_process_delay_resp(FAR struct ptp_state_s* state,
     state->path_delay_ns += (path_delay - state->path_delay_ns)
       / state->path_delay_avgcount;
 
-    ptpverbose("Path delay: %ld ns (avg: %ld ns)\n",
+    ptpverbose("Path delay: %ld ns (avg: %ld ns)",
                (long)path_delay, (long)state->path_delay_ns);
   }
   else
@@ -1956,7 +1955,7 @@ static int ptp_process_delay_resp_follow_up(FAR struct ptp_state_s* state,
     state->peer_delay_ns += (peer_delay - state->peer_delay_ns)
       / state->peer_delay_avgcount;
 
-    ptpverbose("Peer delay: %ld ns (avg: %ld ns)\n",
+    ptpverbose("Peer delay: %ld ns (avg: %ld ns)",
                (long)peer_delay, (long)state->peer_delay_ns);
   }
   else
@@ -1995,25 +1994,25 @@ static int ptp_process_rx_packet(FAR struct ptp_state_s* state,
   {
 #if defined(CONFIG_NETUTILS_PTPD_CLIENT) || defined(CONFIG_NETUTILS_PTPD_GPTP_PROFILE) // gPTP always acts as a client
   case PTP_MSGTYPE_ANNOUNCE:
-    ptpverbose("Got announce packet, seq %ld\n",
+    ptpverbose("Got announce packet, seq %ld",
                (long)ptp_get_sequence(&state->rxbuf.header));
     return ptp_process_announce(state, &state->rxbuf.announce);
 
   case PTP_MSGTYPE_SYNC:
-    ptpverbose("Got sync packet, seq %ld\n",
+    ptpverbose("Got sync packet, seq %ld",
                (long)ptp_get_sequence(&state->rxbuf.header));
     if (!state->selected_source_valid) { return OK; } // ignore if operating as a server
     return ptp_process_sync(state, &state->rxbuf.sync);
 
   case PTP_MSGTYPE_FOLLOW_UP:
-    ptpverbose("Got follow-up packet, seq %ld\n",
+    ptpverbose("Got follow-up packet, seq %ld",
                (long)ptp_get_sequence(&state->rxbuf.header));
     if (!state->selected_source_valid) { return OK; } // ignore if operating as a server
     return ptp_process_followup(state, &state->rxbuf.follow_up);
 
   case PTP_MSGTYPE_DELAY_RESP:
   case PTP_MSGTYPE_PDELAY_RESP:
-    ptpverbose("Got delay-resp, seq %ld\n",
+    ptpverbose("Got delay-resp, seq %ld",
                (long)ptp_get_sequence(&state->rxbuf.header));
     return ptp_process_delay_resp(state, &state->rxbuf.delay_resp);
 #endif
@@ -2024,18 +2023,18 @@ static int ptp_process_rx_packet(FAR struct ptp_state_s* state,
 
   case PTP_MSGTYPE_DELAY_REQ:
   case PTP_MSGTYPE_PDELAY_REQ:
-    ptpverbose("Got delay req, seq %ld\n",
+    ptpverbose("Got delay req, seq %ld",
                (long)ptp_get_sequence(&state->rxbuf.header));
     return ptp_process_delay_req(state, &state->rxbuf.delay_req);
 #endif
 
   case PTP_MSGTYPE_PDELAY_RESP_FOLLOW_UP: //
-    ptpverbose("Got peer delay resp follow-up, seq %ld\n",
+    ptpverbose("Got peer delay resp follow-up, seq %ld",
                (long)ptp_get_sequence(&state->rxbuf.header));
     return ptp_process_delay_resp_follow_up(state, &state->rxbuf.delay_resp_follow_up);
 
   default:
-    ptpverbose("Ignoring unknown PTP packet type: 0x%02x\n",
+    ptpverbose("Ignoring unknown PTP packet type: 0x%02x",
                state->rxbuf.header.messagetype);
     return OK;
   }
