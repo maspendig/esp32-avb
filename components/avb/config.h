@@ -49,13 +49,13 @@
 
 // ----- Audio Configuration -----
 // Number of audio channels (stereo = 2)
-#define CONFIG_AUDIO_CHANNELS 8
+#define CONFIG_AUDIO_CHANNELS 2
 
 // Listener configuration (stream sink - receives audio)
 // This device has 1 stereo stream input
 #define CONFIG_NUM_STREAM_INPUTS 1
 #define CONFIG_LISTENER_STREAM_SINKS 1
-#define CONFIG_LISTENER_CAPABILITIES 0x4001
+#define CONFIG_LISTENER_CAPABILITIES 0x4801
 
 // Talker configuration (stream source - sends audio)
 #define CONFIG_NUM_STREAM_OUTPUTS INPUT_CHANNELS ? 1 : 0

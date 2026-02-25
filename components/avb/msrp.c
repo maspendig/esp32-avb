@@ -613,7 +613,7 @@ void msrp_register_stream_request(struct mrp_application* app, struct talker_str
     .max_frame_size = htons(224),
     .max_frame_interval = htons(1),
     .priority_and_rank = 0x70,
-    .accumulated_latency = htonl(95)
+    .accumulated_latency = htonl(10000)
   };
   memcpy(talker_adv_attr.dest_mac, stream_info->stream_dest_mac, ETH_ADDR_LEN);
   mrp_mad_join_request(app, MSRP_TALKER_ADVERTISE, (u8*)&talker_adv_attr, true);

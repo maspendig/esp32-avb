@@ -361,6 +361,10 @@ static IRAM_ATTR void process_vlan_stream_packet(
   {
     rx_avtp_61883_IIDC(state, raw_buf, len, seq_number, seq_synced);
   }
+  if (subtype == AVTP_SUBTYPE_CRF)
+  {
+    ESP_LOGW(TAG, "Received AVTP Clock Reference Format packet (length: %d)", len);
+  }
   /* AAF support can be added here when implemented */
 }
 
