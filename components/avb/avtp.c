@@ -4,9 +4,11 @@
 #include "maap.h"
 #include "msrp.h"
 #include "mvrp.h"
+#include "media_queue.h"
 
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_attr.h"
 #include <errno.h>
 
 #include "esp_vfs_l2tap.h"
@@ -14,6 +16,7 @@
 #include "acmp.h"
 
 #include <fcntl.h>
+#include <nvs_flash.h>
 
 #include "esp_eth_spec.h"
 #include "pthread.h"
@@ -23,16 +26,21 @@
 #include <sys/select.h>
 
 #include "audio.h"
+#include "esp_eth_time.h"
 
 #define CONFIG_ADP_SEND_INTERVAL_MSEC 5800
 
 /* Task configuration for dual-core processing */
 #define STREAM_TASK_CORE    1       /* Core 1 for high-priority stream processing */
 #define CONTROL_TASK_CORE   0       /* Core 0 for control protocols */
-#define STREAM_TASK_PRIORITY  15    /* Higher priority for stream data */
-#define CONTROL_TASK_PRIORITY 10    /* Lower priority for control protocols */
+#define STREAM_TASK_PRIORITY  14    /* Higher priority for stream data */
+#define CONTROL_TASK_PRIORITY 8    /* Lower priority for control protocols */
 
 const char* TAG = "avtp";
+
+static TaskHandle_t talker_stream_task_handle;
+static TaskHandle_t listener_stream_task_handle;
+static TaskHandle_t avtp_control_task_handle;
 
 /* Forward declarations */
 static uint64_t mac_to_entity_id(uint64_t mac);
@@ -96,7 +104,6 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
     fcntl(state->vlan_socket, F_SETFL, flags | O_NONBLOCK);
   }
   ESP_LOGI(TAG, "VLAN socket initialized for 802.1Q tagged frames (non-blocking)");
-
   // Get the ethernet handle to configure multicast reception
   esp_eth_handle_t eth_handle;
   if (ioctl(state->socket, L2TAP_G_DEVICE_DRV_HNDL, &eth_handle) < 0)
@@ -105,10 +112,18 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
     return ESP_FAIL;
   }
 
+  /* Initialize the media queue for audio sample buffering */
+  esp_err_t err = media_queue_init(&state->media_queue);
+  if (err != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to initialize media queue");
+    return ESP_FAIL;
+  }
+
   state->acmp_sequence_id = 0;
   state->msrp_socket = msrp_init_socket(interface);
   state->mvrp_socket = mvrp_init_socket(interface);
-
+  state->listener_stop = true;
 
   // get HW address
   esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, &state->intf_hw_addr);
@@ -137,7 +152,7 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
 
   /* Also enable all multicast reception as fallback */
   bool enable_multicast = true;
-  int err = esp_eth_ioctl(eth_handle, ETH_CMD_S_ALL_MULTICAST, &enable_multicast);
+  err = esp_eth_ioctl(eth_handle, ETH_CMD_S_ALL_MULTICAST, &enable_multicast);
   if (err != ESP_OK)
   {
     ESP_LOGW(TAG, "failed to enable all multicast reception: %s", esp_err_to_name(err));
@@ -179,7 +194,6 @@ static int avtp_init_state(struct avtp_state_s* state, const char* interface)
   return ESP_OK;
 }
 
-
 static uint64_t mac_to_entity_id(uint64_t mac)
 {
   return ((mac & 0xffffff000000) << 16) | (0xfffe000000) | (mac & 0xffffff);
@@ -216,8 +230,8 @@ static void extract_am824_audio_to_16(const u8* packet, size_t packet_len, s16* 
   *output_samples = sample_count / channels;
 }
 
-static void extract_am824_audio_to_32(const u8* packet, size_t packet_len, s32* output_buffer, u8 channels,
-                                      size_t* output_samples)
+static IRAM_ATTR void extract_am824_audio_to_32(const u8* packet, size_t packet_len, s32* output_buffer, u8 channels,
+                                                size_t* output_samples)
 {
   iec61883_t* iec61883 = (iec61883_t*)&packet[18];
 
@@ -247,114 +261,173 @@ static int64_t timespec_to_ms(const struct timespec* ts)
   return ts->tv_sec * 1000 + (ts->tv_nsec / 1000000ll);
 }
 
-/**
- * @brief High-priority stream data task - runs on Core 1
- *
- * This task exclusively handles VLAN-tagged AVB stream packets.
- * It runs on a dedicated core with high priority to minimize packet loss.
- */
-static void avtp_stream_task(void* arg)
+static u64 avtp_get_ptp_time_ns(void)
 {
-  struct avtp_state_s* state = (struct avtp_state_s*)arg;
-  u8 raw_buf[1518]; /* Max Ethernet frame size */
-  u8 seq_number = 0;
-
-  init_audio_codec();
-
-  ESP_LOGI(TAG, "Stream task started on core %d (priority %d)",
-           xPortGetCoreID(), uxTaskPriorityGet(NULL));
-
-  /* Set VLAN socket to non-blocking mode */
-  int flags = fcntl(state->vlan_socket, F_GETFL, 0);
-  if (flags >= 0)
+  struct timespec ts;
+  if (esp_eth_clock_gettime(CLOCK_PTP_SYSTEM, &ts) == 0)
   {
-    fcntl(state->vlan_socket, F_SETFL, flags | O_NONBLOCK);
+    return ((u64)ts.tv_sec * 1000000000ULL) + ts.tv_nsec;
+  }
+  return 0;
+}
+
+static u32 avtp_presentation_timestamp(u64 offset_ns)
+{
+  u64 now_ns = avtp_get_ptp_time_ns();
+  if (now_ns == 0)
+  {
+    return 0;
+  }
+  /* Presentation time 500 microseconds in the future */
+  return (u32)((now_ns + offset_ns) & 0xFFFFFFFFU);
+}
+
+static IRAM_ATTR void rx_avtp_61883_IIDC(struct avtp_state_s* state, u8* buf, ssize_t len, u8* seq_number,
+                                         bool* seq_synced)
+{
+  u8 pkt_seq = buf[20];
+
+  if (!*seq_synced)
+  {
+    /* First packet - synchronize to the stream's sequence number */
+    *seq_number = pkt_seq;
+    *seq_synced = true;
+  }
+  else if (pkt_seq != *seq_number)
+  {
+    *seq_number = pkt_seq + 1;
+    state->media_queue.stats_seq_err++;
+    return;
   }
 
-  while (!state->stop)
-  {
-    fd_set readfds;
-    FD_ZERO(&readfds);
-    FD_SET(state->vlan_socket, &readfds);
+  /* Parse AVTP header for timestamp info */
+  iec61883_t* iec61883 = (iec61883_t*)&buf[18];
+  u32 avtp_timestamp = ntohl(iec61883->avtp_timestamp);
+  bool timestamp_valid = iec61883->avtp_info & 0x01;
+  bool timestamp_uncertain = iec61883->time_uncertain;
 
-    /* Short timeout to ensure responsive shutdown */
-    struct timeval timeout = {.tv_sec = 0, .tv_usec = 10000}; /* 10ms */
+  u8 channels = OUTPUT_CHANNELS;
+  size_t num_samples = 0;
 
-    int ret = select(state->vlan_socket + 1, &readfds, NULL, NULL, &timeout);
+  /* Prepare media queue entry */
+  media_queue_entry_t entry = {
+    .avtp_timestamp = (!timestamp_uncertain && timestamp_valid) ? avtp_timestamp : 0,
+  };
 
-    if (ret > 0 && FD_ISSET(state->vlan_socket, &readfds))
-    {
-      ssize_t len;
-      int packets_processed = 0;
-
-      /* Drain all available packets (non-blocking) */
-      while ((len = read(state->vlan_socket, raw_buf, sizeof(raw_buf))) > 0)
-      {
-        packets_processed++;
-
-        /* Parse 802.1Q VLAN header */
-        u16 tci = (raw_buf[14] << 8) | raw_buf[15];
-        u16 vlan_id = tci & 0x0FFF;
-        u8 pcp = (tci >> 13) & 0x07;
-        u16 inner_ethertype = (raw_buf[16] << 8) | raw_buf[17];
-
-        /* Check if inner Ethertype is AVTP */
-        if (inner_ethertype == ETH_TYPE_AVTP)
-        {
-          u8 subtype = raw_buf[18];
-
-          if (subtype < 0x80)
-          {
-            switch (subtype)
-            {
-            case AVTP_SUBTYPE_AAF:
-              ESP_LOGI(TAG, "Received AAF stream packet: VLAN ID=%u, PCP=%u, Length=%zd bytes",
-                       vlan_id, pcp, len);
-              break;
-            case AVTP_SUBTYPE_61883_IIDC:
-              {
-                if (raw_buf[20] != seq_number)
-                {
-                  ESP_LOGW(TAG, "sequence number mismatch: expected=%u received=%u", seq_number, raw_buf[20]);
-                  seq_number = raw_buf[20];
-                }
-
-                u8 channels = OUTPUT_CHANNELS;
-                size_t num_samples = 0;
 #if SAMPLE_BIT_RATE == 16
-                int16_t audio_samples[6 * channels];
-                extract_am824_audio_to_16(raw_buf, len, audio_samples, channels, &num_samples);
+  extract_am824_audio_to_16(raw_buf, len, entry.samples, channels, &num_samples);
 #else
-                int32_t audio_samples[6 * channels];
-                extract_am824_audio_to_32(raw_buf, len, audio_samples, channels, &num_samples);
+  extract_am824_audio_to_32(buf, len, entry.samples, channels, &num_samples);
 #endif
 
-
-                if (num_samples > 0)
-                {
-                  size_t bytes_to_write = num_samples * channels * sizeof(audio_samples[0]);
-                  u32 bytes_written = 0;
-                  CODEC_I2S_WRITE(audio_samples, bytes_to_write, &bytes_written);
-                }
-                seq_number++;
-              }
-              break;
-            default:
-              break;
-            }
-          }
-        }
-      }
-
-      if (packets_processed > 0)
-      {
-        ESP_LOGD(TAG, "Stream task processed %d packets", packets_processed);
-      }
+  if (num_samples > 0)
+  {
+    /* Push to media queue - consumer task will write to codec */
+    esp_err_t err = media_queue_push(&state->media_queue, &entry);
+    if (err != ESP_OK)
+    {
+      state->media_queue.stats_q_drop++;
     }
   }
+  (*seq_number)++;
+}
 
-  ESP_LOGI(TAG, "Stream task exiting");
-  vTaskDelete(NULL);
+static IRAM_ATTR void process_vlan_stream_packet(
+  struct avtp_state_s* state,
+  u8* raw_buf,
+  ssize_t len,
+  u8* seq_number,
+  bool* seq_synced)
+{
+  /* Quick validation: minimum VLAN + AVTP header size */
+  if (len < 22)
+  {
+    return;
+  }
+
+  /* Parse inner Ethertype directly (skip TCI parsing unless needed) */
+  const u16 inner_ethertype = (raw_buf[16] << 8) | raw_buf[17];
+
+  /* Fast path: check AVTP ethertype first */
+  if (inner_ethertype != ETH_TYPE_AVTP)
+  {
+    return;
+  }
+
+  const u8 subtype = raw_buf[18];
+
+  /* Stream data subtypes are < 0x80 */
+  if (subtype == AVTP_SUBTYPE_61883_IIDC)
+  {
+    rx_avtp_61883_IIDC(state, raw_buf, len, seq_number, seq_synced);
+  }
+  if (subtype == AVTP_SUBTYPE_CRF)
+  {
+    ESP_LOGW(TAG, "Received AVTP Clock Reference Format packet (length: %d)", len);
+  }
+  /* AAF support can be added here when implemented */
+}
+
+/**
+ * This task exclusively handles VLAN-tagged AVB stream packets.
+ * It runs on a dedicated core with high priority to minimize packet loss.
+ *
+ * Optimizations:
+ * - Drains stale packets on start to avoid processing outdated data
+ * - Minimizes system call overhead by batching reads
+ * - Uses optimized packet parsing in IRAM
+ * - Flushes media queue on reconnect for clean slate
+ */
+static void avtp_listener_stream_task(void* arg)
+{
+  struct avtp_state_s* state = (struct avtp_state_s*)arg;
+  /* Align buffer for potentially better memory access */
+  u8 __attribute__((aligned(4))) raw_buf[1518];
+  u8 seq_number = 0;
+  bool seq_synced = false;
+  const int vlan_fd = state->vlan_socket;
+  const int max_fd_plus_one = vlan_fd + 1;
+
+  ESP_LOGI(TAG, "Listener stream task started on core %d (priority %d)",
+           xPortGetCoreID(), uxTaskPriorityGet(NULL));
+
+  while (!state->listener_stop)
+  {
+    fd_set readfds;
+    /* Flush the media queue to start with a clean slate */
+    media_queue_flush(&state->media_queue);
+
+    /* Reset sequence tracking to resync with incoming stream */
+    seq_number = 0;
+    seq_synced = false;
+
+    while (!state->listener_stop)
+    {
+      FD_ZERO(&readfds);
+      FD_SET(vlan_fd, &readfds);
+
+      /* Short timeout to ensure responsive shutdown */
+      struct timeval timeout = {.tv_sec = 0, .tv_usec = 5000}; /* 5ms for tighter loop */
+
+      const int ret = select(max_fd_plus_one, &readfds, NULL, NULL, &timeout);
+
+      if (ret > 0)
+      {
+        ssize_t len;
+
+        /* Process all available packets in a tight loop */
+        while ((len = read(vlan_fd, raw_buf, sizeof(raw_buf))) > 0)
+        {
+          process_vlan_stream_packet(state, raw_buf, len, &seq_number, &seq_synced);
+        }
+      }
+      /* ret == 0 is timeout, ret < 0 && errno == EINTR is interrupt - both OK to continue */
+    }
+
+    empty_audio_buffer();
+    ESP_LOGI(TAG, "Listener stream task exiting");
+    vTaskDelete(listener_stream_task_handle);
+  }
 }
 
 /**
@@ -447,6 +520,7 @@ static void avtp_control_task(void* arg)
     struct timespec time_now;
     struct timespec delta;
 
+    //TODO move into adp file and use esp_timer logic!
     clock_gettime(CLOCK_MONOTONIC, &time_now);
     timespecsub(&time_now, &state->last_transmitted_adp, &delta);
     if (timespec_to_ms(&delta) > CONFIG_ADP_SEND_INTERVAL_MSEC)
@@ -460,7 +534,7 @@ static void avtp_control_task(void* arg)
   vTaskDelete(NULL);
 }
 
-int start_avtp_listener(const char* interface)
+int start_avtp_control_task(const char* interface)
 {
   if (s_state != NULL)
   {
@@ -487,37 +561,15 @@ int start_avtp_listener(const char* interface)
     return ESP_FAIL;
   }
 
-  ESP_LOGI(TAG, "AVTP listener initialized on interface: %s", interface);
-
-  /* Create high-priority stream task on Core 1 */
-  TaskHandle_t stream_task_handle;
-  BaseType_t ret = xTaskCreatePinnedToCore(
-    avtp_stream_task,
-    "AVTP_Stream",
-    8192,
-    state,
-    STREAM_TASK_PRIORITY,
-    &stream_task_handle,
-    STREAM_TASK_CORE
-  );
-
-  if (ret != pdPASS)
-  {
-    ESP_LOGE(TAG, "Failed to create stream task");
-    s_state = NULL;
-    free(state);
-    return ESP_FAIL;
-  }
 
   /* Create control task on Core 0 */
-  TaskHandle_t control_task_handle;
-  ret = xTaskCreatePinnedToCore(
+  esp_err_t ret = xTaskCreatePinnedToCore(
     avtp_control_task,
-    "AVTP_Ctrl",
-    8192,
+    "avtp_ctrl",
+    4096,
     state,
     CONTROL_TASK_PRIORITY,
-    &control_task_handle,
+    &avtp_control_task_handle,
     CONTROL_TASK_CORE
   );
 
@@ -537,8 +589,201 @@ int start_avtp_listener(const char* interface)
   return ESP_OK;
 }
 
-int stop_avtp_listener(int pid)
+void avtp_set_common_header(struct avtp_state_s* state, struct iec61883_am824_packet* msg)
 {
-  s_state->stop = true;
-  return ESP_OK;
+  /* Set Ethernet header */
+  memcpy(msg->header.dst_mac, state->talker_stream_info.stream_dest_mac, sizeof(msg->header.dst_mac));
+  memcpy(msg->header.src_mac, state->intf_hw_addr, sizeof(msg->header.src_mac));
+
+  /* Ethernet type (big-endian) */
+  msg->header.eth_type[0] = (ETH_TYPE_8021Q >> 8) & 0xFF;
+  msg->header.eth_type[1] = ETH_TYPE_8021Q & 0xFF;
+
+  u16 priority = 3;
+  u16 ineligible = 0;
+  u16 vlan_id = state->talker_stream_info.stream_vlan_id;
+  msg->vlan_tag.tci = htons((priority << 13) | (ineligible << 12) | vlan_id);
+  msg->vlan_tag.vlan_eth_type = htons(ETH_TYPE_AVTP);
+}
+
+void avtp_send_am824_stream(struct avtp_state_s* state, s32* audio_samples, u32 bytes_read)
+{
+  iec61883_am824_packet_t p = {0};
+  avtp_set_common_header(state, &p);
+  p.iec61883.subtype = AVTP_SUBTYPE_61883_IIDC;
+
+  bool stream_id_valid = 1;
+  u8 version = 0;
+  bool media_clock_restart = 0;
+  bool gateway_info_valid = 0;
+  bool timestamp_valid = 0;
+  u32 avtp_timestamp = 0;
+
+  /* Timestamp pattern: 3 packets with valid timestamp, then 1 with timestamp_valid=0 and timestamp=0 */
+  bool send_valid_ts = (state->talker_ts_pattern_index < 3);
+  if (send_valid_ts)
+  {
+    avtp_timestamp = avtp_presentation_timestamp(300000ULL);
+    if (avtp_timestamp != 0)
+    {
+      timestamp_valid = 1;
+    }
+  }
+  state->talker_ts_pattern_index = (state->talker_ts_pattern_index + 1) & 0x03;
+
+  p.iec61883.avtp_info = (stream_id_valid << 7) |
+    (version << 3) |
+    (media_clock_restart << 2) |
+    (gateway_info_valid << 1) |
+    (timestamp_valid);
+  p.iec61883.sequence_num = state->talker_stream_info.sequence_number++;
+  p.iec61883.stream_id = htonll(state->talker_stream_info.stream_id);
+  p.iec61883.avtp_timestamp = htonl(timestamp_valid ? avtp_timestamp : 0);
+  p.iec61883.gateway_info = htonl(0);
+  p.iec61883.stream_data_length = htons(200); // TODO proper length
+  u8 format_tag = 0x1; // CIP header included
+  u8 channel = 31; // Originating source is on AVTP network
+  u8 tcode = 0xa; // Data packet
+  u8 app_specific_control = 0;
+  p.packet_info_u.packet_info_raw[0] = (format_tag << 6) | (channel & 0x3F);
+  p.packet_info_u.packet_info_raw[1] = (tcode << 4) | (app_specific_control & 0x0F);
+  p.cip.qi_1 = 0x0;
+  p.cip.sid = 63; // Origination source is on AVTP network
+  p.cip.dbs = 0x8;
+  p.cip.fn = 0;
+  p.cip.sph = 0;
+  p.cip.dbc = state->talker_stream_info.cip_data_block_continuity += 6; // 6 data blocks
+  p.cip.qi_2 = 0x2;
+  p.cip.fmt = 0x10; // AM824 format
+  p.cip.cip_fmt_specific_data[0] = 0x02;
+  p.cip.cip_fmt_specific_data[1] = 0xFF;
+  p.cip.cip_fmt_specific_data[2] = 0xFF; //
+
+  // Fill audio data
+  u8 audio_samples_idx = 0;
+  u8 avtp_samples_idx = 0;
+  for (int sample_idx = 0; sample_idx < 6; sample_idx++)
+  {
+    for (int ch = 0; ch < 8; ch++)
+    {
+      s32 sample_value = 0;
+      if (ch < OUTPUT_CHANNELS)
+      {
+        sample_value = audio_samples[audio_samples_idx++];
+      }
+      p.audio_data[avtp_samples_idx].label = 0x40; // Audio data label
+      p.audio_data[avtp_samples_idx].sample[0] = (sample_value >> 24) & 0xFF;
+      p.audio_data[avtp_samples_idx].sample[1] = (sample_value >> 16) & 0xFF;
+      p.audio_data[avtp_samples_idx].sample[2] = (sample_value >> 8) & 0xFF;
+      avtp_samples_idx++;
+    }
+  }
+  ssize_t sent_bytes = write(state->vlan_socket, &p, sizeof(p));
+  if (sent_bytes < 0)
+  {
+    ESP_LOGE(TAG, "Failed to send AVTP stream packet: %d", errno);
+  }
+}
+
+
+static void avtp_talker_stream_task(void* arg)
+{
+  struct avtp_state_s* state = arg;
+  ESP_LOGI(TAG, "Talker stream task started on core %d (priority %d)",
+           xPortGetCoreID(), uxTaskPriorityGet(NULL));
+  while (!state->talker_stop)
+  {
+    u32 bytes_read = 0;
+#if SAMPLE_BIT_RATE == 16
+    s16 audio_samples[INPUT_CHANNELS * 6];
+    CODEC_I2S_READ(audio_samples, sizeof(audio_samples), &bytes_read);
+#else
+    s32 audio_samples[INPUT_CHANNELS * 6];
+    CODEC_I2S_READ(audio_samples, sizeof(audio_samples), &bytes_read);
+    // last byte is always 0x00 due to 24-bit audio in 32-bit container
+    avtp_send_am824_stream(state, audio_samples, bytes_read);
+
+#endif
+  }
+  ESP_LOGI(TAG, "Talker stream task exiting");
+  vTaskDelete(talker_stream_task_handle);
+}
+
+void avtp_talker_stop(struct avtp_state_s* state)
+{
+  state->talker_stop = true;
+}
+
+int avtp_talker_start(struct avtp_state_s* state)
+{
+  state->talker_stop = false;
+  /* Create high-priority stream task on Core 1 */
+  BaseType_t ret = xTaskCreatePinnedToCore(
+    avtp_talker_stream_task,
+    "avtp_talker",
+    8192,
+    state,
+    STREAM_TASK_PRIORITY,
+    &talker_stream_task_handle,
+    STREAM_TASK_CORE
+  );
+
+  if (ret != pdPASS)
+  {
+    ESP_LOGE(TAG, "Failed to create stream task");
+    s_state = NULL;
+    free(state);
+    return ESP_FAIL;
+  }
+  return ret;
+}
+
+int avtp_listener_start(struct avtp_state_s* state)
+{
+  if (state->listener_stop == false)
+  {
+    ESP_LOGE(TAG, "Listener already started");
+    return ESP_FAIL;
+  }
+  state->listener_stop = false;
+  /* Create high-priority stream task on Core 1 */
+  BaseType_t ret = xTaskCreatePinnedToCore(
+    avtp_listener_stream_task,
+    "avtp_listener",
+    4096,
+    state,
+    STREAM_TASK_PRIORITY,
+    &listener_stream_task_handle,
+    STREAM_TASK_CORE
+  );
+
+  if (ret != pdPASS)
+  {
+    ESP_LOGE(TAG, "Failed to create listener stream task");
+    s_state = NULL;
+    free(state);
+    return ESP_FAIL;
+  }
+
+  /* Start the media queue consumer task */
+  esp_err_t err = media_queue_start(&state->media_queue);
+  if (err != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to start media queue consumer");
+    media_queue_deinit(&state->media_queue);
+    return ESP_FAIL;
+  }
+
+  return ret;
+}
+
+void avtp_listener_stop(struct avtp_state_s* state)
+{
+  state->listener_stop = true;
+
+  /* Give listener task time to exit */
+  vTaskDelay(pdMS_TO_TICKS(50));
+
+  /* Stop and cleanup the media queue */
+  media_queue_stop(&state->media_queue);
 }

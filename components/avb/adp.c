@@ -11,6 +11,9 @@
 #include <esp_log.h>
 #include <sys/types.h>
 #include <sys/unistd.h>
+#include "esp_eth_time.h"
+#include "../ptpd/ptpv2.h"
+#include "../ptpd/include/ptpd.h"
 
 #define TAG "adp"
 
@@ -44,7 +47,7 @@ static void adp_upsert_entity(struct avtp_state_s* s_state, struct avtp_discover
       if (s_state->adp_entities[i].entity_id == entity_id)
       {
         set_entity_values(&s_state->adp_entities[i], msg);
-        ESP_LOGI(TAG, "Updated ADP entity 0x%016llX (valid %us)",
+        ESP_LOGV(TAG, "Updated ADP entity 0x%016llX (valid %us)",
                  (unsigned long long)entity_id, (unsigned)(s_state->adp_entities[i].valid_until * 2));
         return;
       }
@@ -139,17 +142,16 @@ void send_adp_entity_available(struct avtp_state_s* s_state)
   msg.available_index = htonl(s_state->adp_available_index++);
   msg.association_id = htonll(0);
 
-  // TODO get grandmaster from PTP module
-  memcpy(msg.gptp_grandmaster_id, (uint8_t[]){0x00, 0x01, 0xf2, 0xff, 0xfe, 0x00, 0xae, 0x35}, 8);
+  struct ptp_announce_s* clock_source = ptpd_get_selected_source();
+  if (clock_source != NULL)
+  {
+    memcpy(msg.gptp_grandmaster_id, clock_source->gm_identity, 8);
+  }
 
   ssize_t written = write(s_state->socket, &msg, 82);
   if (written < 0)
   {
     ESP_LOGE(TAG, "Failed to send ADP entity available: %d", errno);
-  }
-  else
-  {
-    ESP_LOGI(TAG, "Sent ADP Entity Available");
   }
 }
 
@@ -162,15 +164,15 @@ int adp_net_rx(struct avtp_state_s* state, struct avtp_discovery_msg_s* msg, ssi
   switch (msg_type)
   {
   case ADP_MSG_TYPE_ENTITY_AVAILABLE:
-    ESP_LOGI(TAG, "ADP Entity Available Message received");
+    ESP_LOGV(TAG, "ADP Entity Available Message received");
     adp_upsert_entity(state, msg);
     break;
   case ADP_MSG_TYPE_ENTITY_DEPARTING:
-    ESP_LOGI(TAG, "ADP Entity Departing Message received");
+    ESP_LOGV(TAG, "ADP Entity Departing Message received");
     adp_remove_entity(state, msg);
     break;
   case ADP_MSG_TYPE_ENTITY_DISCOVER:
-    ESP_LOGI(TAG, "Entity Discover Message", msg_type);
+    ESP_LOGV(TAG, "Entity Discover Message", msg_type);
     break;
   default:
     ESP_LOGW(TAG, "Unknown ADP message type: 0x%02X", msg_type);

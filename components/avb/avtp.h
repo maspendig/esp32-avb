@@ -11,6 +11,8 @@
 #include <maap.h>
 #include <msrp.h>
 #include <mvrp.h>
+#include <nvs.h>
+#include "media_queue.h"
 
 #define ETH_TYPE_AVTP 0x22F0
 #define ETH_TYPE_8021Q 0x8100  /* 802.1Q VLAN tag */
@@ -40,11 +42,7 @@
 typedef struct iec61883
 {
   u8 subtype;
-  u8 sv : 1;
-  u8 version : 3;
-  u8 media_clock_restart : 1;
-  u8 gateway_info_valid : 1;
-  u8 timestamp_valid : 1;
+  u8 avtp_info; /* contains sv, version, media clock restart, gateway info valid, timestamp valid */
   u8 sequence_num;
   u8 reserved : 7;
   u8 time_uncertain : 1;
@@ -64,17 +62,16 @@ typedef struct am824_sample
 /* IEEE 1722-2016 5.4.3 IEC 61883 CIP header encapsulation */
 typedef struct iec61883_cip_header
 {
-  u8 qi_1 : 2; /* quadlet indicator */
   u8 sid : 6; /* source id */
+  u8 qi_1 : 2; /* quadlet indicator */
   u8 dbs; /* data block size */
   u8 fn : 1; /* fraction number */
   u8 qpc : 3; /* quadlet per channel */
   u8 sph : 1; /* source packet header */
   u8 dbc; /* data block count */
-  u8 qi_2 : 2; /* quadlet indicator */
   u8 fmt : 6; /* format */
+  u8 qi_2 : 2; /* quadlet indicator */
   u8 cip_fmt_specific_data[3]; /* format specific data */
-  u8 cip_data_payload[];
 } __attribute__((packed)) iec61883_cip_header_t;
 
 struct avtp_discovery_msg_s
@@ -176,16 +173,51 @@ struct talker_stream_info_s
   u16 connection_count;
   struct listener_pair_s connected_listeners[MAX_CONNECTED_LISTENERS];
   u16 stream_vlan_id;
+  u8 sequence_number;
+  u8 cip_data_block_continuity;
 };
 
+typedef struct iec61883_am824_packet
+{
+  struct header_s header;
+
+  struct
+  {
+    u16 tci;
+    u16 vlan_eth_type;
+  } vlan_tag;
+
+  iec61883_t iec61883;
+
+  union
+  {
+    struct
+    {
+      u8 format_tag : 2;
+      u8 channel : 6;
+      u8 tcode : 4;
+      u8 app_specific_control : 4;
+    } packet_info;
+
+    u8 packet_info_raw[2];
+  } packet_info_u;
+
+  iec61883_cip_header_t cip;
+  am824_sample_t audio_data[6 * 8];
+} iec61883_am824_packet_t;
 
 struct avtp_state_s
 {
+  bool talker_stop;
+  bool listener_stop;
   bool stop;
   int socket; /* Untagged AVTP frames (0x22F0) */
   int vlan_socket; /* VLAN-tagged frames (0x8100) for AVB streams */
   int msrp_socket;
   int mvrp_socket;
+  u64 avtp_max_transit_time;
+
+  nvs_handle_t nvs_handle;
 
   struct maap_db_s maap_db;
 
@@ -206,12 +238,25 @@ struct avtp_state_s
   msrp_ctx_t msrp;
   mvrp_ctx_t mvrp;
 
+  /* Media queue for audio sample buffering and synchronized playback */
+  media_queue_t media_queue;
+
+  /* Talker timestamp pattern index: 0,1,2 = valid timestamp, 3 = invalid */
+  u8 talker_ts_pattern_index;
+
   /* AECP entity acquisition state (IEEE 1722.1-2021, 7.4.1) */
   uint64_t acquired_by_controller_id; /* Entity ID of controller that acquired us (0 = not acquired) */
   bool acquire_persistent; /* Whether the acquisition is persistent */
 };
 
-int start_avtp_listener(const char* interface);
+// TODO move this content to the main
+int start_avtp_control_task(const char* interface);
+
+int avtp_talker_start(struct avtp_state_s* state);
+void avtp_talker_stop(struct avtp_state_s* state);
+
+int avtp_listener_start(struct avtp_state_s* state);
+void avtp_listener_stop(struct avtp_state_s* state);
 
 #define AVTP_GET_STATUS(hdr) \
 ((ntohs((hdr)->control_data_len_status) >> 11) & 0x1F)

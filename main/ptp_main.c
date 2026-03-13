@@ -3,6 +3,8 @@
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
+#include <audio.h>
+#include <storage.h>
 #include <string.h>
 #include "sdkconfig.h"
 #include "esp_log.h"
@@ -38,7 +40,7 @@ void init_ethernet_and_netif(void)
   esp_netif_inherent_config_t esp_netif_base_config = ESP_NETIF_INHERENT_DEFAULT_ETH();
   esp_netif_config_t esp_netif_config = {
     .base = &esp_netif_base_config,
-    .stack = ESP_NETIF_NETSTACK_DEFAULT_ETH
+    .stack = ESP_NETIF_NETSTACK_DEFAULT_ETH,
   };
   char if_key_str[10];
   char if_desc_str[10];
@@ -90,8 +92,15 @@ void app_main(void)
   init_ethernet_and_netif();
 
   int pid = ptpd_start("ETH_0");
-  int avtp_pid = start_avtp_listener("ETH_0");
+  int avtp_pid = start_avtp_control_task("ETH_0");
 
+  init_audio_codec();
+  esp_err_t err = init_nvs();
+  if (err != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(err));
+    return;
+  }
   /* Initialize audio output system for AVB stream playback */
   ESP_LOGI(TAG, "Initializing audio output for AVB stream");
 

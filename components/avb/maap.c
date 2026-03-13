@@ -56,7 +56,7 @@ void maap_send_announce(struct avtp_state_s* state, const u8* allocated_mac, con
   }
   else
   {
-    ESP_LOGI(TAG, "Sent MAAP Announce for MAC %02X:%02X:%02X:%02X:%02X:%02X",
+    ESP_LOGV(TAG, "Sent MAAP Announce for MAC %02X:%02X:%02X:%02X:%02X:%02X",
              state->maap_db.start_mac[0], state->maap_db.start_mac[1], state->maap_db.start_mac[2],
              state->maap_db.start_mac[3], state->maap_db.start_mac[4], state->maap_db.start_mac[5]);
   }
@@ -81,7 +81,7 @@ void maap_send_defend(struct avtp_state_s* state, const u8* requested_mac, const
   }
   else
   {
-    ESP_LOGI(TAG, "Sent MAAP Probe for MAC %02X:%02X:%02X:%02X:%02X:%02X",
+    ESP_LOGV(TAG, "Sent MAAP Probe for MAC %02X:%02X:%02X:%02X:%02X:%02X",
              state->maap_db.start_mac[0], state->maap_db.start_mac[1], state->maap_db.start_mac[2],
              state->maap_db.start_mac[3], state->maap_db.start_mac[4], state->maap_db.start_mac[5]);
   }
@@ -102,7 +102,7 @@ void maap_send_probe(struct avtp_state_s* state)
   }
   else
   {
-    ESP_LOGI(TAG, "Sent MAAP Probe for MAC %02X:%02X:%02X:%02X:%02X:%02X",
+    ESP_LOGV(TAG, "Sent MAAP Probe for MAC %02X:%02X:%02X:%02X:%02X:%02X",
              state->maap_db.start_mac[0], state->maap_db.start_mac[1], state->maap_db.start_mac[2],
              state->maap_db.start_mac[3], state->maap_db.start_mac[4], state->maap_db.start_mac[5]);
   }
@@ -178,7 +178,7 @@ bool compare_mac(const u8* a, const u8 a_count, const u8* b, const u8 b_count, s
     return false; // No overlap
   }
 
-  ESP_LOGI(TAG,
+  ESP_LOGV(TAG,
            "MAAP Overlap detected: Conflict Start MAC %02X:%02X, Count %d",
            conflict->conflict_start_address[4], conflict->conflict_start_address[5],
            conflict->conflict_count);
@@ -197,7 +197,7 @@ void maap_release(struct avtp_state_s* state)
 
 void maap_state_machine(struct avtp_state_s* state, maap_event event, struct maap_pdu_s* msg)
 {
-  ESP_LOGI(TAG, "process MAAP event: %s, state: %s", maap_event_str(event), maap_state_str(state->maap_db.state));
+  ESP_LOGV(TAG, "process MAAP event: %s, state: %s", maap_event_str(event), maap_state_str(state->maap_db.state));
 
   bool conflict = false;
   struct maap_conflict_s conflict_data = {0};
