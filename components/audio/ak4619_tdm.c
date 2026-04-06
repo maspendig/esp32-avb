@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "driver/i2s_tdm.h"
+#include "soc/rtc.h"
 
 // AK4619 I2C 7-bit slave address (MSB 7 bits: "0010000" = 0x10)
 #define AK4619_ADDR      0x10
@@ -50,6 +51,33 @@ static i2c_master_dev_handle_t ak4619_dev_handle;
 #define AK4619_RESET_PIN GPIO_NUM_53
 
 static const char* TAG = "AK4619";
+
+static void ak4619_tune_apll(void)
+{
+  // Standard 48kHz setup uses APLL = 48000 * 768 = 36864000 Hz
+  // Best results with AK4619-2 with calculated 47,999.182 Hz
+
+  // AK4619-2
+  uint32_t target_freq = 36863372;
+
+  // AK4619-1
+  // uint32_t target_freq = 36863670;
+  uint32_t o_div = 0;
+  uint32_t sdm0 = 0;
+  uint32_t sdm1 = 0;
+  uint32_t sdm2 = 0;
+
+  // Calculate coefficients for the exact target frequency
+  uint32_t real_freq = rtc_clk_apll_coeff_calc(target_freq, &o_div, &sdm0, &sdm1, &sdm2);
+
+  ESP_LOGW(TAG, "  Target APLL: %lu Hz", target_freq);
+  ESP_LOGW(TAG, "  Actual APLL: %lu Hz", real_freq);
+  ESP_LOGW(TAG, "  Coeffs: o_div=%lu, sdm0=%lu, sdm1=%lu, sdm2=%lu", o_div, sdm0, sdm1, sdm2);
+
+  // Apply the calculated coefficients
+  rtc_clk_apll_coeff_set(o_div, sdm0, sdm1, sdm2);
+  rtc_clk_apll_enable(true);
+}
 
 // setup i2s for ak4619 in tdm mode
 static esp_err_t ak4619_setup_i2s(void)
@@ -126,6 +154,9 @@ static esp_err_t ak4619_setup_i2s(void)
     i2s_del_channel(rx_chan);
     return ret;
   }
+
+  // Tune APLL to correct the slight sample rate offset
+  ak4619_tune_apll();
 
   // Enable the channels
   ret = i2s_channel_enable(tx_chan);
@@ -557,4 +588,6 @@ esp_err_t ak4619_set_all_dac_volume(uint8_t volume)
   ESP_LOGI(TAG, "All DAC channels set to same volume");
   return ESP_OK;
 }
+
+
 

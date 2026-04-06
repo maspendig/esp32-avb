@@ -315,7 +315,7 @@ static IRAM_ATTR void rx_avtp_61883_IIDC(struct avtp_state_s* state, u8* buf, ss
   };
 
 #if SAMPLE_BIT_RATE == 16
-  extract_am824_audio_to_16(raw_buf, len, entry.samples, channels, &num_samples);
+  extract_am824_audio_to_16(buf, len, entry.samples, channels, &num_samples);
 #else
   extract_am824_audio_to_32(buf, len, entry.samples, channels, &num_samples);
 #endif

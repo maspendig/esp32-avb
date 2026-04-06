@@ -15,6 +15,7 @@
 #define OUTPUT_CHANNELS 2
 #define CODEC_INIT() es8311_init()
 #define CODEC_I2S_WRITE(buf, size, bytes_written) es8311_i2s_write(buf, size, bytes_written)
+#define CODEC_I2S_READ(buf, size, bytes_read) es8311_i2s_read(buf, size, bytes_read)
 #elif CONFIG_CODEC_TLV320AIC3254
 #include "codec.h"
 #define INPUT_CHANNELS 0

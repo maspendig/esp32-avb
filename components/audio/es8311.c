@@ -180,6 +180,13 @@ void es8311_i2s_write(const void* data, size_t size, u32* bytes_written)
   ESP_ERROR_CHECK(i2s_channel_write(tx_handle, data, size, (size_t*)bytes_written, 0));
 }
 
+void es8311_i2s_read(void* buf, uint32_t size, uint32_t* bytes_read)
+{
+  size_t nb;
+  ESP_ERROR_CHECK(i2s_channel_read(rx_handle, buf, size, &nb, portMAX_DELAY));
+  *bytes_read = nb;
+}
+
 void es8311_init()
 {
   /* Initialize I2S peripheral */

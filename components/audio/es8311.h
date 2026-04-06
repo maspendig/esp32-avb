@@ -43,4 +43,13 @@ void es8311_init();
  */
 void es8311_i2s_write(const void* data, size_t size, uint32_t* bytes_written);
 
+
+/**
+ * @brief Read audio data from ES8311 via I2S
+ *
+ * @param data Buffer containing audio data
+ * @param size Size of buffer in bytes
+ * @param bytes_read Pointer to store number of bytes read
+ */
+void es8311_i2s_read(void* buf, uint32_t size, uint32_t* bytes_read);
 #endif //ETHERNET_PTP_ES8311_H
