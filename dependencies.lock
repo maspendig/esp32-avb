@@ -142,7 +142,7 @@ dependencies:
   idf:
     source:
       type: idf
-    version: 5.5.3
+    version: 5.5.4
   ptpd:
     dependencies:
     - name: esp_eth_time
